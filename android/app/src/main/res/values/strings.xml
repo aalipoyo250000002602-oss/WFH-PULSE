@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">WFH Pulse</string>
+    <string name="title_activity_main">WFH Pulse</string>
+    <string name="package_name">com.wfh.pulse</string>
+    <string name="custom_url_scheme">com.wfh.pulse</string>
+</resources>
