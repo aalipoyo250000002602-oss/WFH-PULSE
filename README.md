@@ -7,7 +7,9 @@ Interactive project guide for local web development and Android simulator runs.
 [![Capacitor](https://img.shields.io/badge/Capacitor-8.4.2-119EFF?logo=capacitor&logoColor=fff)](#)
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D4?logo=windows&logoColor=fff)](#)
 
-Original design source: https://www.figma.com/design/Ca9EkXu4rFZpaxcyVcoGJp/WFH-PULSE----HR-Admin-
+### Demo link: https://aalipoyo250000002602-oss.github.io/WFH-PULSE/
+
+### Original design source: https://www.figma.com/design/Ca9EkXu4rFZpaxcyVcoGJp/WFH-PULSE----HR-Admin-
 
 ## Quick Start
 
