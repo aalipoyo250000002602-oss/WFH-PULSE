@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import {
   Card,
   CardContent,
@@ -65,7 +65,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { getEmployees, updateEmployee, Employee, PayrollInfo } from "../employee-data";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { EmployeePayrollCard } from "../employee-payroll-card";
 import { EmployeeProfilePDFGenerator } from "../employee-profile-pdf-generator";
 
@@ -727,7 +727,7 @@ export function EmployeeDetailsPage({
                       </p>
                       {isWorkAnniversary(employee.joinDate) && (
                         <Badge className="mt-1 bg-vibrant-blue/20 text-vibrant-blue">
-                          Work Anniversary Today! 🎉
+                          Work Anniversary Today! ðŸŽ‰
                         </Badge>
                       )}
                     </div>
@@ -1028,3 +1028,4 @@ export function EmployeeDetailsPage({
     </div>
   );
 }
+

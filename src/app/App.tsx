@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { AttendanceHeader } from "./components/attendance-header";
 import { BottomNavigation } from "./components/bottom-navigation";
 import { HomePage } from "./components/pages/home-page";
@@ -8,7 +8,7 @@ import { AnalyticsPage } from "./components/pages/analytics-page";
 import { SettingsPage } from "./components/pages/settings-page";
 import { EmployeeDetailsPage } from "./components/pages/employee-details-page";
 import { LoginForm } from "./components/login-form";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { Toaster } from "./components/ui/sonner";
 
 export default function App() {

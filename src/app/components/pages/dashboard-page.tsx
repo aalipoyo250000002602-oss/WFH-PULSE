@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -34,7 +34,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { getEmployees, Employee } from "../employee-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../ui/alert-dialog";
@@ -1080,7 +1080,7 @@ export function DashboardPage() {
                         </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground">{request.leaveType}</p>
-                      <p className="text-xs text-muted-foreground">{request.position} • {request.department}</p>
+                      <p className="text-xs text-muted-foreground">{request.position} â€¢ {request.department}</p>
                       <p className="text-xs text-muted-foreground mt-1">
                         Submitted: {format(request.submittedDate, "MMM dd, yyyy")}
                       </p>
@@ -1209,7 +1209,7 @@ export function DashboardPage() {
                     <div className="p-3 bg-muted rounded-md text-sm">
                       <div className="font-medium">{selectedLeaveRequest.employeeName}</div>
                       <div className="text-xs text-muted-foreground mt-1">
-                        {selectedLeaveRequest.position} • {selectedLeaveRequest.department}
+                        {selectedLeaveRequest.position} â€¢ {selectedLeaveRequest.department}
                       </div>
                     </div>
                   </div>
@@ -1567,3 +1567,4 @@ export function DashboardPage() {
     </div>
   );
 }
+

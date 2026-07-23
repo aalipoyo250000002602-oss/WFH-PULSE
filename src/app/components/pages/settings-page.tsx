@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import {
   Card,
   CardContent,
@@ -62,7 +62,7 @@ import {
   CreditCard,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 
 interface SettingsPageProps {
   workingHours: { start: string; end: string };
@@ -1477,3 +1477,4 @@ export function SettingsPage({
     </div>
   );
 }
+

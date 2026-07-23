@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Input } from "./ui/input";
 import {
   Select,
@@ -20,7 +20,7 @@ import { Label } from "./ui/label";
 import { Button } from "./ui/button";
 import { Users, Search, ArrowUpDown, Filter, Plus, Calendar, Award } from "lucide-react";
 import { getEmployees, addEmployee, Employee } from "./employee-data";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 
 interface EmployeesCardProps {
   onEmployeeClick: (employeeId: string) => void;
@@ -272,7 +272,7 @@ export function EmployeesCard({ onEmployeeClick }: EmployeesCardProps) {
                         {hasAnniversary && (
                           <p className="text-xs text-vibrant-blue flex items-center gap-1">
                             <Award className="h-3 w-3" />
-                            Work Anniversary Today! 🎉
+                            Work Anniversary Today! ðŸŽ‰
                           </p>
                         )}
                       </div>
@@ -481,3 +481,4 @@ export function EmployeesCard({ onEmployeeClick }: EmployeesCardProps) {
     </>
   );
 }
+

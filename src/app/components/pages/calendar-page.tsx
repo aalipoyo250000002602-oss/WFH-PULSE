@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { ChevronLeft, ChevronRight, ChevronDown, Plus, Edit, Trash2, Calendar as CalendarIcon, CalendarRange, CalendarDays, Check, X, FileText, Paperclip, Eye, Clock, CheckCircle, XCircle, AlertCircle, CalendarCheck } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Button } from "../ui/button";
@@ -10,7 +10,7 @@ import { Label } from "../ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Badge } from "../ui/badge";
 import { Textarea } from "../ui/textarea";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { format } from "date-fns";
 
 interface Holiday {
@@ -155,7 +155,7 @@ export function CalendarPage({
           id: "req-em-2",
           startDate: new Date(2026, 6, 15),
           endDate: new Date(2026, 6, 15),
-          message: "Pipe burst at home — needed to wait for the repair crew. Unable to report to work.",
+          message: "Pipe burst at home â€” needed to wait for the repair crew. Unable to report to work.",
           status: "approved",
           submittedDate: new Date(2026, 6, 15),
           attachments: ["repair-receipt.pdf"],
@@ -185,7 +185,7 @@ export function CalendarPage({
           id: "req-sl-1",
           startDate: new Date(2026, 5, 11),
           endDate: new Date(2026, 5, 11),
-          message: "Flu symptoms — high fever and body aches. Doctor advised rest.",
+          message: "Flu symptoms â€” high fever and body aches. Doctor advised rest.",
           status: "approved",
           submittedDate: new Date(2026, 5, 11),
           attachments: ["medical-cert.pdf"],

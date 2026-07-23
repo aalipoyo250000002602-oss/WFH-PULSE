@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import {
   Card,
   CardContent,
@@ -44,7 +44,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { PayrollInfo, Deduction } from "./employee-data";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { Separator } from "./ui/separator";
 
 interface EmployeePayrollCardProps {
@@ -96,7 +96,7 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
   const hourlyRate = dailyRate / 8;
 
   const maskValue = (value: string) => {
-    return "•".repeat(value.length);
+    return "â€¢".repeat(value.length);
   };
 
   const formatCurrency = (amount: number) => {
@@ -322,7 +322,7 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-muted-foreground">Monthly Salary</p>
                   <p className="font-medium text-vibrant-green break-words">
-                    {showSalary ? formatCurrency(payroll.salary) : "••••••"}
+                    {showSalary ? formatCurrency(payroll.salary) : "â€¢â€¢â€¢â€¢â€¢â€¢"}
                   </p>
                 </div>
                 <Button
@@ -338,9 +338,9 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-muted-foreground">Daily Rate</p>
                   <p className="font-medium break-words">
-                    {showDailyRate ? formatCurrency(dailyRate) : "••••••"}
+                    {showDailyRate ? formatCurrency(dailyRate) : "â€¢â€¢â€¢â€¢â€¢â€¢"}
                   </p>
-                  <p className="text-xs text-muted-foreground">Salary ÷ 21 days</p>
+                  <p className="text-xs text-muted-foreground">Salary Ã· 21 days</p>
                 </div>
                 <Button
                   variant="ghost"
@@ -355,9 +355,9 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-muted-foreground">Hourly Rate</p>
                   <p className="font-medium break-words">
-                    {showHourlyRate ? formatCurrency(hourlyRate) : "••••••"}
+                    {showHourlyRate ? formatCurrency(hourlyRate) : "â€¢â€¢â€¢â€¢â€¢â€¢"}
                   </p>
-                  <p className="text-xs text-muted-foreground">Daily Rate ÷ 8 hours</p>
+                  <p className="text-xs text-muted-foreground">Daily Rate Ã· 8 hours</p>
                 </div>
                 <Button
                   variant="ghost"
@@ -401,7 +401,7 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
                     <p className="text-sm font-medium text-destructive break-words">
                       {visibleDeductions.has(deduction.id)
                         ? `- ${formatCurrency(deduction.amount)}`
-                        : "- ••••••"}
+                        : "- â€¢â€¢â€¢â€¢â€¢â€¢"}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
@@ -450,7 +450,7 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
               <span className="text-muted-foreground flex-shrink-0">Total Deductions</span>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className="text-destructive font-medium break-words">
-                  {showTotalDeductions ? `- ${formatCurrency(totalDeductions)}` : "- ••••••"}
+                  {showTotalDeductions ? `- ${formatCurrency(totalDeductions)}` : "- â€¢â€¢â€¢â€¢â€¢â€¢"}
                 </span>
                 <Button
                   variant="ghost"
@@ -466,7 +466,7 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
               <span className="font-medium flex-shrink-0">Net Salary</span>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className="font-medium text-vibrant-blue break-words">
-                  {showNetSalary ? formatCurrency(netSalary) : "••••••"}
+                  {showNetSalary ? formatCurrency(netSalary) : "â€¢â€¢â€¢â€¢â€¢â€¢"}
                 </span>
                 <Button
                   variant="ghost"
@@ -653,3 +653,4 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
     </>
   );
 }
+

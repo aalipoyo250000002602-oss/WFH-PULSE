@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -53,7 +53,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { getEmployees, Employee } from "./employee-data";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { format } from "date-fns";
 
 // Generate random late dates for October 2025 for each employee
@@ -1508,7 +1508,7 @@ WFH PULSE`;
                       {selectedEmployee.firstName}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {selectedEmployee.department} •{" "}
+                      {selectedEmployee.department} â€¢{" "}
                       {selectedEmployee.position}
                     </p>
                   </div>
@@ -1764,7 +1764,7 @@ WFH PULSE`;
                         {payrollData.totalWorkHoursDecimal.toFixed(
                           2,
                         )}
-                        h ×{" "}
+                        h Ã—{" "}
                         {formatCurrency(payrollData.hourlyRate)}
                       </p>
                     </div>

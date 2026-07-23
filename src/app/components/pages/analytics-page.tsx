@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import {
   BarChart,
   Bar,
@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Badge } from "../ui/badge";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { AttendanceSheetGenerator } from "../attendance-sheet-generator";
 
 interface AnalyticsPageProps {
@@ -63,7 +63,7 @@ export function AnalyticsPage({
   const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
 
   // July 2026 weekly breakdown (weeks ending Jul 21)
-  // Week 1: Jul 1–3 (3 days), Week 2: Jul 6–10 (5 days), Week 3: Jul 13–17 (5 days), Week 4 (partial): Jul 20–21 (2 days)
+  // Week 1: Jul 1â€“3 (3 days), Week 2: Jul 6â€“10 (5 days), Week 3: Jul 13â€“17 (5 days), Week 4 (partial): Jul 20â€“21 (2 days)
   const generateWeeklyData = () => [
     { week: "Week 1", present: 3, absent: 0, late: 0 },
     { week: "Week 2", present: 4, absent: 0, late: 1 },
@@ -71,7 +71,7 @@ export function AnalyticsPage({
     { week: "Week 4", present: 1, absent: 0, late: 1 },
   ];
 
-  // Monthly attendance data Jan–Jul 2026 (working days only, holidays excluded)
+  // Monthly attendance data Janâ€“Jul 2026 (working days only, holidays excluded)
   const generateMonthlyData = () => [
     { month: "Jan", present: 18, absent: 1, late: 2 },
     { month: "Feb", present: 17, absent: 1, late: 2 },
@@ -857,3 +857,4 @@ export function AnalyticsPage({
     </div>
   );
 }
+

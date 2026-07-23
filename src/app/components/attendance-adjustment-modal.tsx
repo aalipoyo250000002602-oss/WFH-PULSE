@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -34,7 +34,7 @@ import {
   Download,
 } from "lucide-react";
 import { format } from "date-fns";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { AttendanceAdjustmentRequest } from "./attendance-details-data";
 import { cn } from "./ui/utils";
 
@@ -525,3 +525,4 @@ export function AttendanceAdjustmentModal({
     </Dialog>
   );
 }
+

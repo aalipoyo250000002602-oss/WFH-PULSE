@@ -6,6 +6,7 @@ allowBuilds:
 supportedArchitectures:
   os:
     - linux
+    - win32
   cpu:
     - x64
     - arm64

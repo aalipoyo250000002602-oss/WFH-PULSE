@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -19,7 +19,7 @@ import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { FileText, Mail, Download, ChevronDown, Send, Plus, X } from "lucide-react";
 import { Employee } from "./employee-data";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { format } from "date-fns";
 import logoImage from "figma:asset/80b7a2d7f7164e79d1aa41e678d57bd410cbb0ae.png";
 
@@ -635,3 +635,4 @@ WFH PULSE`;
     </>
   );
 }
+

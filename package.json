@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite"
+    "dev": "vite",
+    "dev:host": "vite --host 0.0.0.0 --port 5173",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "start": "vite",
+    "setup": "corepack pnpm install"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
