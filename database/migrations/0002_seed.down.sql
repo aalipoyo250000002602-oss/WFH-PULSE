@@ -1,0 +1,27 @@
+TRUNCATE TABLE
+  app.attendance_leave_attachments,
+  app.attendance_leave_details,
+  app.attendance_records,
+  app.adjustment_request_logs,
+  app.adjustment_request_attachments,
+  app.attendance_adjustment_requests,
+  app.leave_request_logs,
+  app.leave_request_attachments,
+  app.leave_requests,
+  app.leave_balances,
+  app.leave_types,
+  app.payroll_deductions,
+  app.payroll_profiles,
+  app.holidays,
+  app.user_working_days,
+  app.user_preferences,
+  auth.password_activities,
+  auth.login_attempts,
+  auth.sessions,
+  auth.user_roles,
+  auth.users,
+  auth.roles,
+  app.employees,
+  app.departments
+RESTART IDENTITY CASCADE;
+
