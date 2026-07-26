@@ -34,6 +34,8 @@ jobs:
         run: corepack pnpm install
 
       - name: Build
+        env:
+          VITE_BASE_PATH: /WFH-PULSE/
         run: corepack pnpm run build
 
       - name: Upload Pages artifact

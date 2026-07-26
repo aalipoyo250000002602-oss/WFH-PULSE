@@ -14,7 +14,11 @@
     "android:run": "powershell -ExecutionPolicy Bypass -File ./scripts/android-run.ps1",
     "android:run:auto": "powershell -ExecutionPolicy Bypass -File ./scripts/android-run.ps1",
     "android:run:emu": "powershell -ExecutionPolicy Bypass -File ./scripts/android-run.ps1 emulator-5554",
-    "android:open": "powershell -ExecutionPolicy Bypass -File ./scripts/android-open.ps1"
+    "android:open": "powershell -ExecutionPolicy Bypass -File ./scripts/android-open.ps1",
+    "android:build:Pixel7": "corepack pnpm run android:run --target Pixel_7",
+    "android:build:Pixel10Pro": "corepack pnpm run android:run --target Pixel_10_Pro",
+    "android:full": "powershell -ExecutionPolicy Bypass -Command \"corepack pnpm run build; corepack pnpm run android:sync; corepack pnpm run android:run:auto\"",
+    "git:status:short": "git --no-pager status --short"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
