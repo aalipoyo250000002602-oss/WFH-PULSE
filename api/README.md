@@ -40,6 +40,12 @@ Import these files:
 - `api/postman/WFH-PULSE-API.postman_collection.json`
 - `api/postman/WFH-PULSE-Local.postman_environment.json`
 
+Environment defaults:
+
+- Admin default: `test@mit.co` / `testpass`
+- Alternate user vars: `altEmail`, `altPassword`
+- To switch users quickly, replace `email` + `password` values in the active environment.
+
 Recommended run order in Postman:
 
 1. `Health`
@@ -66,6 +72,17 @@ corepack pnpm run api:newman:ci
 ```
 
 This writes `api/postman/newman-report.xml`.
+
+## GitHub Actions
+
+CI workflow file: `.github/workflows/api-newman-ci.yml`
+
+It will:
+
+1. Start PostgreSQL service (`postgres:18`)
+2. Apply DB migrations (`corepack pnpm run db:migrate`)
+3. Start API server
+4. Run Newman collection in CI mode
 
 ## Auth notes
 

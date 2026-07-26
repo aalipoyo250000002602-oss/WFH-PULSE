@@ -578,7 +578,8 @@ ON CONFLICT (role_name) DO NOTHING;
 INSERT INTO auth.users (employee_id, email, password_hash, is_active, biometric_enabled, dark_mode_enabled, location)
 VALUES
   ('emp-1', 'Alex.Ali@uic.co', crypt('P@ssw0rd123!', gen_salt('bf', 10)), TRUE, TRUE, FALSE, 'Tech Hub Office, Floor 5'),
-  ('emp-2', 'sarah.johnson@company.com', crypt('P@ssw0rd123!', gen_salt('bf', 10)), TRUE, FALSE, FALSE, NULL)
+  ('emp-2', 'sarah.johnson@company.com', crypt('P@ssw0rd123!', gen_salt('bf', 10)), TRUE, FALSE, FALSE, NULL),
+  (NULL, 'test@mit.co', crypt('testpass', gen_salt('bf', 10)), TRUE, FALSE, FALSE, NULL)
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO auth.user_roles (user_id, role_id)
@@ -586,6 +587,13 @@ SELECT u.user_id, r.role_id
 FROM auth.users u
 JOIN auth.roles r ON r.role_name = 'admin'
 WHERE u.email = 'Alex.Ali@uic.co'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO auth.user_roles (user_id, role_id)
+SELECT u.user_id, r.role_id
+FROM auth.users u
+JOIN auth.roles r ON r.role_name = 'admin'
+WHERE u.email = 'test@mit.co'
 ON CONFLICT DO NOTHING;
 
 INSERT INTO auth.user_roles (user_id, role_id)
