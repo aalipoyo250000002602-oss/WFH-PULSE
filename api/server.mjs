@@ -31,6 +31,40 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+const refreshSchema = z.object({
+  sessionId: z.string().uuid(),
+  refreshToken: z.string().min(1),
+});
+
+const selfProfileUpdateSchema = z
+  .object({
+    email: z.string().email().optional(),
+    phone: z.string().min(3).max(50).optional(),
+    birthday: z.string().date().optional(),
+    gender: z.string().min(1).max(50).optional(),
+    nationality: z.string().min(1).max(100).optional(),
+    maritalStatus: z.string().min(1).max(100).optional(),
+    address: z.string().min(3).max(300).optional(),
+    profilePictureUrl: z.string().url().max(1000).optional(),
+  })
+  .refine((payload) => Object.keys(payload).length > 0, {
+    message: "At least one field is required",
+  });
+
+async function getUserProfileByUserId(userId) {
+  const profileResult = await query(
+    `
+    SELECT u.user_id, u.email, u.employee_id,
+           e.first_name, e.last_name
+    FROM auth.users u
+    LEFT JOIN app.employees e ON e.employee_id = u.employee_id
+    WHERE u.user_id = $1::uuid
+    `,
+    [userId],
+  );
+  return profileResult.rows[0] ?? null;
+}
+
 app.post("/auth/login", async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -50,18 +84,7 @@ app.post("/auth/login", async (req, res) => {
     }
 
     const row = result.rows[0];
-    const profileResult = await query(
-      `
-      SELECT u.user_id, u.email, u.employee_id,
-             e.first_name, e.last_name
-      FROM auth.users u
-      LEFT JOIN app.employees e ON e.employee_id = u.employee_id
-      WHERE u.user_id = $1::uuid
-      `,
-      [row.user_id],
-    );
-
-    const profile = profileResult.rows[0];
+    const profile = await getUserProfileByUserId(row.user_id);
 
     const accessToken = signAccessToken({
       userId: row.user_id,
@@ -79,6 +102,53 @@ app.post("/auth/login", async (req, res) => {
         userId: row.user_id,
         employeeId: profile?.employee_id ?? null,
         email: profile?.email ?? email,
+        fullName: profile?.first_name
+          ? `${profile.first_name} ${profile.last_name}`
+          : null,
+      },
+    });
+  } catch (error) {
+    return res.status(401).json({ error: error.message });
+  }
+});
+
+app.post("/auth/refresh", async (req, res) => {
+  const parsed = refreshSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const { sessionId, refreshToken } = parsed.data;
+
+  try {
+    const result = await query(
+      `SELECT * FROM auth.refresh_session($1::uuid, $2::text, $3::inet, $4::text)`,
+      [sessionId, refreshToken, null, req.headers["user-agent"] ?? "api-client"],
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(401).json({ error: "Invalid refresh session" });
+    }
+
+    const row = result.rows[0];
+    const profile = await getUserProfileByUserId(row.user_id);
+
+    const accessToken = signAccessToken({
+      userId: row.user_id,
+      role: row.role_name,
+      sessionId: row.session_id,
+      employeeId: row.employee_id ?? profile?.employee_id ?? null,
+    });
+
+    return res.json({
+      accessToken,
+      refreshToken: row.refresh_token,
+      sessionId: row.session_id,
+      role: row.role_name,
+      user: {
+        userId: row.user_id,
+        employeeId: row.employee_id ?? profile?.employee_id ?? null,
+        email: profile?.email ?? null,
         fullName: profile?.first_name
           ? `${profile.first_name} ${profile.last_name}`
           : null,
@@ -158,6 +228,54 @@ app.get("/me/profile", requireAuth, async (req, res) => {
     });
 
     return res.json({ profile: rows[0] ?? null });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch("/me/profile", requireAuth, async (req, res) => {
+  const parsed = selfProfileUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const payload = parsed.data;
+  const assignments = [];
+  const params = [];
+
+  const fieldMap = {
+    email: "email",
+    phone: "phone",
+    birthday: "birthday",
+    gender: "gender",
+    nationality: "nationality",
+    maritalStatus: "marital_status",
+    address: "address",
+    profilePictureUrl: "profile_picture_url",
+  };
+
+  for (const [jsonKey, dbColumn] of Object.entries(fieldMap)) {
+    if (Object.prototype.hasOwnProperty.call(payload, jsonKey)) {
+      params.push(payload[jsonKey]);
+      assignments.push(`${dbColumn} = $${params.length}`);
+    }
+  }
+
+  try {
+    const row = await withRlsContext(req.auth, async (client) => {
+      const result = await client.query(
+        `
+        UPDATE app.employees
+        SET ${assignments.join(", ")}
+        WHERE employee_id = app.current_employee_id()
+        RETURNING employee_id, email, phone, birthday, gender, nationality, marital_status, address, profile_picture_url
+        `,
+        params,
+      );
+      return result.rows[0] ?? null;
+    });
+
+    return res.json({ profile: row });
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }

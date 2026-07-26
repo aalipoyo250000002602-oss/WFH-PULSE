@@ -31,7 +31,9 @@
     "db:migrate:dry": "node ./database/migrate.mjs status --dry-run",
     "api:dev": "node ./api/server.mjs",
     "api:check": "node ./api/server.mjs --check",
-    "api:smoke": "node ./api/smoke-test.mjs"
+    "api:smoke": "node ./api/smoke-test.mjs",
+    "api:newman": "newman run ./api/postman/WFH-PULSE-API.postman_collection.json -e ./api/postman/WFH-PULSE-Local.postman_environment.json",
+    "api:newman:ci": "newman run ./api/postman/WFH-PULSE-API.postman_collection.json -e ./api/postman/WFH-PULSE-Local.postman_environment.json --reporters cli,junit --reporter-junit-export ./api/postman/newman-report.xml"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
@@ -103,6 +105,7 @@
     "@capacitor/cli": "^8.4.2",
     "@tailwindcss/vite": "4.1.12",
     "@vitejs/plugin-react": "4.7.0",
+    "newman": "^6.2.1",
     "tailwindcss": "4.1.12",
     "vite": "6.3.5"
   },

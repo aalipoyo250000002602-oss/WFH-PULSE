@@ -34,6 +34,12 @@ corepack pnpm run db:migrate
 corepack pnpm run db:migrate:status
 ```
 
+Current migration set includes:
+
+- `0001_init` - base schema + RLS setup include
+- `0002_seed` - initial seed data
+- `0003_auth_refresh_and_self_update_guard` - refresh session function + protected self-update trigger
+
 Rollback latest migration:
 
 ```bash
