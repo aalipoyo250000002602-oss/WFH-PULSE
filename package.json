@@ -18,7 +18,13 @@
     "android:build:Pixel7": "corepack pnpm run android:run --target Pixel_7",
     "android:build:Pixel10Pro": "corepack pnpm run android:run --target Pixel_10_Pro",
     "android:full": "powershell -ExecutionPolicy Bypass -Command \"corepack pnpm run build; corepack pnpm run android:sync; corepack pnpm run android:run:auto\"",
-    "git:status:short": "git --no-pager status --short"
+    "git:status:short": "git --no-pager status --short",
+    "db:check-config": "node ./database/test-connection.mjs --check-config",
+    "db:test": "node ./database/test-connection.mjs",
+    "db:setup": "node ./database/apply-sql.mjs",
+    "db:setup:dry": "node ./database/apply-sql.mjs --dry-run",
+    "db:schema": "node ./database/apply-sql.mjs --schema-only",
+    "db:seed": "node ./database/apply-sql.mjs --seed-only"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
@@ -64,6 +70,7 @@
     "lucide-react": "0.487.0",
     "motion": "12.23.24",
     "next-themes": "0.4.6",
+    "pg": "^8.22.0",
     "react": "18.3.1",
     "react-day-picker": "8.10.1",
     "react-dnd": "16.0.1",
