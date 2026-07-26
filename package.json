@@ -24,7 +24,14 @@
     "db:setup": "node ./database/apply-sql.mjs",
     "db:setup:dry": "node ./database/apply-sql.mjs --dry-run",
     "db:schema": "node ./database/apply-sql.mjs --schema-only",
-    "db:seed": "node ./database/apply-sql.mjs --seed-only"
+    "db:seed": "node ./database/apply-sql.mjs --seed-only",
+    "db:migrate": "node ./database/migrate.mjs up",
+    "db:migrate:down": "node ./database/migrate.mjs down",
+    "db:migrate:status": "node ./database/migrate.mjs status",
+    "db:migrate:dry": "node ./database/migrate.mjs status --dry-run",
+    "api:dev": "node ./api/server.mjs",
+    "api:check": "node ./api/server.mjs --check",
+    "api:smoke": "node ./api/smoke-test.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
@@ -64,9 +71,12 @@
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "cmdk": "1.1.1",
+    "cors": "^2.8.6",
     "date-fns": "3.6.0",
     "embla-carousel-react": "8.6.0",
+    "express": "^4.22.2",
     "input-otp": "1.4.2",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "0.487.0",
     "motion": "12.23.24",
     "next-themes": "0.4.6",
@@ -86,7 +96,8 @@
     "sonner": "2.0.3",
     "tailwind-merge": "3.2.0",
     "tw-animate-css": "1.3.8",
-    "vaul": "1.1.2"
+    "vaul": "1.1.2",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.4.2",
