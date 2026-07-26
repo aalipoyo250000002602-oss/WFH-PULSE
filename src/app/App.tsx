@@ -284,11 +284,41 @@ export default function App() {
     }
   };
 
-  const handleLogin = (email: string, password: string) => {
-    setIsLoggedIn(true);
-    toast.success("Welcome back!", {
-      description: "Successfully signed in to your account",
-    });
+  const handleLogin = async (email: string, password: string) => {
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8787";
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      let payload: { error?: string } | null = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        toast.error("Sign in failed", {
+          description: payload?.error || "User does not exist or password is incorrect",
+        });
+        return;
+      }
+
+      setIsLoggedIn(true);
+      toast.success("Welcome back!", {
+        description: "Successfully signed in to your account",
+      });
+    } catch {
+      toast.error("Sign in failed", {
+        description: "Unable to reach auth server. Please check your API connection.",
+      });
+    }
   };
 
   const handleLogout = () => {

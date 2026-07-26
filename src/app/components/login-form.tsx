@@ -14,7 +14,7 @@ import { LogIn, Moon, Sun, ScanFace, Loader2 } from "lucide-react";
 import logoImage from "figma:asset/80b7a2d7f7164e79d1aa41e678d57bd410cbb0ae.png";
 
 interface LoginFormProps {
-  onLogin: (email: string, password: string) => void;
+  onLogin: (email: string, password: string) => Promise<void>;
   isDarkMode: boolean;
   onToggleTheme: () => void;
 }
@@ -30,14 +30,16 @@ export function LoginForm({
     useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (email && password) {
       setIsLoading(true);
       // Show loading screen for 1.5 seconds
-      setTimeout(() => {
-        onLogin(email, password);
-        setIsLoading(false);
+      setTimeout(async () => {
+        await onLogin(email, password)
+          .finally(() => {
+            setIsLoading(false);
+          });
       }, 1500);
     }
   };
@@ -48,8 +50,10 @@ export function LoginForm({
     // Simulate biometric authentication
     setTimeout(() => {
       setIsAuthenticating(false);
-      onLogin("biometric@user.com", "biometric");
-      setIsLoading(false);
+      onLogin("test@mit.co", "testpass")
+        .finally(() => {
+          setIsLoading(false);
+        });
     }, 1500);
   };
 
