@@ -12,6 +12,62 @@ import { LoginForm } from "./components/login-form";
 import { toast } from "sonner";
 import { Toaster } from "./components/ui/sonner";
 
+interface AuthSession {
+  accessToken: string;
+  refreshToken: string;
+  sessionId: string;
+}
+
+interface UserProfileState {
+  name: string;
+  email: string;
+  department: string;
+  departmentId: number | null;
+  phone: string;
+  birthday: string;
+  gender: string;
+  nationality: string;
+  maritalStatus: string;
+  address: string;
+  position: string;
+  positionId: number | null;
+  employmentType: string;
+  joinDate: string;
+  sssNumber: string;
+  tinNumber: string;
+  philhealthNumber: string;
+  pagibigNumber: string;
+  profilePicture: string | undefined;
+}
+
+interface EmploymentDepartmentOption {
+  departmentId: number;
+  name: string;
+}
+
+interface EmploymentPositionOption {
+  positionId: number;
+  departmentId: number;
+  name: string;
+}
+
+interface EmploymentOptionsState {
+  employmentTypes: string[];
+  departments: EmploymentDepartmentOption[];
+  positions: EmploymentPositionOption[];
+}
+
+interface LoginResponsePayload {
+  accessToken: string;
+  refreshToken: string;
+  sessionId: string;
+  user?: {
+    fullName?: string | null;
+    email?: string | null;
+    employeeId?: string | null;
+  };
+}
+
 function resolveApiBaseUrl() {
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
@@ -26,7 +82,9 @@ function resolveApiBaseUrl() {
 }
 
 export default function App() {
+  const apiBaseUrl = resolveApiBaseUrl();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   const [currentPage, setCurrentPage] = useState("home");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -49,7 +107,202 @@ export default function App() {
     name: "Alex Ali",
     email: "Alex.Ali@uic.co",
     department: "Engineering",
+    departmentId: null,
+    phone: "",
+    birthday: "",
+    gender: "",
+    nationality: "",
+    maritalStatus: "",
+    address: "",
+    position: "",
+    positionId: null,
+    employmentType: "full-time" as const,
+    joinDate: "",
+    sssNumber: "",
+    tinNumber: "",
+    philhealthNumber: "",
+    pagibigNumber: "",
+    profilePicture: undefined,
   });
+  const [employmentOptions, setEmploymentOptions] = useState<EmploymentOptionsState>({
+    employmentTypes: [
+      "full-time",
+      "independent contractor",
+      "part-time",
+      "intern",
+      "contract-to-hire",
+      "project-based",
+      "temporary",
+      "consultant",
+      "freelance",
+      "apprentice",
+    ],
+    departments: [],
+    positions: [],
+  });
+
+  const mapApiProfileToState = (
+    profile: Record<string, any> | null,
+    fallback?: { fullName?: string | null; email?: string | null },
+  ): UserProfileState => {
+    if (!profile) {
+      return {
+        name: fallback?.fullName ?? "",
+        email: fallback?.email ?? "",
+        department: "",
+        departmentId: null,
+        phone: "",
+        birthday: "",
+        gender: "",
+        nationality: "",
+        maritalStatus: "",
+        address: "",
+        position: "",
+        positionId: null,
+        employmentType: "full-time",
+        joinDate: "",
+        sssNumber: "",
+        tinNumber: "",
+        philhealthNumber: "",
+        pagibigNumber: "",
+        profilePicture: undefined,
+      };
+    }
+
+    const firstName = profile.first_name ?? "";
+    const lastName = profile.last_name ?? "";
+    const fullName = `${firstName} ${lastName}`.trim();
+    const parsedDepartmentId =
+      profile.department_id == null ? null : Number(profile.department_id);
+    const parsedPositionId =
+      profile.position_id == null ? null : Number(profile.position_id);
+
+    return {
+      name: fullName || "N/A",
+      email: profile.email ?? "",
+      department: profile.department ?? "",
+      departmentId:
+        parsedDepartmentId != null && Number.isFinite(parsedDepartmentId)
+          ? parsedDepartmentId
+          : null,
+      phone: profile.phone ?? "",
+      birthday: profile.birthday ? String(profile.birthday).slice(0, 10) : "",
+      gender: profile.gender ?? "",
+      nationality: profile.nationality ?? "",
+      maritalStatus: profile.marital_status ?? "",
+      address: profile.address ?? "",
+      position: profile.position ?? "",
+      positionId:
+        parsedPositionId != null && Number.isFinite(parsedPositionId)
+          ? parsedPositionId
+          : null,
+      employmentType: profile.employment_type || "full-time",
+      joinDate: profile.join_date ? String(profile.join_date).slice(0, 10) : "",
+      sssNumber: profile.sss ?? "",
+      tinNumber: profile.tin ?? "",
+      philhealthNumber: profile.phil_health ?? "",
+      pagibigNumber: profile.pag_ibig ?? "",
+      profilePicture: profile.profile_picture_url ?? undefined,
+    };
+  };
+
+  const loadEmploymentOptions = async (accessToken: string) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/meta/employment-options`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = await response.json();
+      setEmploymentOptions({
+        employmentTypes: Array.isArray(payload?.employmentTypes)
+          ? payload.employmentTypes
+          : [],
+        departments: Array.isArray(payload?.departments)
+          ? payload.departments.map((department: any) => ({
+              departmentId: Number(department.department_id),
+              name: String(department.name),
+            }))
+          : [],
+        positions: Array.isArray(payload?.positions)
+          ? payload.positions.map((position: any) => ({
+              positionId: Number(position.position_id),
+              departmentId: Number(position.department_id),
+              name: String(position.name),
+            }))
+          : [],
+      });
+    } catch {
+      // Keep fallback options if endpoint is unavailable.
+    }
+  };
+
+  const loadSelfProfile = async (
+    accessToken: string,
+    fallback?: { fullName?: string | null; email?: string | null },
+  ) => {
+    const response = await fetch(`${apiBaseUrl}/me/profile`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 404 && fallback) {
+        setUserProfile(mapApiProfileToState(null, fallback));
+        return;
+      }
+
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error || "Failed to load profile");
+    }
+
+    const payload = await response.json();
+    setUserProfile(mapApiProfileToState(payload?.profile ?? null, fallback));
+  };
+
+  const updateSelfProfile = async (updates: Record<string, unknown>) => {
+    if (!authSession?.accessToken) {
+      toast.error("Unable to update profile", {
+        description: "Your session is missing. Please sign in again.",
+      });
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/me/profile`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authSession.accessToken}`,
+        },
+        body: JSON.stringify(updates),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error("Profile update failed", {
+          description: payload?.error?.formErrors?.[0] || payload?.error || "Please review your input.",
+        });
+        return false;
+      }
+
+      setUserProfile(mapApiProfileToState(payload?.profile ?? null));
+      return true;
+    } catch {
+      toast.error("Profile update failed", {
+        description: "Unable to reach the API server.",
+      });
+      return false;
+    }
+  };
 
   // Mock attendance data for the calendar - October 2025 (Weekdays only, no Saturdays/Sundays)
   const [attendanceData] = useState<
@@ -299,8 +552,6 @@ export default function App() {
   };
 
   const handleLogin = async (email: string, password: string) => {
-    const apiBaseUrl = resolveApiBaseUrl();
-
     try {
       const response = await fetch(`${apiBaseUrl}/auth/login`, {
         method: "POST",
@@ -310,7 +561,7 @@ export default function App() {
         body: JSON.stringify({ email, password }),
       });
 
-      let payload: { error?: string } | null = null;
+      let payload: ({ error?: string } & Partial<LoginResponsePayload>) | null = null;
       try {
         payload = await response.json();
       } catch {
@@ -324,6 +575,31 @@ export default function App() {
         return;
       }
 
+      if (!payload?.accessToken || !payload?.refreshToken || !payload?.sessionId) {
+        toast.error("Sign in failed", {
+          description: "API login response is missing session information.",
+        });
+        return;
+      }
+
+      setAuthSession({
+        accessToken: payload.accessToken,
+        refreshToken: payload.refreshToken,
+        sessionId: payload.sessionId,
+      });
+
+      setUserProfile((prev) => ({
+        ...prev,
+        name: payload.user?.fullName || prev.name,
+        email: payload.user?.email || prev.email,
+      }));
+
+      await loadSelfProfile(payload.accessToken, {
+        fullName: payload.user?.fullName,
+        email: payload.user?.email,
+      });
+      await loadEmploymentOptions(payload.accessToken);
+
       setIsLoggedIn(true);
       toast.success("Welcome back!", {
         description: "Successfully signed in to your account",
@@ -336,6 +612,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    setAuthSession(null);
     setIsLoggedIn(false);
     setIsClockedIn(false);
     setIsOnBreak(false);
@@ -507,7 +784,8 @@ export default function App() {
             notifications={notifications}
             onUpdateNotifications={setNotifications}
             userProfile={userProfile}
-            onUpdateProfile={setUserProfile}
+            employmentOptions={employmentOptions}
+            onUpdateProfile={updateSelfProfile}
           />
         );
       case "employee-details":

@@ -11,8 +11,12 @@ export async function withRlsContext(context, handler) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("SET LOCAL app.user_id = $1", [context.userId]);
-    await client.query("SET LOCAL app.user_role = $1", [context.role]);
+    await client.query("SELECT set_config('app.user_id', $1, true)", [
+      String(context.userId),
+    ]);
+    await client.query("SELECT set_config('app.user_role', $1, true)", [
+      String(context.role),
+    ]);
 
     const result = await handler(client);
     await client.query("COMMIT");

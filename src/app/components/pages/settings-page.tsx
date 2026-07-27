@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+﻿import { useEffect, useState } from "react";
 import {
   Card,
   CardContent,
@@ -80,8 +80,29 @@ interface SettingsPageProps {
     name: string;
     email: string;
     department: string;
+    departmentId?: number | null;
+    phone?: string;
+    birthday?: string;
+    gender?: string;
+    nationality?: string;
+    maritalStatus?: string;
+    address?: string;
+    position?: string;
+    positionId?: number | null;
+    employmentType?: string;
+    joinDate?: string;
+    sssNumber?: string;
+    tinNumber?: string;
+    philhealthNumber?: string;
+    pagibigNumber?: string;
+    profilePicture?: string;
   };
-  onUpdateProfile: (profile: any) => void;
+  employmentOptions: {
+    employmentTypes: string[];
+    departments: Array<{ departmentId: number; name: string }>;
+    positions: Array<{ positionId: number; departmentId: number; name: string }>;
+  };
+  onUpdateProfile: (profile: Record<string, unknown>) => Promise<boolean>;
 }
 
 export function SettingsPage({
@@ -90,27 +111,53 @@ export function SettingsPage({
   notifications,
   onUpdateNotifications,
   userProfile,
+  employmentOptions,
   onUpdateProfile,
 }: SettingsPageProps) {
   const [localWorkingHours, setLocalWorkingHours] =
     useState(workingHours);
   const [localProfile, setLocalProfile] = useState({
     ...userProfile,
-    phone: "+1 (555) 144-3967",
-    birthday: "1984-12-13",
-    gender: "Male",
-    nationality: "German",
-    maritalStatus: "Divorced",
-    address: "123 Uso St., Toril, Davao City, 8000, Philippines",
-    position: "Human Resource Admin",
-    employmentType: "full-time",
-    joinDate: "2021-09-10",
-    sssNumber: "34-1234567-8",
-    tinNumber: "123-456-789-000",
-    philhealthNumber: "12-345678901-2",
-    pagibigNumber: "1234-5678-9012",
-    profilePicture: undefined as string | undefined,
+    phone: userProfile.phone || "",
+    birthday: userProfile.birthday || "",
+    gender: userProfile.gender || "Male",
+    nationality: userProfile.nationality || "",
+    maritalStatus: userProfile.maritalStatus || "Single",
+    address: userProfile.address || "",
+    departmentId: userProfile.departmentId ?? null,
+    position: userProfile.position || "",
+    positionId: userProfile.positionId ?? null,
+    employmentType: userProfile.employmentType || "full-time",
+    joinDate: userProfile.joinDate || "",
+    sssNumber: userProfile.sssNumber || "",
+    tinNumber: userProfile.tinNumber || "",
+    philhealthNumber: userProfile.philhealthNumber || "",
+    pagibigNumber: userProfile.pagibigNumber || "",
+    profilePicture: userProfile.profilePicture,
   });
+
+  useEffect(() => {
+    setLocalProfile((prev) => ({
+      ...prev,
+      ...userProfile,
+      phone: userProfile.phone || "",
+      birthday: userProfile.birthday || "",
+      gender: userProfile.gender || "Male",
+      nationality: userProfile.nationality || "",
+      maritalStatus: userProfile.maritalStatus || "Single",
+      address: userProfile.address || "",
+      departmentId: userProfile.departmentId ?? null,
+      position: userProfile.position || "",
+      positionId: userProfile.positionId ?? null,
+      employmentType: userProfile.employmentType || "full-time",
+      joinDate: userProfile.joinDate || "",
+      sssNumber: userProfile.sssNumber || "",
+      tinNumber: userProfile.tinNumber || "",
+      philhealthNumber: userProfile.philhealthNumber || "",
+      pagibigNumber: userProfile.pagibigNumber || "",
+      profilePicture: userProfile.profilePicture,
+    }));
+  }, [userProfile]);
 
   // Working days state
   const [workingDays, setWorkingDays] = useState<Record<string, boolean>>({
@@ -147,31 +194,60 @@ export function SettingsPage({
   const [showEditGovernmentIdDialog, setShowEditGovernmentIdDialog] = useState(false);
   const [showProfilePictureDialog, setShowProfilePictureDialog] = useState(false);
   const [profilePicturePreview, setProfilePicturePreview] = useState<string | null>(null);
+  const [isProfileSaving, setIsProfileSaving] = useState(false);
+
+  const buildContactFormData = (profile: typeof localProfile) => ({
+    email: profile.email || "",
+    phone: profile.phone || "",
+    birthday: profile.birthday || "",
+    gender: profile.gender || "Male",
+    nationality: profile.nationality || "",
+    maritalStatus: profile.maritalStatus || "Single",
+    address: profile.address || "",
+  });
+
+  const buildEmploymentFormData = (profile: typeof localProfile) => ({
+    employmentType: profile.employmentType || "full-time",
+    departmentId:
+      profile.departmentId != null
+        ? String(profile.departmentId)
+        : profile.department
+          ? String(
+              employmentOptions.departments.find(
+                (department) => department.name === profile.department,
+              )?.departmentId ?? "",
+            )
+          : "",
+    positionId:
+      profile.positionId != null
+        ? String(profile.positionId)
+        : profile.position
+          ? String(
+              employmentOptions.positions.find(
+                (position) => position.name === profile.position,
+              )?.positionId ?? "",
+            )
+          : "",
+    joinDate: profile.joinDate || "",
+  });
+
+  const buildGovernmentIdFormData = (profile: typeof localProfile) => ({
+    sssNumber: profile.sssNumber || "",
+    tinNumber: profile.tinNumber || "",
+    philhealthNumber: profile.philhealthNumber || "",
+    pagibigNumber: profile.pagibigNumber || "",
+  });
 
   // Form data states
-  const [contactFormData, setContactFormData] = useState({
-    email: localProfile.email || "",
-    phone: localProfile.phone || "",
-    birthday: localProfile.birthday || "",
-    gender: localProfile.gender || "Male",
-    nationality: localProfile.nationality || "",
-    maritalStatus: localProfile.maritalStatus || "Single",
-    address: localProfile.address || "",
-  });
+  const [contactFormData, setContactFormData] = useState(buildContactFormData(localProfile));
 
-  const [employmentFormData, setEmploymentFormData] = useState({
-    employmentType: localProfile.employmentType || "full-time",
-    department: localProfile.department || "",
-    position: localProfile.position || "",
-    joinDate: localProfile.joinDate || "",
-  });
+  const [employmentFormData, setEmploymentFormData] = useState(buildEmploymentFormData(localProfile));
 
-  const [governmentIdFormData, setGovernmentIdFormData] = useState({
-    sssNumber: localProfile.sssNumber || "",
-    tinNumber: localProfile.tinNumber || "",
-    philhealthNumber: localProfile.philhealthNumber || "",
-    pagibigNumber: localProfile.pagibigNumber || "",
-  });
+  useEffect(() => {
+    setEmploymentFormData(buildEmploymentFormData(localProfile));
+  }, [employmentOptions]);
+
+  const [governmentIdFormData, setGovernmentIdFormData] = useState(buildGovernmentIdFormData(localProfile));
 
   // Password activities (mock data)
   const [passwordActivities] = useState([
@@ -203,32 +279,229 @@ export function SettingsPage({
     toast.success("Work schedule updated successfully");
   };
 
-  const handleUpdateContact = () => {
+  const withProfileSaving = async (action: () => Promise<void>) => {
+    if (isProfileSaving) {
+      return;
+    }
+
+    setIsProfileSaving(true);
+    try {
+      await action();
+    } finally {
+      setIsProfileSaving(false);
+    }
+  };
+
+  const handleUpdateContact = async () => {
     if (!contactFormData.email || !contactFormData.phone || !contactFormData.birthday || !contactFormData.nationality || !contactFormData.address) {
       toast.error("Please fill in all required fields");
       return;
     }
 
-    setLocalProfile({ ...localProfile, ...contactFormData });
-    toast.success("Contact information updated successfully");
-    setShowEditContactDialog(false);
+    await withProfileSaving(async () => {
+      const didUpdate = await onUpdateProfile({
+        email: contactFormData.email,
+        phone: contactFormData.phone,
+        birthday: contactFormData.birthday,
+        gender: contactFormData.gender,
+        nationality: contactFormData.nationality,
+        maritalStatus: contactFormData.maritalStatus,
+        address: contactFormData.address,
+      });
+
+      if (didUpdate) {
+        toast.success("Contact information updated successfully");
+        setShowEditContactDialog(false);
+      }
+    });
   };
 
-  const handleUpdateEmployment = () => {
-    if (!employmentFormData.employmentType || !employmentFormData.department || !employmentFormData.position || !employmentFormData.joinDate) {
+  const handleUpdateEmployment = async () => {
+    if (
+      !employmentFormData.employmentType ||
+      !employmentFormData.departmentId ||
+      !employmentFormData.positionId ||
+      !employmentFormData.joinDate
+    ) {
       toast.error("Please fill in all required fields");
       return;
     }
 
-    setLocalProfile({ ...localProfile, ...employmentFormData });
-    toast.success("Employment details updated successfully");
-    setShowEditEmploymentDialog(false);
+    const selectedDepartment = employmentOptions.departments.find(
+      (department) => String(department.departmentId) === employmentFormData.departmentId,
+    );
+    const selectedPosition = employmentOptions.positions.find(
+      (position) => String(position.positionId) === employmentFormData.positionId,
+    );
+
+    if (!selectedDepartment || !selectedPosition) {
+      toast.error("Please select valid department and position options");
+      return;
+    }
+
+    await withProfileSaving(async () => {
+      const didUpdate = await onUpdateProfile({
+        employmentType: employmentFormData.employmentType,
+        departmentId: Number(employmentFormData.departmentId),
+        positionId: Number(employmentFormData.positionId),
+        joinDate: employmentFormData.joinDate,
+      });
+
+      if (didUpdate) {
+        toast.success("Employment details updated successfully");
+        setShowEditEmploymentDialog(false);
+      }
+    });
   };
 
-  const handleUpdateGovernmentId = () => {
-    setLocalProfile({ ...localProfile, ...governmentIdFormData });
-    toast.success("Government ID information updated successfully");
-    setShowEditGovernmentIdDialog(false);
+  const handleUpdateGovernmentId = async () => {
+    const isSssValid =
+      !governmentIdFormData.sssNumber ||
+      /^\d{2}-\d{7}-\d$/.test(governmentIdFormData.sssNumber);
+    const isTinValid =
+      !governmentIdFormData.tinNumber ||
+      /^\d{3}-\d{3}-\d{3}-\d{3}$/.test(governmentIdFormData.tinNumber);
+    const isPhilHealthValid =
+      !governmentIdFormData.philhealthNumber ||
+      /^\d{2}-\d{9}-\d$/.test(governmentIdFormData.philhealthNumber);
+    const isPagIbigValid =
+      !governmentIdFormData.pagibigNumber ||
+      /^\d{4}-\d{4}-\d{4}$/.test(governmentIdFormData.pagibigNumber);
+
+    if (!isSssValid || !isTinValid || !isPhilHealthValid || !isPagIbigValid) {
+      toast.error("Please follow the required Government ID formats");
+      return;
+    }
+
+    await withProfileSaving(async () => {
+      const didUpdate = await onUpdateProfile({
+        sssNumber: governmentIdFormData.sssNumber || null,
+        tinNumber: governmentIdFormData.tinNumber || null,
+        philhealthNumber: governmentIdFormData.philhealthNumber || null,
+        pagibigNumber: governmentIdFormData.pagibigNumber || null,
+      });
+
+      if (didUpdate) {
+        toast.success("Government ID information updated successfully");
+        setShowEditGovernmentIdDialog(false);
+      }
+    });
+  };
+
+  const handleClearContactDetails = async () => {
+    await withProfileSaving(async () => {
+      const didUpdate = await onUpdateProfile({
+        phone: null,
+        birthday: null,
+        gender: null,
+        nationality: null,
+        maritalStatus: null,
+        address: null,
+      });
+
+      if (didUpdate) {
+        toast.success("Contact details cleared successfully");
+        setShowEditContactDialog(false);
+      }
+    });
+  };
+
+  const handleClearEmploymentDetails = async () => {
+    await withProfileSaving(async () => {
+      const didUpdate = await onUpdateProfile({
+        departmentId: null,
+        position: null,
+        positionId: null,
+        joinDate: null,
+      });
+
+      if (didUpdate) {
+        toast.success("Employment details cleared successfully");
+        setShowEditEmploymentDialog(false);
+      }
+    });
+  };
+
+  const handleClearGovernmentIds = async () => {
+    await withProfileSaving(async () => {
+      const didUpdate = await onUpdateProfile({
+        sssNumber: null,
+        tinNumber: null,
+        philhealthNumber: null,
+        pagibigNumber: null,
+      });
+
+      if (didUpdate) {
+        toast.success("Government IDs cleared successfully");
+        setShowEditGovernmentIdDialog(false);
+      }
+    });
+  };
+
+  const handleResetContactDetails = () => {
+    setContactFormData(buildContactFormData(localProfile));
+    toast.success("Contact form reset to saved values");
+  };
+
+  const handleResetEmploymentDetails = () => {
+    setEmploymentFormData(buildEmploymentFormData(localProfile));
+    toast.success("Employment form reset to saved values");
+  };
+
+  const filteredPositionOptions = employmentFormData.departmentId
+    ? employmentOptions.positions.filter(
+        (position) =>
+          String(position.departmentId) === employmentFormData.departmentId,
+      )
+    : employmentOptions.positions;
+
+  const selectedDepartmentName = employmentFormData.departmentId
+    ? employmentOptions.departments.find(
+        (department) =>
+          String(department.departmentId) === employmentFormData.departmentId,
+      )?.name
+    : "";
+
+  const formatEmploymentTypeLabel = (value: string) =>
+    value
+      .split("-")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+
+  const handleResetGovernmentIds = () => {
+    setGovernmentIdFormData(buildGovernmentIdFormData(localProfile));
+    toast.success("Government ID form reset to saved values");
+  };
+
+  const formatSssNumber = (value: string) => {
+    const digits = value.replace(/\D/g, "").slice(0, 10);
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 9) return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+    return `${digits.slice(0, 2)}-${digits.slice(2, 9)}-${digits.slice(9)}`;
+  };
+
+  const formatTinNumber = (value: string) => {
+    const digits = value.replace(/\D/g, "").slice(0, 12);
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+    if (digits.length <= 9) {
+      return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+    }
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 9)}-${digits.slice(9)}`;
+  };
+
+  const formatPhilHealthNumber = (value: string) => {
+    const digits = value.replace(/\D/g, "").slice(0, 12);
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 11) return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+    return `${digits.slice(0, 2)}-${digits.slice(2, 11)}-${digits.slice(11)}`;
+  };
+
+  const formatPagIbigNumber = (value: string) => {
+    const digits = value.replace(/\D/g, "").slice(0, 12);
+    if (digits.length <= 4) return digits;
+    if (digits.length <= 8) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+    return `${digits.slice(0, 4)}-${digits.slice(4, 8)}-${digits.slice(8)}`;
   };
 
   const handleNotificationChange = (
@@ -310,29 +583,37 @@ export function SettingsPage({
     reader.readAsDataURL(file);
   };
 
-  const handleSaveProfilePicture = () => {
+  const handleSaveProfilePicture = async () => {
     if (!profilePicturePreview) {
       toast.error("Please select an image");
       return;
     }
 
-    setLocalProfile({
-      ...localProfile,
-      profilePicture: profilePicturePreview,
+    await withProfileSaving(async () => {
+      const didUpdate = await onUpdateProfile({
+        profilePictureUrl: profilePicturePreview,
+      });
+
+      if (didUpdate) {
+        toast.success("Profile picture updated successfully");
+        setShowProfilePictureDialog(false);
+        setProfilePicturePreview(null);
+      }
     });
-    toast.success("Profile picture updated successfully");
-    setShowProfilePictureDialog(false);
-    setProfilePicturePreview(null);
   };
 
-  const handleRemoveProfilePicture = () => {
-    setLocalProfile({
-      ...localProfile,
-      profilePicture: undefined,
+  const handleRemoveProfilePicture = async () => {
+    await withProfileSaving(async () => {
+      const didUpdate = await onUpdateProfile({
+        profilePictureUrl: null,
+      });
+
+      if (didUpdate) {
+        toast.success("Profile picture removed");
+        setShowProfilePictureDialog(false);
+        setProfilePicturePreview(null);
+      }
     });
-    toast.success("Profile picture removed");
-    setShowProfilePictureDialog(false);
-    setProfilePicturePreview(null);
   };
 
   const days = [
@@ -436,13 +717,7 @@ export function SettingsPage({
                       size="sm"
                       onClick={() => {
                         setContactFormData({
-                          email: localProfile.email || "",
-                          phone: localProfile.phone || "",
-                          birthday: localProfile.birthday || "",
-                          gender: localProfile.gender || "Male",
-                          nationality: localProfile.nationality || "",
-                          maritalStatus: localProfile.maritalStatus || "Single",
-                          address: localProfile.address || "",
+                          ...buildContactFormData(localProfile),
                         });
                         setShowEditContactDialog(true);
                       }}
@@ -521,10 +796,7 @@ export function SettingsPage({
                       size="sm"
                       onClick={() => {
                         setEmploymentFormData({
-                          employmentType: localProfile.employmentType || "full-time",
-                          department: localProfile.department || "",
-                          position: localProfile.position || "",
-                          joinDate: localProfile.joinDate || "",
+                          ...buildEmploymentFormData(localProfile),
                         });
                         setShowEditEmploymentDialog(true);
                       }}
@@ -537,7 +809,7 @@ export function SettingsPage({
                       <Briefcase className="h-4 w-4 text-vibrant-purple mt-0.5" />
                       <div>
                         <p className="text-sm text-muted-foreground">Employment Type</p>
-                        <p className="capitalize">{localProfile.employmentType.replace("-", " ")}</p>
+                        <p>{formatEmploymentTypeLabel(localProfile.employmentType)}</p>
                       </div>
                     </div>
                     <div className="flex items-start gap-3">
@@ -589,10 +861,7 @@ export function SettingsPage({
                       size="sm"
                       onClick={() => {
                         setGovernmentIdFormData({
-                          sssNumber: localProfile.sssNumber || "",
-                          tinNumber: localProfile.tinNumber || "",
-                          philhealthNumber: localProfile.philhealthNumber || "",
-                          pagibigNumber: localProfile.pagibigNumber || "",
+                          ...buildGovernmentIdFormData(localProfile),
                         });
                         setShowEditGovernmentIdDialog(true);
                       }}
@@ -972,11 +1241,26 @@ export function SettingsPage({
           </div>
 
           <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleClearContactDetails}
+              className="text-red-600 hover:text-red-700"
+              disabled={isProfileSaving}
+            >
+              Clear
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleResetContactDetails}
+              disabled={isProfileSaving}
+            >
+              Reset
+            </Button>
             <Button variant="outline" onClick={() => setShowEditContactDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleUpdateContact} className="bg-vibrant-blue hover:bg-vibrant-blue/90">
-              Save Changes
+            <Button onClick={handleUpdateContact} className="bg-vibrant-blue hover:bg-vibrant-blue/90" disabled={isProfileSaving}>
+              {isProfileSaving ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -997,32 +1281,81 @@ export function SettingsPage({
               <Label htmlFor="edit-employmentType">Employment Type *</Label>
               <Select
                 value={employmentFormData.employmentType}
-                onValueChange={(value: any) => setEmploymentFormData({ ...employmentFormData, employmentType: value })}
+                onValueChange={(value: any) =>
+                  setEmploymentFormData({
+                    ...employmentFormData,
+                    employmentType: value,
+                  })
+                }
               >
                 <SelectTrigger id="edit-employmentType">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="full-time">Full-Time</SelectItem>
-                  <SelectItem value="independent contractor">Independent Contractor</SelectItem>
+                  {employmentOptions.employmentTypes.map((employmentType) => (
+                    <SelectItem key={employmentType} value={employmentType}>
+                      {formatEmploymentTypeLabel(employmentType)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
               <Label htmlFor="edit-department">Department *</Label>
-              <Input
-                id="edit-department"
-                value={employmentFormData.department}
-                onChange={(e) => setEmploymentFormData({ ...employmentFormData, department: e.target.value })}
-              />
+              <Select
+                value={employmentFormData.departmentId}
+                onValueChange={(value) =>
+                  setEmploymentFormData({
+                    ...employmentFormData,
+                    departmentId: value,
+                    positionId: "",
+                  })
+                }
+              >
+                <SelectTrigger id="edit-department">
+                  <SelectValue placeholder="Select department" />
+                </SelectTrigger>
+                <SelectContent>
+                  {employmentOptions.departments.map((department) => (
+                    <SelectItem
+                      key={department.departmentId}
+                      value={String(department.departmentId)}
+                    >
+                      {department.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
-              <Label htmlFor="edit-position">Position *</Label>
-              <Input
-                id="edit-position"
-                value={employmentFormData.position}
-                onChange={(e) => setEmploymentFormData({ ...employmentFormData, position: e.target.value })}
-              />
+              <div className="mb-2 flex items-center justify-between">
+                <Label htmlFor="edit-position">Position *</Label>
+                {selectedDepartmentName ? (
+                  <Badge className="bg-vibrant-blue/15 text-vibrant-blue hover:bg-vibrant-blue/20">
+                    {selectedDepartmentName}
+                  </Badge>
+                ) : null}
+              </div>
+              <Select
+                value={employmentFormData.positionId}
+                onValueChange={(value) =>
+                  setEmploymentFormData({
+                    ...employmentFormData,
+                    positionId: value,
+                  })
+                }
+              >
+                <SelectTrigger id="edit-position">
+                  <SelectValue placeholder="Select position" />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredPositionOptions.map((position) => (
+                    <SelectItem key={position.positionId} value={String(position.positionId)}>
+                      {position.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="edit-joinDate">Join Date *</Label>
@@ -1036,11 +1369,26 @@ export function SettingsPage({
           </div>
 
           <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleClearEmploymentDetails}
+              className="text-red-600 hover:text-red-700"
+              disabled={isProfileSaving}
+            >
+              Clear
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleResetEmploymentDetails}
+              disabled={isProfileSaving}
+            >
+              Reset
+            </Button>
             <Button variant="outline" onClick={() => setShowEditEmploymentDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleUpdateEmployment} className="bg-vibrant-purple hover:bg-vibrant-purple/90">
-              Save Changes
+            <Button onClick={handleUpdateEmployment} className="bg-vibrant-purple hover:bg-vibrant-purple/90" disabled={isProfileSaving}>
+              {isProfileSaving ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1062,7 +1410,12 @@ export function SettingsPage({
               <Input
                 id="edit-sssNumber"
                 value={governmentIdFormData.sssNumber}
-                onChange={(e) => setGovernmentIdFormData({ ...governmentIdFormData, sssNumber: e.target.value })}
+                onChange={(e) =>
+                  setGovernmentIdFormData({
+                    ...governmentIdFormData,
+                    sssNumber: formatSssNumber(e.target.value),
+                  })
+                }
                 placeholder="XX-XXXXXXX-X"
               />
             </div>
@@ -1071,7 +1424,12 @@ export function SettingsPage({
               <Input
                 id="edit-tinNumber"
                 value={governmentIdFormData.tinNumber}
-                onChange={(e) => setGovernmentIdFormData({ ...governmentIdFormData, tinNumber: e.target.value })}
+                onChange={(e) =>
+                  setGovernmentIdFormData({
+                    ...governmentIdFormData,
+                    tinNumber: formatTinNumber(e.target.value),
+                  })
+                }
                 placeholder="XXX-XXX-XXX-XXX"
               />
             </div>
@@ -1080,7 +1438,12 @@ export function SettingsPage({
               <Input
                 id="edit-philhealthNumber"
                 value={governmentIdFormData.philhealthNumber}
-                onChange={(e) => setGovernmentIdFormData({ ...governmentIdFormData, philhealthNumber: e.target.value })}
+                onChange={(e) =>
+                  setGovernmentIdFormData({
+                    ...governmentIdFormData,
+                    philhealthNumber: formatPhilHealthNumber(e.target.value),
+                  })
+                }
                 placeholder="XX-XXXXXXXXX-X"
               />
             </div>
@@ -1089,18 +1452,38 @@ export function SettingsPage({
               <Input
                 id="edit-pagibigNumber"
                 value={governmentIdFormData.pagibigNumber}
-                onChange={(e) => setGovernmentIdFormData({ ...governmentIdFormData, pagibigNumber: e.target.value })}
+                onChange={(e) =>
+                  setGovernmentIdFormData({
+                    ...governmentIdFormData,
+                    pagibigNumber: formatPagIbigNumber(e.target.value),
+                  })
+                }
                 placeholder="XXXX-XXXX-XXXX"
               />
             </div>
           </div>
 
           <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleClearGovernmentIds}
+              className="text-red-600 hover:text-red-700"
+              disabled={isProfileSaving}
+            >
+              Clear
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleResetGovernmentIds}
+              disabled={isProfileSaving}
+            >
+              Reset
+            </Button>
             <Button variant="outline" onClick={() => setShowEditGovernmentIdDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleUpdateGovernmentId} className="bg-vibrant-orange hover:bg-vibrant-orange/90">
-              Save Changes
+            <Button onClick={handleUpdateGovernmentId} className="bg-vibrant-orange hover:bg-vibrant-orange/90" disabled={isProfileSaving}>
+              {isProfileSaving ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1438,6 +1821,7 @@ export function SettingsPage({
                     accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
                     onChange={handleProfilePictureChange}
                     className="hidden"
+                    disabled={isProfileSaving}
                   />
                 </Label>
                 
@@ -1446,6 +1830,7 @@ export function SettingsPage({
                     variant="outline"
                     onClick={handleRemoveProfilePicture}
                     className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
+                    disabled={isProfileSaving}
                   >
                     Remove Picture
                   </Button>
@@ -1461,15 +1846,16 @@ export function SettingsPage({
                 setShowProfilePictureDialog(false);
                 setProfilePicturePreview(null);
               }}
+              disabled={isProfileSaving}
             >
               Cancel
             </Button>
             <Button
               onClick={handleSaveProfilePicture}
-              disabled={!profilePicturePreview}
+              disabled={!profilePicturePreview || isProfileSaving}
               className="bg-vibrant-blue hover:bg-vibrant-blue/90"
             >
-              Save
+              {isProfileSaving ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
