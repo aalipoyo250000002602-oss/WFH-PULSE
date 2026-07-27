@@ -1318,7 +1318,7 @@ export default function App() {
           onLogout={handleLogout}
         />
 
-        <div className="pt-6">{renderCurrentPage()}</div>
+        <div className="px-0 pt-24 pb-20">{renderCurrentPage()}</div>
 
         <BottomNavigation
           currentPage={currentPage}

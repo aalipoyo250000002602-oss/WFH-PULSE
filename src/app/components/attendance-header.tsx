@@ -44,7 +44,7 @@ export function AttendanceHeader({ isDarkMode, onToggleTheme, onLogout }: Attend
 
   return (
     <>
-      <header className="flex items-center justify-between p-4 bg-card border-b border-border">
+      <header className="fixed top-0 left-1/2 z-40 flex w-full max-w-md -translate-x-1/2 items-center justify-between border-b border-border bg-card p-4">
         <div className="flex items-center gap-3">
           <Avatar className="h-10 w-10">
             <AvatarFallback className="bg-vibrant-blue text-vibrant-blue-foreground">
