@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION auth.refresh_session(
+CREATE OR REPLACE FUNCTION app_auth.refresh_session(
   p_session_id UUID,
   p_refresh_token TEXT,
   p_ip INET,
@@ -13,14 +13,14 @@ CREATE OR REPLACE FUNCTION auth.refresh_session(
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_session auth.sessions%ROWTYPE;
+  v_session app_auth.sessions%ROWTYPE;
   v_role TEXT;
   v_refresh_token TEXT;
   v_employee_id TEXT;
 BEGIN
   SELECT * INTO v_session
-  FROM auth.sessions
-  WHERE auth.sessions.session_id = p_session_id;
+  FROM app_auth.sessions
+  WHERE app_auth.sessions.session_id = p_session_id;
 
   IF v_session.session_id IS NULL OR v_session.revoked_at IS NOT NULL OR v_session.expires_at <= NOW() THEN
     RAISE EXCEPTION 'Session expired or invalid';
@@ -32,25 +32,25 @@ BEGIN
 
   SELECT r.role_name
     INTO v_role
-  FROM auth.user_roles ur
-  JOIN auth.roles r ON r.role_id = ur.role_id
+  FROM app_auth.user_roles ur
+  JOIN app_auth.roles r ON r.role_id = ur.role_id
   WHERE ur.user_id = v_session.user_id
   ORDER BY r.role_name
   LIMIT 1;
 
   SELECT u.employee_id INTO v_employee_id
-  FROM auth.users u
+  FROM app_auth.users u
   WHERE u.user_id = v_session.user_id;
 
   v_refresh_token := encode(gen_random_bytes(48), 'hex');
 
-  UPDATE auth.sessions
+  UPDATE app_auth.sessions
   SET
     refresh_token_hash = crypt(v_refresh_token, gen_salt('bf', 8)),
     ip_address = COALESCE(p_ip, ip_address),
     user_agent = COALESCE(p_user_agent, user_agent),
     expires_at = NOW() + INTERVAL '30 days'
-  WHERE auth.sessions.session_id = p_session_id;
+  WHERE app_auth.sessions.session_id = p_session_id;
 
   RETURN QUERY
   SELECT v_session.user_id, COALESCE(v_role, 'employee'), v_session.session_id, v_refresh_token, v_employee_id;

@@ -571,37 +571,94 @@ FROM (VALUES
 ) l(request_id, status, logged_at, approved_by, reason)
 WHERE EXISTS (SELECT 1 FROM app.leave_requests lr WHERE lr.request_id = l.request_id);
 
-INSERT INTO auth.roles (role_name)
+INSERT INTO app_auth.roles (role_name)
 VALUES ('admin'), ('hr_manager'), ('employee')
 ON CONFLICT (role_name) DO NOTHING;
 
-INSERT INTO auth.users (employee_id, email, password_hash, is_active, biometric_enabled, dark_mode_enabled, location)
+INSERT INTO app_auth.users (employee_id, email, password_hash, is_active, biometric_enabled, dark_mode_enabled, location)
 VALUES
   ('emp-1', 'Alex.Ali@uic.co', crypt('P@ssw0rd123!', gen_salt('bf', 10)), TRUE, TRUE, FALSE, 'Tech Hub Office, Floor 5'),
   ('emp-2', 'sarah.johnson@company.com', crypt('P@ssw0rd123!', gen_salt('bf', 10)), TRUE, FALSE, FALSE, NULL),
   (NULL, 'test@mit.co', crypt('testpass', gen_salt('bf', 10)), TRUE, FALSE, FALSE, NULL)
 ON CONFLICT (email) DO NOTHING;
 
-INSERT INTO auth.user_roles (user_id, role_id)
+INSERT INTO app_auth.user_roles (user_id, role_id)
 SELECT u.user_id, r.role_id
-FROM auth.users u
-JOIN auth.roles r ON r.role_name = 'admin'
+FROM app_auth.users u
+JOIN app_auth.roles r ON r.role_name = 'admin'
 WHERE u.email = 'Alex.Ali@uic.co'
 ON CONFLICT DO NOTHING;
 
-INSERT INTO auth.user_roles (user_id, role_id)
+INSERT INTO app_auth.user_roles (user_id, role_id)
 SELECT u.user_id, r.role_id
-FROM auth.users u
-JOIN auth.roles r ON r.role_name = 'admin'
+FROM app_auth.users u
+JOIN app_auth.roles r ON r.role_name = 'admin'
 WHERE u.email = 'test@mit.co'
 ON CONFLICT DO NOTHING;
 
-INSERT INTO auth.user_roles (user_id, role_id)
+INSERT INTO app_auth.user_roles (user_id, role_id)
 SELECT u.user_id, r.role_id
-FROM auth.users u
-JOIN auth.roles r ON r.role_name = 'employee'
+FROM app_auth.users u
+JOIN app_auth.roles r ON r.role_name = 'employee'
 WHERE u.email = 'sarah.johnson@company.com'
 ON CONFLICT DO NOTHING;
+
+-- Legacy compatibility: some older local DBs created these tables with
+-- FK references to auth.users instead of app_auth.users.
+DO $$
+DECLARE
+  v_def TEXT;
+BEGIN
+  DELETE FROM app.user_working_days uwd
+  WHERE NOT EXISTS (
+    SELECT 1 FROM app_auth.users u WHERE u.user_id = uwd.user_id
+  );
+
+  DELETE FROM app.user_preferences up
+  WHERE NOT EXISTS (
+    SELECT 1 FROM app_auth.users u WHERE u.user_id = up.user_id
+  );
+
+  SELECT pg_get_constraintdef(c.oid)
+    INTO v_def
+  FROM pg_constraint c
+  JOIN pg_class t ON t.oid = c.conrelid
+  JOIN pg_namespace n ON n.oid = t.relnamespace
+  WHERE n.nspname = 'app'
+    AND t.relname = 'user_preferences'
+    AND c.conname = 'user_preferences_user_id_fkey';
+
+  IF v_def IS NULL THEN
+    ALTER TABLE app.user_preferences
+      ADD CONSTRAINT user_preferences_user_id_fkey
+      FOREIGN KEY (user_id) REFERENCES app_auth.users(user_id) ON DELETE CASCADE;
+  ELSIF v_def NOT ILIKE '%REFERENCES app_auth.users(user_id)%' THEN
+    ALTER TABLE app.user_preferences DROP CONSTRAINT user_preferences_user_id_fkey;
+    ALTER TABLE app.user_preferences
+      ADD CONSTRAINT user_preferences_user_id_fkey
+      FOREIGN KEY (user_id) REFERENCES app_auth.users(user_id) ON DELETE CASCADE;
+  END IF;
+
+  SELECT pg_get_constraintdef(c.oid)
+    INTO v_def
+  FROM pg_constraint c
+  JOIN pg_class t ON t.oid = c.conrelid
+  JOIN pg_namespace n ON n.oid = t.relnamespace
+  WHERE n.nspname = 'app'
+    AND t.relname = 'user_working_days'
+    AND c.conname = 'user_working_days_user_id_fkey';
+
+  IF v_def IS NULL THEN
+    ALTER TABLE app.user_working_days
+      ADD CONSTRAINT user_working_days_user_id_fkey
+      FOREIGN KEY (user_id) REFERENCES app_auth.users(user_id) ON DELETE CASCADE;
+  ELSIF v_def NOT ILIKE '%REFERENCES app_auth.users(user_id)%' THEN
+    ALTER TABLE app.user_working_days DROP CONSTRAINT user_working_days_user_id_fkey;
+    ALTER TABLE app.user_working_days
+      ADD CONSTRAINT user_working_days_user_id_fkey
+      FOREIGN KEY (user_id) REFERENCES app_auth.users(user_id) ON DELETE CASCADE;
+  END IF;
+END $$;
 
 INSERT INTO app.user_preferences (
   user_id, working_start, working_end,
@@ -617,13 +674,13 @@ SELECT
   FALSE,
   TRUE,
   FALSE
-FROM auth.users u
+FROM app_auth.users u
 WHERE u.email = 'Alex.Ali@uic.co'
 ON CONFLICT (user_id) DO NOTHING;
 
 INSERT INTO app.user_working_days (user_id, iso_day, is_working_day)
 SELECT u.user_id, d.iso_day, d.is_working_day
-FROM auth.users u
+FROM app_auth.users u
 CROSS JOIN (VALUES
   (1, TRUE),
   (2, TRUE),
@@ -636,9 +693,9 @@ CROSS JOIN (VALUES
 WHERE u.email = 'Alex.Ali@uic.co'
 ON CONFLICT (user_id, iso_day) DO NOTHING;
 
-INSERT INTO auth.password_activities (user_id, action, activity_at, platform, status)
+INSERT INTO app_auth.password_activities (user_id, action, activity_at, platform, status)
 SELECT u.user_id, x.action, x.activity_at, x.platform, x.status
-FROM auth.users u
+FROM app_auth.users u
 CROSS JOIN (VALUES
   ('Waive Password', TIMESTAMPTZ '2025-07-12 23:47:03', 'iOS | Philippines', 'Successful'),
   ('Waive Password', TIMESTAMPTZ '2025-04-13 15:39:12', 'iOS | Philippines', 'Successful'),

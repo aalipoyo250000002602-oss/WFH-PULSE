@@ -44,7 +44,7 @@ LANGUAGE sql
 STABLE
 AS $$
   SELECT u.employee_id
-  FROM auth.users u
+  FROM app_auth.users u
   WHERE u.user_id = app.current_user_id();
 $$;
 

@@ -86,10 +86,10 @@ It will:
 
 ## Auth notes
 
-- Login uses `auth.login_user(...)` DB function.
-- Refresh uses `auth.refresh_session(...)` and rotates refresh tokens.
+- Login uses `app_auth.login_user(...)` DB function.
+- Refresh uses `app_auth.refresh_session(...)` and rotates refresh tokens.
 - API issues a short-lived JWT access token.
-- Logout revokes DB session via `auth.revoke_session(...)`.
+- Logout revokes DB session via `app_auth.revoke_session(...)`.
 - RLS context is set per transaction using:
   - `SET LOCAL app.user_id`
   - `SET LOCAL app.user_role`

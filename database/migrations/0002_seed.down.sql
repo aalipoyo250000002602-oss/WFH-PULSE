@@ -15,12 +15,12 @@ TRUNCATE TABLE
   app.holidays,
   app.user_working_days,
   app.user_preferences,
-  auth.password_activities,
-  auth.login_attempts,
-  auth.sessions,
-  auth.user_roles,
-  auth.users,
-  auth.roles,
+  app_auth.password_activities,
+  app_auth.login_attempts,
+  app_auth.sessions,
+  app_auth.user_roles,
+  app_auth.users,
+  app_auth.roles,
   app.employees,
   app.departments
 RESTART IDENTITY CASCADE;

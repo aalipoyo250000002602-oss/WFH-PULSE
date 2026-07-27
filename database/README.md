@@ -2,6 +2,8 @@
 
 This folder contains PostgreSQL 18 schema, seed data, migrations, and RLS policies.
 
+Supabase compatibility note: this project uses `app_auth` for custom auth/session tables and functions so it does not conflict with Supabase-managed `auth.*` objects.
+
 ## Files
 
 - `01_schema_postgresql18.sql` - base schema (app + auth)
@@ -12,6 +14,17 @@ This folder contains PostgreSQL 18 schema, seed data, migrations, and RLS polici
 - `migrate.mjs` - migration runner with `up/down/status`
 - `db.config.mjs` - local PG config loader
 - `test-connection.mjs` - connection tester
+
+## Supabase config
+
+Use `database/.env.local.supabase` for direct connection-string mode:
+
+```dotenv
+SUPABASE_DB_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres?sslmode=require
+PGSSL=true
+```
+
+`db.config.mjs` will prefer `SUPABASE_DB_URL` (or `DATABASE_URL` / `POSTGRES_URL`) when present.
 
 ## Local config
 

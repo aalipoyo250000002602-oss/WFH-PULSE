@@ -56,7 +56,7 @@ async function getUserProfileByUserId(userId) {
     `
     SELECT u.user_id, u.email, u.employee_id,
            e.first_name, e.last_name
-    FROM auth.users u
+        FROM app_auth.users u
     LEFT JOIN app.employees e ON e.employee_id = u.employee_id
     WHERE u.user_id = $1::uuid
     `,
@@ -75,7 +75,7 @@ app.post("/auth/login", async (req, res) => {
 
   try {
     const result = await query(
-      `SELECT * FROM auth.login_user($1::citext, $2::text, $3::inet, $4::text)`,
+      `SELECT * FROM app_auth.login_user($1::citext, $2::text, $3::inet, $4::text)`,
       [email, password, null, req.headers["user-agent"] ?? "api-client"],
     );
 
@@ -122,7 +122,7 @@ app.post("/auth/refresh", async (req, res) => {
 
   try {
     const result = await query(
-      `SELECT * FROM auth.refresh_session($1::uuid, $2::text, $3::inet, $4::text)`,
+      `SELECT * FROM app_auth.refresh_session($1::uuid, $2::text, $3::inet, $4::text)`,
       [sessionId, refreshToken, null, req.headers["user-agent"] ?? "api-client"],
     );
 
@@ -180,7 +180,7 @@ app.post(
 
     try {
       const result = await query(
-        `SELECT auth.register_user($1::citext, $2::text, $3::text, $4::text) AS user_id`,
+        `SELECT app_auth.register_user($1::citext, $2::text, $3::text, $4::text) AS user_id`,
         [email, password, employeeId, role],
       );
       return res.status(201).json({ userId: result.rows[0].user_id });
@@ -192,7 +192,7 @@ app.post(
 
 app.post("/auth/logout", requireAuth, async (req, res) => {
   try {
-    await query("SELECT auth.revoke_session($1::uuid)", [req.auth.sessionId]);
+    await query("SELECT app_auth.revoke_session($1::uuid)", [req.auth.sessionId]);
     return res.json({ ok: true });
   } catch (error) {
     return res.status(400).json({ error: error.message });

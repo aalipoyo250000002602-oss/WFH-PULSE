@@ -5,7 +5,7 @@ CREATE EXTENSION IF NOT EXISTS citext;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE SCHEMA IF NOT EXISTS app;
-CREATE SCHEMA IF NOT EXISTS auth;
+CREATE SCHEMA IF NOT EXISTS app_auth;
 
 DO $$
 BEGIN
@@ -202,12 +202,12 @@ CREATE TABLE IF NOT EXISTS app.holidays (
   days_until INTEGER
 );
 
-CREATE TABLE IF NOT EXISTS auth.roles (
+CREATE TABLE IF NOT EXISTS app_auth.roles (
   role_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   role_name TEXT NOT NULL UNIQUE
 );
 
-CREATE TABLE IF NOT EXISTS auth.users (
+CREATE TABLE IF NOT EXISTS app_auth.users (
   user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   employee_id TEXT UNIQUE REFERENCES app.employees(employee_id) ON DELETE SET NULL,
   email CITEXT NOT NULL UNIQUE,
@@ -221,15 +221,15 @@ CREATE TABLE IF NOT EXISTS auth.users (
   last_login_at TIMESTAMPTZ
 );
 
-CREATE TABLE IF NOT EXISTS auth.user_roles (
-  user_id UUID NOT NULL REFERENCES auth.users(user_id) ON DELETE CASCADE,
-  role_id BIGINT NOT NULL REFERENCES auth.roles(role_id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS app_auth.user_roles (
+  user_id UUID NOT NULL REFERENCES app_auth.users(user_id) ON DELETE CASCADE,
+  role_id BIGINT NOT NULL REFERENCES app_auth.roles(role_id) ON DELETE CASCADE,
   PRIMARY KEY (user_id, role_id)
 );
 
-CREATE TABLE IF NOT EXISTS auth.sessions (
+CREATE TABLE IF NOT EXISTS app_auth.sessions (
   session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(user_id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES app_auth.users(user_id) ON DELETE CASCADE,
   refresh_token_hash TEXT NOT NULL,
   ip_address INET,
   user_agent TEXT,
@@ -238,10 +238,10 @@ CREATE TABLE IF NOT EXISTS auth.sessions (
   revoked_at TIMESTAMPTZ
 );
 
-CREATE TABLE IF NOT EXISTS auth.login_attempts (
+CREATE TABLE IF NOT EXISTS app_auth.login_attempts (
   attempt_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   email CITEXT NOT NULL,
-  user_id UUID REFERENCES auth.users(user_id) ON DELETE SET NULL,
+  user_id UUID REFERENCES app_auth.users(user_id) ON DELETE SET NULL,
   success BOOLEAN NOT NULL,
   reason TEXT,
   ip_address INET,
@@ -249,9 +249,9 @@ CREATE TABLE IF NOT EXISTS auth.login_attempts (
   attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS auth.password_activities (
+CREATE TABLE IF NOT EXISTS app_auth.password_activities (
   activity_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES auth.users(user_id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES app_auth.users(user_id) ON DELETE CASCADE,
   action TEXT NOT NULL,
   activity_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   platform TEXT,
@@ -259,7 +259,7 @@ CREATE TABLE IF NOT EXISTS auth.password_activities (
 );
 
 CREATE TABLE IF NOT EXISTS app.user_preferences (
-  user_id UUID PRIMARY KEY REFERENCES auth.users(user_id) ON DELETE CASCADE,
+  user_id UUID PRIMARY KEY REFERENCES app_auth.users(user_id) ON DELETE CASCADE,
   working_start TIME NOT NULL DEFAULT TIME '09:00',
   working_end TIME NOT NULL DEFAULT TIME '18:00',
   clock_in_reminder BOOLEAN NOT NULL DEFAULT TRUE,
@@ -270,13 +270,13 @@ CREATE TABLE IF NOT EXISTS app.user_preferences (
 );
 
 CREATE TABLE IF NOT EXISTS app.user_working_days (
-  user_id UUID NOT NULL REFERENCES auth.users(user_id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES app_auth.users(user_id) ON DELETE CASCADE,
   iso_day SMALLINT NOT NULL CHECK (iso_day BETWEEN 1 AND 7),
   is_working_day BOOLEAN NOT NULL,
   PRIMARY KEY (user_id, iso_day)
 );
 
-CREATE OR REPLACE FUNCTION auth.register_user(
+CREATE OR REPLACE FUNCTION app_auth.register_user(
   p_email CITEXT,
   p_password TEXT,
   p_employee_id TEXT,
@@ -288,21 +288,21 @@ DECLARE
   v_user_id UUID;
   v_role_id BIGINT;
 BEGIN
-  INSERT INTO auth.users (email, password_hash, employee_id)
+  INSERT INTO app_auth.users (email, password_hash, employee_id)
   VALUES (p_email, crypt(p_password, gen_salt('bf', 10)), p_employee_id)
   RETURNING user_id INTO v_user_id;
 
-  SELECT role_id INTO v_role_id FROM auth.roles WHERE role_name = p_role;
+  SELECT role_id INTO v_role_id FROM app_auth.roles WHERE role_name = p_role;
   IF v_role_id IS NULL THEN
     RAISE EXCEPTION 'Role % does not exist', p_role;
   END IF;
 
-  INSERT INTO auth.user_roles (user_id, role_id) VALUES (v_user_id, v_role_id);
+  INSERT INTO app_auth.user_roles (user_id, role_id) VALUES (v_user_id, v_role_id);
   RETURN v_user_id;
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION auth.login_user(
+CREATE OR REPLACE FUNCTION app_auth.login_user(
   p_email CITEXT,
   p_password TEXT,
   p_ip INET,
@@ -316,36 +316,36 @@ CREATE OR REPLACE FUNCTION auth.login_user(
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_user auth.users%ROWTYPE;
+  v_user app_auth.users%ROWTYPE;
   v_role TEXT;
   v_refresh_token TEXT;
   v_session_id UUID;
 BEGIN
-  SELECT * INTO v_user FROM auth.users WHERE email = p_email;
+  SELECT * INTO v_user FROM app_auth.users WHERE email = p_email;
 
   IF v_user.user_id IS NULL OR v_user.is_active = FALSE THEN
-    INSERT INTO auth.login_attempts (email, success, reason, ip_address, user_agent)
+    INSERT INTO app_auth.login_attempts (email, success, reason, ip_address, user_agent)
     VALUES (p_email, FALSE, 'user_not_found_or_inactive', p_ip, p_user_agent);
     RAISE EXCEPTION 'Invalid credentials';
   END IF;
 
   IF v_user.password_hash <> crypt(p_password, v_user.password_hash) THEN
-    INSERT INTO auth.login_attempts (email, user_id, success, reason, ip_address, user_agent)
+    INSERT INTO app_auth.login_attempts (email, user_id, success, reason, ip_address, user_agent)
     VALUES (p_email, v_user.user_id, FALSE, 'invalid_password', p_ip, p_user_agent);
     RAISE EXCEPTION 'Invalid credentials';
   END IF;
 
   SELECT r.role_name
     INTO v_role
-  FROM auth.user_roles ur
-  JOIN auth.roles r ON r.role_id = ur.role_id
+  FROM app_auth.user_roles ur
+  JOIN app_auth.roles r ON r.role_id = ur.role_id
   WHERE ur.user_id = v_user.user_id
   ORDER BY r.role_name
   LIMIT 1;
 
   v_refresh_token := encode(gen_random_bytes(48), 'hex');
 
-  INSERT INTO auth.sessions (
+  INSERT INTO app_auth.sessions (
     user_id,
     refresh_token_hash,
     ip_address,
@@ -358,22 +358,22 @@ BEGIN
     p_user_agent,
     NOW() + INTERVAL '30 days'
   )
-  RETURNING auth.sessions.session_id INTO v_session_id;
+  RETURNING app_auth.sessions.session_id INTO v_session_id;
 
-  UPDATE auth.users SET last_login_at = NOW() WHERE auth.users.user_id = v_user.user_id;
+  UPDATE app_auth.users SET last_login_at = NOW() WHERE app_auth.users.user_id = v_user.user_id;
 
-  INSERT INTO auth.login_attempts (email, user_id, success, ip_address, user_agent)
+  INSERT INTO app_auth.login_attempts (email, user_id, success, ip_address, user_agent)
   VALUES (p_email, v_user.user_id, TRUE, p_ip, p_user_agent);
 
   RETURN QUERY SELECT v_user.user_id, COALESCE(v_role, 'employee'), v_session_id, v_refresh_token;
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION auth.revoke_session(p_session_id UUID)
+CREATE OR REPLACE FUNCTION app_auth.revoke_session(p_session_id UUID)
 RETURNS VOID
 LANGUAGE sql
 AS $$
-  UPDATE auth.sessions
+  UPDATE app_auth.sessions
   SET revoked_at = NOW()
   WHERE session_id = p_session_id
     AND revoked_at IS NULL;
