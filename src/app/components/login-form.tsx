@@ -2,32 +2,20 @@ import { useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "./ui/card";
 import { Separator } from "./ui/separator";
-import { LogIn, Moon, Sun, ScanFace, Loader2 } from "lucide-react";
+import { ScanFace, Loader2 } from "lucide-react";
 import logoImage from "figma:asset/80b7a2d7f7164e79d1aa41e678d57bd410cbb0ae.png";
-import { toast } from "sonner";
 
 interface LoginFormProps {
   onLogin: (email: string, password: string) => Promise<void>;
   onBiometricLogin: () => Promise<void>;
   showBiometricLogin: boolean;
-  isDarkMode: boolean;
-  onToggleTheme: () => void;
 }
 
 export function LoginForm({
   onLogin,
   onBiometricLogin,
   showBiometricLogin,
-  isDarkMode,
-  onToggleTheme,
 }: LoginFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -79,22 +67,6 @@ export function LoginForm({
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-md mx-auto bg-background shadow-2xl min-h-screen relative flex flex-col">
-        {/* Header with theme toggle */}
-        <div className="flex justify-end p-4">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={onToggleTheme}
-            className="h-9 w-9"
-          >
-            {isDarkMode ? (
-              <Sun className="h-4 w-4" />
-            ) : (
-              <Moon className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-
         {/* Main login content */}
         <div className="flex-1 flex items-center justify-center px-6 pb-20">
           <div className="w-full space-y-8">

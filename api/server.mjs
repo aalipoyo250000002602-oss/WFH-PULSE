@@ -157,6 +157,7 @@ const securityPreferenceCreateSchema = z.object({
   biometricLogin: z.boolean().default(false),
   biometricClockInOut: z.boolean().default(false),
   passwordWaived: z.boolean().default(false),
+  darkModeEnabled: z.boolean().optional(),
 });
 
 const securityPreferenceUpdateSchema = z
@@ -164,6 +165,7 @@ const securityPreferenceUpdateSchema = z
     biometricLogin: z.boolean().optional(),
     biometricClockInOut: z.boolean().optional(),
     passwordWaived: z.boolean().optional(),
+    darkModeEnabled: z.boolean().optional(),
   })
   .refine((payload) => Object.keys(payload).length > 0, {
     message: "At least one field is required",
@@ -182,6 +184,7 @@ function mapSecurityPreferenceRow(row) {
     biometricLogin: row.biometric_login,
     biometricClockInOut: row.biometric_clock_in_out,
     passwordWaived: row.password_waived,
+    darkModeEnabled: row.dark_mode_enabled,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -916,13 +919,15 @@ app.get("/me/security-preferences", requireAuth, async (req, res) => {
     const preferenceResult = await query(
       `
       SELECT
-        biometric_login,
-        biometric_clock_in_out,
-        password_waived,
-        created_at,
-        updated_at
-      FROM app_auth.user_security_preferences
-      WHERE user_id = $1::uuid
+        sp.biometric_login,
+        sp.biometric_clock_in_out,
+        sp.password_waived,
+        u.dark_mode_enabled,
+        sp.created_at,
+        sp.updated_at
+      FROM app_auth.user_security_preferences sp
+      JOIN app_auth.users u ON u.user_id = sp.user_id
+      WHERE sp.user_id = $1::uuid
       `,
       [req.auth.userId],
     );
@@ -951,6 +956,7 @@ app.get("/me/security-preferences", requireAuth, async (req, res) => {
       biometric_login: false,
       biometric_clock_in_out: false,
       password_waived: false,
+      dark_mode_enabled: false,
       created_at: null,
       updated_at: null,
     };
@@ -1031,7 +1037,34 @@ app.post("/me/security-preferences", requireAuth, async (req, res) => {
       return res.status(409).json({ error: "Security preferences already exist for this user" });
     }
 
-    return res.status(201).json({ preferences: mapSecurityPreferenceRow(result.rows[0]) });
+    if (Object.prototype.hasOwnProperty.call(payload, "darkModeEnabled")) {
+      await query(
+        `
+        UPDATE app_auth.users
+        SET dark_mode_enabled = $1::boolean, updated_at = NOW()
+        WHERE user_id = $2::uuid
+        `,
+        [payload.darkModeEnabled, req.auth.userId],
+      );
+    }
+
+    const mergedResult = await query(
+      `
+      SELECT
+        sp.biometric_login,
+        sp.biometric_clock_in_out,
+        sp.password_waived,
+        u.dark_mode_enabled,
+        sp.created_at,
+        sp.updated_at
+      FROM app_auth.user_security_preferences sp
+      JOIN app_auth.users u ON u.user_id = sp.user_id
+      WHERE sp.user_id = $1::uuid
+      `,
+      [req.auth.userId],
+    );
+
+    return res.status(201).json({ preferences: mapSecurityPreferenceRow(mergedResult.rows[0]) });
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
@@ -1046,7 +1079,7 @@ app.put("/me/security-preferences", requireAuth, async (req, res) => {
   const payload = parsed.data;
 
   try {
-    const result = await query(
+    await query(
       `
       INSERT INTO app_auth.user_security_preferences (
         user_id,
@@ -1082,7 +1115,34 @@ app.put("/me/security-preferences", requireAuth, async (req, res) => {
       ],
     );
 
-    return res.json({ preferences: mapSecurityPreferenceRow(result.rows[0]) });
+    if (Object.prototype.hasOwnProperty.call(payload, "darkModeEnabled")) {
+      await query(
+        `
+        UPDATE app_auth.users
+        SET dark_mode_enabled = $1::boolean, updated_at = NOW()
+        WHERE user_id = $2::uuid
+        `,
+        [payload.darkModeEnabled, req.auth.userId],
+      );
+    }
+
+    const mergedResult = await query(
+      `
+      SELECT
+        sp.biometric_login,
+        sp.biometric_clock_in_out,
+        sp.password_waived,
+        u.dark_mode_enabled,
+        sp.created_at,
+        sp.updated_at
+      FROM app_auth.user_security_preferences sp
+      JOIN app_auth.users u ON u.user_id = sp.user_id
+      WHERE sp.user_id = $1::uuid
+      `,
+      [req.auth.userId],
+    );
+
+    return res.json({ preferences: mapSecurityPreferenceRow(mergedResult.rows[0]) });
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }

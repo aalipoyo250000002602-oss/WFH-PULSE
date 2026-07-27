@@ -61,6 +61,7 @@ interface SecurityPreferencesState {
   biometricLogin: boolean;
   biometricClockInOut: boolean;
   passwordWaived: boolean;
+  darkModeEnabled: boolean;
 }
 
 interface PasswordActivityState {
@@ -119,7 +120,12 @@ export default function App() {
       return false;
     }
 
-    return window.localStorage.getItem("wfh:biometricLoginEnabled") === "true";
+    const savedEnabled = window.localStorage.getItem("wfh:biometricLoginEnabled") === "true";
+    const hasRememberedBiometricUser = Boolean(
+      window.localStorage.getItem("wfh:lastBiometricEmail"),
+    );
+
+    return savedEnabled || hasRememberedBiometricUser;
   });
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
@@ -154,6 +160,7 @@ export default function App() {
     biometricLogin: true,
     biometricClockInOut: false,
     passwordWaived: false,
+    darkModeEnabled: false,
   });
   const [passwordActivities, setPasswordActivities] = useState<PasswordActivityState[]>([]);
   const [userProfile, setUserProfile] = useState({
@@ -547,7 +554,9 @@ export default function App() {
         biometricLogin: Boolean(pref.biometricLogin),
         biometricClockInOut: Boolean(pref.biometricClockInOut),
         passwordWaived: Boolean(pref.passwordWaived),
+        darkModeEnabled: Boolean(pref.darkModeEnabled),
       });
+      setIsDarkMode(Boolean(pref.darkModeEnabled));
       setIsBiometricLoginAvailable(Boolean(pref.biometricLogin));
       window.localStorage.setItem(
         "wfh:biometricLoginEnabled",
@@ -603,11 +612,14 @@ export default function App() {
 
       const pref = payload?.preferences ?? {};
       const nextBiometricLogin = Boolean(pref.biometricLogin);
+      const nextDarkMode = Boolean(pref.darkModeEnabled);
       setSecurityPreferences({
         biometricLogin: nextBiometricLogin,
         biometricClockInOut: Boolean(pref.biometricClockInOut),
         passwordWaived: Boolean(pref.passwordWaived),
+        darkModeEnabled: nextDarkMode,
       });
+      setIsDarkMode(nextDarkMode);
       setIsBiometricLoginAvailable(nextBiometricLogin);
       window.localStorage.setItem("wfh:biometricLoginEnabled", String(nextBiometricLogin));
       return true;
@@ -923,13 +935,26 @@ export default function App() {
     );
   }, [isDarkMode]);
 
-  const handleToggleTheme = () => {
-    setIsDarkMode(!isDarkMode);
-    if (isLoggedIn) {
-      toast.success(
-        `Switched to ${!isDarkMode ? "dark" : "light"} mode`,
-      );
+  const handleToggleTheme = async () => {
+    if (!isLoggedIn) {
+      return;
     }
+
+    const nextDarkMode = !isDarkMode;
+    setIsDarkMode(nextDarkMode);
+
+    const didUpdate = await updateSecurityPreferences({
+      darkModeEnabled: nextDarkMode,
+    });
+
+    if (!didUpdate) {
+      setIsDarkMode(!nextDarkMode);
+      return;
+    }
+
+    toast.success(
+      `Switched to ${nextDarkMode ? "dark" : "light"} mode`,
+    );
   };
 
   useEffect(() => {
@@ -1072,6 +1097,7 @@ export default function App() {
   const handleLogout = () => {
     setAuthSession(null);
     setIsLoggedIn(false);
+    setIsDarkMode(false);
     setIsClockedIn(false);
     setIsOnBreak(false);
     setClockInTime("");
@@ -1277,8 +1303,6 @@ export default function App() {
           onLogin={handleLogin}
           onBiometricLogin={handleBiometricLogin}
           showBiometricLogin={isBiometricLoginAvailable}
-          isDarkMode={isDarkMode}
-          onToggleTheme={handleToggleTheme}
         />
         <Toaster richColors position="top-center" closeButton />
       </>
