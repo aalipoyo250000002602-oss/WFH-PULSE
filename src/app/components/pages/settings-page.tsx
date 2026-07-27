@@ -66,10 +66,28 @@ import { toast } from "sonner";
 
 interface SettingsPageProps {
   workingHours: { start: string; end: string };
-  onUpdateWorkingHours: (hours: {
+  workingDays: {
+    monday: boolean;
+    tuesday: boolean;
+    wednesday: boolean;
+    thursday: boolean;
+    friday: boolean;
+    saturday: boolean;
+    sunday: boolean;
+  };
+  onUpdateWorkingHours: (schedule: {
     start: string;
     end: string;
-  }) => void;
+    days: {
+      monday: boolean;
+      tuesday: boolean;
+      wednesday: boolean;
+      thursday: boolean;
+      friday: boolean;
+      saturday: boolean;
+      sunday: boolean;
+    };
+  }) => Promise<boolean>;
   notifications: {
     clockInReminder: boolean;
     clockOutReminder: boolean;
@@ -107,6 +125,7 @@ interface SettingsPageProps {
 
 export function SettingsPage({
   workingHours,
+  workingDays,
   onUpdateWorkingHours,
   notifications,
   onUpdateNotifications,
@@ -116,6 +135,7 @@ export function SettingsPage({
 }: SettingsPageProps) {
   const [localWorkingHours, setLocalWorkingHours] =
     useState(workingHours);
+  const [localWorkingDays, setLocalWorkingDays] = useState(workingDays);
   const [localProfile, setLocalProfile] = useState({
     ...userProfile,
     phone: userProfile.phone || "",
@@ -135,6 +155,14 @@ export function SettingsPage({
     pagibigNumber: userProfile.pagibigNumber || "",
     profilePicture: userProfile.profilePicture,
   });
+
+  useEffect(() => {
+    setLocalWorkingHours(workingHours);
+  }, [workingHours]);
+
+  useEffect(() => {
+    setLocalWorkingDays(workingDays);
+  }, [workingDays]);
 
   useEffect(() => {
     setLocalProfile((prev) => ({
@@ -158,17 +186,6 @@ export function SettingsPage({
       profilePicture: userProfile.profilePicture,
     }));
   }, [userProfile]);
-
-  // Working days state
-  const [workingDays, setWorkingDays] = useState<Record<string, boolean>>({
-    monday: true,
-    tuesday: true,
-    wednesday: true,
-    thursday: true,
-    friday: true,
-    saturday: false,
-    sunday: false,
-  });
 
   // Security preferences state
   const [biometricLogin, setBiometricLogin] = useState(true);
@@ -274,9 +291,33 @@ export function SettingsPage({
     },
   ]);
 
-  const handleSaveWorkingHours = () => {
-    onUpdateWorkingHours(localWorkingHours);
-    toast.success("Work schedule updated successfully");
+  const handleSaveWorkingHours = async () => {
+    const hasWorkingDay = Object.values(localWorkingDays).some(Boolean);
+
+    if (!hasWorkingDay) {
+      toast.error("Select at least one working day");
+      return;
+    }
+
+    if (!localWorkingHours.start || !localWorkingHours.end) {
+      toast.error("Start and end time are required for working days");
+      return;
+    }
+
+    if (localWorkingHours.start >= localWorkingHours.end) {
+      toast.error("Start time must be earlier than end time");
+      return;
+    }
+
+    const didSave = await onUpdateWorkingHours({
+      start: localWorkingHours.start,
+      end: localWorkingHours.end,
+      days: localWorkingDays,
+    });
+
+    if (didSave) {
+      toast.success("Work schedule updated successfully");
+    }
   };
 
   const withProfileSaving = async (action: () => Promise<void>) => {
@@ -516,7 +557,7 @@ export function SettingsPage({
   };
 
   const handleWorkingDayToggle = (day: string) => {
-    setWorkingDays((prev) => ({
+    setLocalWorkingDays((prev) => ({
       ...prev,
       [day]: !prev[day],
     }));
@@ -1011,7 +1052,7 @@ export function SettingsPage({
                   >
                     <div className="flex items-center gap-3">
                       <span className="font-medium">{day.label}</span>
-                      {workingDays[day.key] ? (
+                      {localWorkingDays[day.key] ? (
                         <Badge className="bg-vibrant-green/20 text-vibrant-green hover:bg-vibrant-green/30">
                           Working Day
                         </Badge>
@@ -1022,7 +1063,7 @@ export function SettingsPage({
                       )}
                     </div>
                     <Switch
-                      checked={workingDays[day.key]}
+                      checked={localWorkingDays[day.key]}
                       onCheckedChange={() => handleWorkingDayToggle(day.key)}
                     />
                   </div>

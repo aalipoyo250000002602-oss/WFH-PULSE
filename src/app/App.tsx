@@ -68,6 +68,19 @@ interface LoginResponsePayload {
   };
 }
 
+const orderedWorkingDayKeys = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+] as const;
+
+type WorkingDayKey = (typeof orderedWorkingDayKeys)[number];
+type WorkingDaysState = Record<WorkingDayKey, boolean>;
+
 function resolveApiBaseUrl() {
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
@@ -97,6 +110,15 @@ export default function App() {
   const [workingHours, setWorkingHours] = useState({
     start: "09:00",
     end: "18:00",
+  });
+  const [workingDays, setWorkingDays] = useState<WorkingDaysState>({
+    monday: true,
+    tuesday: true,
+    wednesday: true,
+    thursday: true,
+    friday: true,
+    saturday: false,
+    sunday: false,
   });
   const [notifications, setNotifications] = useState({
     clockInReminder: true,
@@ -298,6 +320,137 @@ export default function App() {
       return true;
     } catch {
       toast.error("Profile update failed", {
+        description: "Unable to reach the API server.",
+      });
+      return false;
+    }
+  };
+
+  const loadCompanyWorkingHours = async (accessToken: string) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/settings/company-working-hours`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = await response.json().catch(() => ({}));
+      const rows = Array.isArray(payload?.workingHours) ? payload.workingHours : [];
+
+      if (rows.length === 0) {
+        return;
+      }
+
+      const nextWorkingDays: WorkingDaysState = {
+        monday: false,
+        tuesday: false,
+        wednesday: false,
+        thursday: false,
+        friday: false,
+        saturday: false,
+        sunday: false,
+      };
+
+      let start = "09:00";
+      let end = "18:00";
+
+      for (const row of rows) {
+        const day = String(row.day || "").toLowerCase();
+        if (!orderedWorkingDayKeys.includes(day as WorkingDayKey)) {
+          continue;
+        }
+
+        const isWorkingDay = Boolean(row.is_working_day);
+        nextWorkingDays[day as WorkingDayKey] = isWorkingDay;
+
+        if (isWorkingDay && row.start_time && row.end_time) {
+          start = String(row.start_time).slice(0, 5);
+          end = String(row.end_time).slice(0, 5);
+        }
+      }
+
+      setWorkingDays(nextWorkingDays);
+      setWorkingHours({ start, end });
+    } catch {
+      // Keep defaults when endpoint is unavailable or access is restricted.
+    }
+  };
+
+  const updateCompanyWorkingHours = async (schedule: {
+    start: string;
+    end: string;
+    days: WorkingDaysState;
+  }) => {
+    if (!authSession?.accessToken) {
+      toast.error("Unable to update work schedule", {
+        description: "Your session is missing. Please sign in again.",
+      });
+      return false;
+    }
+
+    const rows = orderedWorkingDayKeys.map((day) => ({
+      day,
+      isWorkingDay: Boolean(schedule.days[day]),
+      startTime: schedule.days[day] ? schedule.start : null,
+      endTime: schedule.days[day] ? schedule.end : null,
+    }));
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/settings/company-working-hours`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authSession.accessToken}`,
+        },
+        body: JSON.stringify({ days: rows }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error("Work schedule update failed", {
+          description: payload?.error || "Please review your schedule values.",
+        });
+        return false;
+      }
+
+      const savedRows = Array.isArray(payload?.workingHours) ? payload.workingHours : rows;
+      const nextWorkingDays: WorkingDaysState = {
+        monday: false,
+        tuesday: false,
+        wednesday: false,
+        thursday: false,
+        friday: false,
+        saturday: false,
+        sunday: false,
+      };
+
+      let start = schedule.start;
+      let end = schedule.end;
+      for (const row of savedRows) {
+        const day = String(row.day || "").toLowerCase();
+        if (!orderedWorkingDayKeys.includes(day as WorkingDayKey)) {
+          continue;
+        }
+
+        const isWorkingDay = Boolean(row.is_working_day ?? row.isWorkingDay);
+        nextWorkingDays[day as WorkingDayKey] = isWorkingDay;
+
+        if (isWorkingDay && row.start_time && row.end_time) {
+          start = String(row.start_time).slice(0, 5);
+          end = String(row.end_time).slice(0, 5);
+        }
+      }
+
+      setWorkingDays(nextWorkingDays);
+      setWorkingHours({ start, end });
+      return true;
+    } catch {
+      toast.error("Work schedule update failed", {
         description: "Unable to reach the API server.",
       });
       return false;
@@ -599,6 +752,7 @@ export default function App() {
         email: payload.user?.email,
       });
       await loadEmploymentOptions(payload.accessToken);
+      await loadCompanyWorkingHours(payload.accessToken);
 
       setIsLoggedIn(true);
       toast.success("Welcome back!", {
@@ -780,7 +934,8 @@ export default function App() {
         return (
           <SettingsPage
             workingHours={workingHours}
-            onUpdateWorkingHours={setWorkingHours}
+            workingDays={workingDays}
+            onUpdateWorkingHours={updateCompanyWorkingHours}
             notifications={notifications}
             onUpdateNotifications={setNotifications}
             userProfile={userProfile}

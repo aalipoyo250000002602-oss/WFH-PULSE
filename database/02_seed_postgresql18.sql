@@ -693,6 +693,23 @@ CROSS JOIN (VALUES
 WHERE u.email = 'Alex.Ali@uic.co'
 ON CONFLICT (user_id, iso_day) DO NOTHING;
 
+INSERT INTO app.company_settings_working_hours (
+  iso_day,
+  day_name,
+  is_working_day,
+  start_time,
+  end_time
+)
+VALUES
+  (1, 'monday', TRUE, TIME '09:00', TIME '18:00'),
+  (2, 'tuesday', TRUE, TIME '09:00', TIME '18:00'),
+  (3, 'wednesday', TRUE, TIME '09:00', TIME '18:00'),
+  (4, 'thursday', TRUE, TIME '09:00', TIME '18:00'),
+  (5, 'friday', TRUE, TIME '09:00', TIME '18:00'),
+  (6, 'saturday', FALSE, NULL, NULL),
+  (7, 'sunday', FALSE, NULL, NULL)
+ON CONFLICT (iso_day) DO NOTHING;
+
 INSERT INTO app_auth.password_activities (user_id, action, activity_at, platform, status)
 SELECT u.user_id, x.action, x.activity_at, x.platform, x.status
 FROM app_auth.users u

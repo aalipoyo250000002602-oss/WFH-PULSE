@@ -276,6 +276,25 @@ CREATE TABLE IF NOT EXISTS app.user_working_days (
   PRIMARY KEY (user_id, iso_day)
 );
 
+CREATE TABLE IF NOT EXISTS app.company_settings_working_hours (
+  working_hour_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  iso_day SMALLINT NOT NULL UNIQUE CHECK (iso_day BETWEEN 1 AND 7),
+  day_name TEXT NOT NULL UNIQUE,
+  is_working_day BOOLEAN NOT NULL DEFAULT TRUE,
+  start_time TIME,
+  end_time TIME,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT company_settings_working_hours_day_name_chk CHECK (
+    lower(day_name) = ANY (ARRAY['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])
+  ),
+  CONSTRAINT company_settings_working_hours_schedule_chk CHECK (
+    (is_working_day = TRUE AND start_time IS NOT NULL AND end_time IS NOT NULL AND start_time < end_time)
+    OR
+    (is_working_day = FALSE AND start_time IS NULL AND end_time IS NULL)
+  )
+);
+
 CREATE OR REPLACE FUNCTION app_auth.register_user(
   p_email CITEXT,
   p_password TEXT,
