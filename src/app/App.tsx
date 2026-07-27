@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect } from "react";
+import { Capacitor } from "@capacitor/core";
 import { AttendanceHeader } from "./components/attendance-header";
 import { BottomNavigation } from "./components/bottom-navigation";
 import { HomePage } from "./components/pages/home-page";
@@ -10,6 +11,19 @@ import { EmployeeDetailsPage } from "./components/pages/employee-details-page";
 import { LoginForm } from "./components/login-form";
 import { toast } from "sonner";
 import { Toaster } from "./components/ui/sonner";
+
+function resolveApiBaseUrl() {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+
+  // Android emulators access host machine services through 10.0.2.2, not localhost.
+  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android") {
+    return "http://10.0.2.2:8787";
+  }
+
+  return "http://localhost:8787";
+}
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -285,7 +299,7 @@ export default function App() {
   };
 
   const handleLogin = async (email: string, password: string) => {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8787";
+    const apiBaseUrl = resolveApiBaseUrl();
 
     try {
       const response = await fetch(`${apiBaseUrl}/auth/login`, {
