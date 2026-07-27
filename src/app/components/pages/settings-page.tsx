@@ -94,6 +94,33 @@ interface SettingsPageProps {
     dailyReport: boolean;
   };
   onUpdateNotifications: (notifications: any) => void;
+  securityPreferences: {
+    biometricLogin: boolean;
+    biometricClockInOut: boolean;
+    passwordWaived: boolean;
+  };
+  onUpdateSecurityPreferences: (updates: {
+    biometricLogin?: boolean;
+    biometricClockInOut?: boolean;
+    passwordWaived?: boolean;
+  }) => Promise<boolean>;
+  passwordActivities: Array<{
+    activityId: number;
+    action: string;
+    activityAt: string;
+    platform: string;
+    status: string;
+    isWaived: boolean;
+    details?: Record<string, unknown> | null;
+    ipAddress?: string | null;
+    userAgent?: string | null;
+  }>;
+  onUpdatePassword: (payload: {
+    newPassword: string;
+    waivePassword: boolean;
+    details?: Record<string, unknown>;
+  }) => Promise<boolean>;
+  onLoadPasswordActivities: (limit: number) => Promise<void>;
   userProfile: {
     name: string;
     email: string;
@@ -129,6 +156,11 @@ export function SettingsPage({
   onUpdateWorkingHours,
   notifications,
   onUpdateNotifications,
+  securityPreferences,
+  onUpdateSecurityPreferences,
+  passwordActivities,
+  onUpdatePassword,
+  onLoadPasswordActivities,
   userProfile,
   employmentOptions,
   onUpdateProfile,
@@ -188,9 +220,10 @@ export function SettingsPage({
   }, [userProfile]);
 
   // Security preferences state
-  const [biometricLogin, setBiometricLogin] = useState(true);
+  const [biometricLogin, setBiometricLogin] = useState(securityPreferences.biometricLogin);
   const [biometricClockIn, setBiometricClockIn] =
-    useState(false);
+    useState(securityPreferences.biometricClockInOut);
+  const [passwordWaived, setPasswordWaived] = useState(securityPreferences.passwordWaived);
   const [showSecurityDialog, setShowSecurityDialog] =
     useState(false);
 
@@ -199,6 +232,8 @@ export function SettingsPage({
     useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isSecuritySaving, setIsSecuritySaving] = useState(false);
+  const [isPasswordSaving, setIsPasswordSaving] = useState(false);
   
   // Collapsible card states
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -266,30 +301,11 @@ export function SettingsPage({
 
   const [governmentIdFormData, setGovernmentIdFormData] = useState(buildGovernmentIdFormData(localProfile));
 
-  // Password activities (mock data)
-  const [passwordActivities] = useState([
-    {
-      id: 1,
-      action: "Waive Password",
-      date: "Jul 12, 2025 11:47:03 PM",
-      platform: "iOS | Philippines",
-      status: "Successful",
-    },
-    {
-      id: 2,
-      action: "Waive Password",
-      date: "Apr 13, 2025 03:39:12 PM",
-      platform: "iOS | Philippines",
-      status: "Successful",
-    },
-    {
-      id: 3,
-      action: "Waive Password",
-      date: "Jan 12, 2025 07:22:27 PM",
-      platform: "iOS | Philippines",
-      status: "Successful",
-    },
-  ]);
+  useEffect(() => {
+    setBiometricLogin(securityPreferences.biometricLogin);
+    setBiometricClockIn(securityPreferences.biometricClockInOut);
+    setPasswordWaived(securityPreferences.passwordWaived);
+  }, [securityPreferences]);
 
   const handleSaveWorkingHours = async () => {
     const hasWorkingDay = Object.values(localWorkingDays).some(Boolean);
@@ -563,6 +579,75 @@ export function SettingsPage({
     }));
   };
 
+  const handleBiometricLoginChange = async (checked: boolean) => {
+    if (isSecuritySaving) {
+      return;
+    }
+
+    const previous = biometricLogin;
+    setBiometricLogin(checked);
+    setIsSecuritySaving(true);
+    try {
+      const didUpdate = await onUpdateSecurityPreferences({
+        biometricLogin: checked,
+      });
+
+      if (didUpdate) {
+        toast.success(`Biometric login ${checked ? "enabled" : "disabled"}`);
+      } else {
+        setBiometricLogin(previous);
+      }
+    } finally {
+      setIsSecuritySaving(false);
+    }
+  };
+
+  const handleBiometricClockInChange = async (checked: boolean) => {
+    if (isSecuritySaving) {
+      return;
+    }
+
+    const previous = biometricClockIn;
+    setBiometricClockIn(checked);
+    setIsSecuritySaving(true);
+    try {
+      const didUpdate = await onUpdateSecurityPreferences({
+        biometricClockInOut: checked,
+      });
+
+      if (didUpdate) {
+        toast.success(`Biometric clock-in/out ${checked ? "enabled" : "disabled"}`);
+      } else {
+        setBiometricClockIn(previous);
+      }
+    } finally {
+      setIsSecuritySaving(false);
+    }
+  };
+
+  const handlePasswordWaivedChange = async (checked: boolean) => {
+    if (isSecuritySaving) {
+      return;
+    }
+
+    const previous = passwordWaived;
+    setPasswordWaived(checked);
+    setIsSecuritySaving(true);
+    try {
+      const didUpdate = await onUpdateSecurityPreferences({
+        passwordWaived: checked,
+      });
+
+      if (didUpdate) {
+        toast.success(`Password waive flag ${checked ? "enabled" : "disabled"}`);
+      } else {
+        setPasswordWaived(previous);
+      }
+    } finally {
+      setIsSecuritySaving(false);
+    }
+  };
+
   // Password validation
   const passwordValidations = {
     notBlank: newPassword.length > 0,
@@ -576,13 +661,56 @@ export function SettingsPage({
     passwordValidations,
   ).filter(Boolean).length;
 
-  const handleSavePassword = () => {
-    if (validationCount === 5) {
+  const formatPasswordActivityDate = (value: string) => {
+    if (!value) {
+      return "";
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+
+    return parsed.toLocaleString("en-US", {
+      month: "short",
+      day: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
+  };
+
+  const handleSavePassword = async () => {
+    if (validationCount !== 5) {
+      toast.error("Please meet all password requirements");
+      return;
+    }
+
+    if (isPasswordSaving) {
+      return;
+    }
+
+    setIsPasswordSaving(true);
+    try {
+      const didUpdate = await onUpdatePassword({
+        newPassword,
+        waivePassword: passwordWaived,
+        details: {
+          source: "settings-password-dialog",
+        },
+      });
+
+      if (!didUpdate) {
+        return;
+      }
+
       setShowPasswordDialog(false);
       setNewPassword("");
       toast.success("Password updated successfully");
-    } else {
-      toast.error("Please meet all password requirements");
+    } finally {
+      setIsPasswordSaving(false);
     }
   };
 
@@ -1558,11 +1686,9 @@ export function SettingsPage({
               <Switch
                 checked={biometricLogin}
                 onCheckedChange={(checked) => {
-                  setBiometricLogin(checked);
-                  toast.success(
-                    `Biometric login ${checked ? "enabled" : "disabled"}`,
-                  );
+                  void handleBiometricLoginChange(checked);
                 }}
+                disabled={isSecuritySaving}
               />
             </div>
             <div className="flex items-center justify-between">
@@ -1578,11 +1704,24 @@ export function SettingsPage({
               <Switch
                 checked={biometricClockIn}
                 onCheckedChange={(checked) => {
-                  setBiometricClockIn(checked);
-                  toast.success(
-                    `Biometric clock-in/out ${checked ? "enabled" : "disabled"}`,
-                  );
+                  void handleBiometricClockInChange(checked);
                 }}
+                disabled={isSecuritySaving}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="font-medium">Password Waive Flag</p>
+                <p className="text-sm text-muted-foreground">
+                  Mark password changes as waived when applicable
+                </p>
+              </div>
+              <Switch
+                checked={passwordWaived}
+                onCheckedChange={(checked) => {
+                  void handlePasswordWaivedChange(checked);
+                }}
+                disabled={isSecuritySaving}
               />
             </div>
           </div>
@@ -1765,7 +1904,13 @@ export function SettingsPage({
                   <span className="h-2 w-2 rounded-full bg-vibrant-orange"></span>
                   Recent Activities
                 </Label>
-                <Button variant="outline" size="sm">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void onLoadPasswordActivities(100);
+                  }}
+                >
                   View More
                 </Button>
               </div>
@@ -1773,7 +1918,7 @@ export function SettingsPage({
               <div className="space-y-3 max-h-48 overflow-y-auto bg-muted/30 p-3 rounded-lg">
                 {passwordActivities.map((activity) => (
                   <div
-                    key={activity.id}
+                    key={activity.activityId}
                     className="border-b border-border pb-3 last:border-0 last:pb-0"
                   >
                     <div className="flex justify-between items-start">
@@ -1782,7 +1927,7 @@ export function SettingsPage({
                           {activity.action}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {activity.date}
+                          {formatPasswordActivityDate(activity.activityAt)}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {activity.platform}
@@ -1800,10 +1945,10 @@ export function SettingsPage({
             <div className="flex gap-2">
               <Button
                 onClick={handleSavePassword}
-                disabled={validationCount !== 5}
+                disabled={validationCount !== 5 || isPasswordSaving}
                 className="flex-1 bg-vibrant-orange hover:bg-vibrant-orange/90 text-vibrant-orange-foreground"
               >
-                Update Password
+                {isPasswordSaving ? "Saving..." : "Update Password"}
               </Button>
             </div>
           </div>

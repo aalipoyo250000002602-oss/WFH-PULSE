@@ -12,15 +12,18 @@ import {
 import { Separator } from "./ui/separator";
 import { LogIn, Moon, Sun, ScanFace, Loader2 } from "lucide-react";
 import logoImage from "figma:asset/80b7a2d7f7164e79d1aa41e678d57bd410cbb0ae.png";
+import { toast } from "sonner";
 
 interface LoginFormProps {
   onLogin: (email: string, password: string) => Promise<void>;
+  onBiometricLogin: (email: string) => Promise<void>;
   isDarkMode: boolean;
   onToggleTheme: () => void;
 }
 
 export function LoginForm({
   onLogin,
+  onBiometricLogin,
   isDarkMode,
   onToggleTheme,
 }: LoginFormProps) {
@@ -45,12 +48,17 @@ export function LoginForm({
   };
 
   const handleBiometricLogin = () => {
+    if (!email) {
+      toast.error("Email is required for Face ID sign-in");
+      return;
+    }
+
     setIsAuthenticating(true);
     setIsLoading(true);
-    // Simulate biometric authentication
+    // Simulate biometric scan delay before requesting temporary biometric sign-in.
     setTimeout(() => {
       setIsAuthenticating(false);
-      onLogin("test@mit.co", "testpass")
+      onBiometricLogin(email)
         .finally(() => {
           setIsLoading(false);
         });

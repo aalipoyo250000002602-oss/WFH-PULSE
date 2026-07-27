@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import process from "node:process";
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { getApiConfig } from "./config.mjs";
 import { query, withRlsContext, pool } from "./db.mjs";
@@ -34,6 +35,10 @@ const loginSchema = z.object({
 const refreshSchema = z.object({
   sessionId: z.string().uuid(),
   refreshToken: z.string().min(1),
+});
+
+const biometricLoginSchema = z.object({
+  email: z.string().email(),
 });
 
 const isoDateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -145,6 +150,72 @@ const companyWorkingHourUpdateSchema = z
 const companyWorkingHourBulkSchema = z.object({
   days: z.array(companyWorkingHourCreateSchema).min(1).max(7),
 });
+
+const passwordSymbolRegex = /[!@#$%^&*(),.?":{}|<>]/;
+
+const securityPreferenceCreateSchema = z.object({
+  biometricLogin: z.boolean().default(false),
+  biometricClockInOut: z.boolean().default(false),
+  passwordWaived: z.boolean().default(false),
+});
+
+const securityPreferenceUpdateSchema = z
+  .object({
+    biometricLogin: z.boolean().optional(),
+    biometricClockInOut: z.boolean().optional(),
+    passwordWaived: z.boolean().optional(),
+  })
+  .refine((payload) => Object.keys(payload).length > 0, {
+    message: "At least one field is required",
+  });
+
+const updatePasswordSchema = z.object({
+  newPassword: z.string().min(8).max(30),
+  waivePassword: z.boolean().default(false),
+  platform: z.string().min(1).max(120).optional(),
+  status: z.string().min(1).max(40).optional(),
+  details: z.record(z.any()).optional(),
+});
+
+function mapSecurityPreferenceRow(row) {
+  return {
+    biometricLogin: row.biometric_login,
+    biometricClockInOut: row.biometric_clock_in_out,
+    passwordWaived: row.password_waived,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapPasswordActivityRow(row) {
+  return {
+    activityId: Number(row.activity_id),
+    action: row.action,
+    activityAt: row.activity_at,
+    platform: row.platform,
+    status: row.status,
+    isWaived: row.is_waived,
+    details: row.details,
+    ipAddress: row.ip_address,
+    userAgent: row.user_agent,
+  };
+}
+
+function getPasswordValidationError(password) {
+  if (!/[a-zA-Z]/.test(password)) {
+    return "Password should contain a letter";
+  }
+
+  if (!/\d/.test(password)) {
+    return "Password should contain a number";
+  }
+
+  if (!passwordSymbolRegex.test(password)) {
+    return "Password should contain a symbol";
+  }
+
+  return null;
+}
 
 const selfProfileUpdateSchema = z
   .object({
@@ -363,6 +434,109 @@ app.post("/auth/login", async (req, res) => {
         userId: row.user_id,
         employeeId: profile?.employee_id ?? null,
         email: profile?.email ?? email,
+        fullName: profile?.first_name
+          ? `${profile.first_name} ${profile.last_name}`
+          : null,
+      },
+    });
+  } catch (error) {
+    return res.status(401).json({ error: error.message });
+  }
+});
+
+app.post("/auth/biometric-login", async (req, res) => {
+  const parsed = biometricLoginSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const { email } = parsed.data;
+
+  try {
+    const userResult = await query(
+      `
+      SELECT
+        u.user_id,
+        u.email,
+        u.employee_id,
+        u.is_active,
+        COALESCE(sp.biometric_login, u.biometric_enabled, FALSE) AS biometric_login,
+        r.role_name
+      FROM app_auth.users u
+      LEFT JOIN app_auth.user_security_preferences sp ON sp.user_id = u.user_id
+      LEFT JOIN app_auth.user_roles ur ON ur.user_id = u.user_id
+      LEFT JOIN app_auth.roles r ON r.role_id = ur.role_id
+      WHERE u.email = $1::citext
+      ORDER BY r.role_name DESC NULLS LAST
+      LIMIT 1
+      `,
+      [email],
+    );
+
+    const userRow = userResult.rows[0] ?? null;
+    if (!userRow || !userRow.is_active) {
+      return res.status(401).json({ error: "User does not exist or is inactive" });
+    }
+
+    if (!userRow.biometric_login) {
+      return res.status(403).json({ error: "Biometric login is disabled for this user" });
+    }
+
+    const roleName = userRow.role_name ?? "employee";
+    const refreshToken = randomBytes(48).toString("base64url");
+
+    const sessionResult = await query(
+      `
+      INSERT INTO app_auth.sessions (
+        user_id,
+        refresh_token_hash,
+        ip_address,
+        user_agent,
+        expires_at
+      )
+      VALUES (
+        $1::uuid,
+        crypt($2::text, gen_salt('bf', 8)),
+        $3::inet,
+        $4::text,
+        NOW() + INTERVAL '30 days'
+      )
+      RETURNING session_id
+      `,
+      [
+        userRow.user_id,
+        refreshToken,
+        null,
+        req.headers["user-agent"] ?? "biometric-client",
+      ],
+    );
+
+    await query(
+      `
+      UPDATE app_auth.users
+      SET last_login_at = NOW(), updated_at = NOW()
+      WHERE user_id = $1::uuid
+      `,
+      [userRow.user_id],
+    );
+
+    const profile = await getUserProfileByUserId(userRow.user_id);
+    const accessToken = signAccessToken({
+      userId: userRow.user_id,
+      role: roleName,
+      sessionId: sessionResult.rows[0].session_id,
+      employeeId: profile?.employee_id ?? userRow.employee_id ?? null,
+    });
+
+    return res.json({
+      accessToken,
+      refreshToken,
+      sessionId: sessionResult.rows[0].session_id,
+      role: roleName,
+      user: {
+        userId: userRow.user_id,
+        employeeId: profile?.employee_id ?? userRow.employee_id ?? null,
+        email: profile?.email ?? userRow.email,
         fullName: profile?.first_name
           ? `${profile.first_name} ${profile.last_name}`
           : null,
@@ -683,6 +857,312 @@ app.patch("/me/profile", requireAuth, async (req, res) => {
     }
   } catch (error) {
     return res.status(400).json({ error: error.message });
+  }
+});
+
+app.get("/me/security-preferences", requireAuth, async (req, res) => {
+  try {
+    await query(
+      `
+      INSERT INTO app_auth.user_security_preferences (user_id)
+      VALUES ($1::uuid)
+      ON CONFLICT (user_id) DO NOTHING
+      `,
+      [req.auth.userId],
+    );
+
+    const preferenceResult = await query(
+      `
+      SELECT
+        biometric_login,
+        biometric_clock_in_out,
+        password_waived,
+        created_at,
+        updated_at
+      FROM app_auth.user_security_preferences
+      WHERE user_id = $1::uuid
+      `,
+      [req.auth.userId],
+    );
+
+    const activityResult = await query(
+      `
+      SELECT
+        activity_id,
+        action,
+        activity_at,
+        platform,
+        status,
+        is_waived,
+        details,
+        ip_address,
+        user_agent
+      FROM app_auth.password_activities
+      WHERE user_id = $1::uuid
+      ORDER BY activity_at DESC
+      LIMIT 20
+      `,
+      [req.auth.userId],
+    );
+
+    const preferenceRow = preferenceResult.rows[0] ?? {
+      biometric_login: false,
+      biometric_clock_in_out: false,
+      password_waived: false,
+      created_at: null,
+      updated_at: null,
+    };
+
+    return res.json({
+      preferences: mapSecurityPreferenceRow(preferenceRow),
+      passwordActivities: activityResult.rows.map(mapPasswordActivityRow),
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.get("/me/security-preferences/password-activities", requireAuth, async (req, res) => {
+  const requestedLimit = Number(req.query.limit ?? 20);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.max(1, Math.min(100, Math.floor(requestedLimit)))
+    : 20;
+
+  try {
+    const activityResult = await query(
+      `
+      SELECT
+        activity_id,
+        action,
+        activity_at,
+        platform,
+        status,
+        is_waived,
+        details,
+        ip_address,
+        user_agent
+      FROM app_auth.password_activities
+      WHERE user_id = $1::uuid
+      ORDER BY activity_at DESC
+      LIMIT $2::int
+      `,
+      [req.auth.userId, limit],
+    );
+
+    return res.json({
+      passwordActivities: activityResult.rows.map(mapPasswordActivityRow),
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/me/security-preferences", requireAuth, async (req, res) => {
+  const parsed = securityPreferenceCreateSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const payload = parsed.data;
+  try {
+    const result = await query(
+      `
+      INSERT INTO app_auth.user_security_preferences (
+        user_id,
+        biometric_login,
+        biometric_clock_in_out,
+        password_waived
+      )
+      VALUES ($1::uuid, $2::boolean, $3::boolean, $4::boolean)
+      ON CONFLICT (user_id) DO NOTHING
+      RETURNING biometric_login, biometric_clock_in_out, password_waived, created_at, updated_at
+      `,
+      [
+        req.auth.userId,
+        payload.biometricLogin,
+        payload.biometricClockInOut,
+        payload.passwordWaived,
+      ],
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(409).json({ error: "Security preferences already exist for this user" });
+    }
+
+    return res.status(201).json({ preferences: mapSecurityPreferenceRow(result.rows[0]) });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.put("/me/security-preferences", requireAuth, async (req, res) => {
+  const parsed = securityPreferenceUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const payload = parsed.data;
+
+  try {
+    const result = await query(
+      `
+      INSERT INTO app_auth.user_security_preferences (
+        user_id,
+        biometric_login,
+        biometric_clock_in_out,
+        password_waived
+      )
+      VALUES (
+        $1::uuid,
+        COALESCE($2::boolean, FALSE),
+        COALESCE($3::boolean, FALSE),
+        COALESCE($4::boolean, FALSE)
+      )
+      ON CONFLICT (user_id) DO UPDATE
+      SET
+        biometric_login = COALESCE($2::boolean, app_auth.user_security_preferences.biometric_login),
+        biometric_clock_in_out = COALESCE($3::boolean, app_auth.user_security_preferences.biometric_clock_in_out),
+        password_waived = COALESCE($4::boolean, app_auth.user_security_preferences.password_waived),
+        updated_at = NOW()
+      RETURNING biometric_login, biometric_clock_in_out, password_waived, created_at, updated_at
+      `,
+      [
+        req.auth.userId,
+        Object.prototype.hasOwnProperty.call(payload, "biometricLogin")
+          ? payload.biometricLogin
+          : null,
+        Object.prototype.hasOwnProperty.call(payload, "biometricClockInOut")
+          ? payload.biometricClockInOut
+          : null,
+        Object.prototype.hasOwnProperty.call(payload, "passwordWaived")
+          ? payload.passwordWaived
+          : null,
+      ],
+    );
+
+    return res.json({ preferences: mapSecurityPreferenceRow(result.rows[0]) });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete("/me/security-preferences", requireAuth, async (req, res) => {
+  try {
+    const result = await query(
+      `
+      DELETE FROM app_auth.user_security_preferences
+      WHERE user_id = $1::uuid
+      RETURNING user_id
+      `,
+      [req.auth.userId],
+    );
+
+    return res.json({
+      deleted: result.rowCount > 0,
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/me/security-preferences/password", requireAuth, async (req, res) => {
+  const parsed = updatePasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const payload = parsed.data;
+  const passwordValidationError = getPasswordValidationError(payload.newPassword);
+  if (passwordValidationError) {
+    return res.status(400).json({ error: passwordValidationError });
+  }
+
+  const platform = payload.platform ?? String(req.headers["user-agent"] ?? "api-client").slice(0, 120);
+  const status = payload.status ?? "Successful";
+  const action = payload.waivePassword ? "Waive Password" : "Update Password";
+  const userAgent = String(req.headers["user-agent"] ?? "api-client");
+  const ipAddress = req.ip ?? null;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    await client.query(
+      `
+      UPDATE app_auth.users
+      SET password_hash = crypt($1::text, gen_salt('bf', 10)), updated_at = NOW()
+      WHERE user_id = $2::uuid
+      `,
+      [payload.newPassword, req.auth.userId],
+    );
+
+    await client.query(
+      `
+      INSERT INTO app_auth.user_security_preferences (user_id, password_waived)
+      VALUES ($1::uuid, $2::boolean)
+      ON CONFLICT (user_id) DO UPDATE
+      SET password_waived = EXCLUDED.password_waived, updated_at = NOW()
+      `,
+      [req.auth.userId, payload.waivePassword],
+    );
+
+    const activityResult = await client.query(
+      `
+      INSERT INTO app_auth.password_activities (
+        user_id,
+        action,
+        activity_at,
+        platform,
+        status,
+        is_waived,
+        details,
+        ip_address,
+        user_agent
+      )
+      VALUES (
+        $1::uuid,
+        $2::text,
+        NOW(),
+        $3::text,
+        $4::text,
+        $5::boolean,
+        $6::jsonb,
+        $7::inet,
+        $8::text
+      )
+      RETURNING
+        activity_id,
+        action,
+        activity_at,
+        platform,
+        status,
+        is_waived,
+        details,
+        ip_address,
+        user_agent
+      `,
+      [
+        req.auth.userId,
+        action,
+        platform,
+        status,
+        payload.waivePassword,
+        payload.details ? JSON.stringify(payload.details) : null,
+        ipAddress,
+        userAgent,
+      ],
+    );
+
+    await client.query("COMMIT");
+    return res.json({
+      ok: true,
+      activity: mapPasswordActivityRow(activityResult.rows[0]),
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    return res.status(400).json({ error: error.message });
+  } finally {
+    client.release();
   }
 });
 

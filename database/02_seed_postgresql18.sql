@@ -710,14 +710,67 @@ VALUES
   (7, 'sunday', FALSE, NULL, NULL)
 ON CONFLICT (iso_day) DO NOTHING;
 
-INSERT INTO app_auth.password_activities (user_id, action, activity_at, platform, status)
-SELECT u.user_id, x.action, x.activity_at, x.platform, x.status
+INSERT INTO app_auth.user_security_preferences (
+  user_id,
+  biometric_login,
+  biometric_clock_in_out,
+  password_waived
+)
+SELECT
+  u.user_id,
+  TRUE,
+  FALSE,
+  TRUE
+FROM app_auth.users u
+WHERE u.email = 'Alex.Ali@uic.co'
+ON CONFLICT (user_id) DO UPDATE
+SET
+  biometric_login = EXCLUDED.biometric_login,
+  biometric_clock_in_out = EXCLUDED.biometric_clock_in_out,
+  password_waived = EXCLUDED.password_waived,
+  updated_at = NOW();
+
+INSERT INTO app_auth.password_activities (
+  user_id,
+  action,
+  activity_at,
+  platform,
+  status,
+  is_waived,
+  details,
+  user_agent
+)
+SELECT u.user_id, x.action, x.activity_at, x.platform, x.status, x.is_waived, x.details, x.user_agent
 FROM app_auth.users u
 CROSS JOIN (VALUES
-  ('Waive Password', TIMESTAMPTZ '2025-07-12 23:47:03', 'iOS | Philippines', 'Successful'),
-  ('Waive Password', TIMESTAMPTZ '2025-04-13 15:39:12', 'iOS | Philippines', 'Successful'),
-  ('Waive Password', TIMESTAMPTZ '2025-01-12 19:22:27', 'iOS | Philippines', 'Successful')
-) AS x(action, activity_at, platform, status)
+  (
+    'Waive Password',
+    TIMESTAMPTZ '2025-07-12 23:47:03',
+    'iOS | Philippines',
+    'Successful',
+    TRUE,
+    '{"ipAddress":"172.16.4.25","device":"iPhone 14 Pro","location":"Philippines"}'::jsonb,
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X)'
+  ),
+  (
+    'Waive Password',
+    TIMESTAMPTZ '2025-04-13 15:39:12',
+    'iOS | Philippines',
+    'Successful',
+    TRUE,
+    '{"ipAddress":"172.16.2.18","device":"iPhone 13","location":"Philippines"}'::jsonb,
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X)'
+  ),
+  (
+    'Waive Password',
+    TIMESTAMPTZ '2025-01-12 19:22:27',
+    'iOS | Philippines',
+    'Successful',
+    TRUE,
+    '{"ipAddress":"172.16.1.44","device":"iPhone 12","location":"Philippines"}'::jsonb,
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_7 like Mac OS X)'
+  )
+) AS x(action, activity_at, platform, status, is_waived, details, user_agent)
 WHERE u.email = 'Alex.Ali@uic.co';
 
 COMMIT;

@@ -255,7 +255,20 @@ CREATE TABLE IF NOT EXISTS app_auth.password_activities (
   action TEXT NOT NULL,
   activity_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   platform TEXT,
-  status TEXT
+  status TEXT,
+  is_waived BOOLEAN NOT NULL DEFAULT FALSE,
+  details JSONB,
+  ip_address INET,
+  user_agent TEXT
+);
+
+CREATE TABLE IF NOT EXISTS app_auth.user_security_preferences (
+  user_id UUID PRIMARY KEY REFERENCES app_auth.users(user_id) ON DELETE CASCADE,
+  biometric_login BOOLEAN NOT NULL DEFAULT FALSE,
+  biometric_clock_in_out BOOLEAN NOT NULL DEFAULT FALSE,
+  password_waived BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS app.user_preferences (

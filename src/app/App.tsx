@@ -57,6 +57,24 @@ interface EmploymentOptionsState {
   positions: EmploymentPositionOption[];
 }
 
+interface SecurityPreferencesState {
+  biometricLogin: boolean;
+  biometricClockInOut: boolean;
+  passwordWaived: boolean;
+}
+
+interface PasswordActivityState {
+  activityId: number;
+  action: string;
+  activityAt: string;
+  platform: string;
+  status: string;
+  isWaived: boolean;
+  details?: Record<string, unknown> | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}
+
 interface LoginResponsePayload {
   accessToken: string;
   refreshToken: string;
@@ -125,6 +143,12 @@ export default function App() {
     clockOutReminder: true,
     dailyReport: false,
   });
+  const [securityPreferences, setSecurityPreferences] = useState<SecurityPreferencesState>({
+    biometricLogin: true,
+    biometricClockInOut: false,
+    passwordWaived: false,
+  });
+  const [passwordActivities, setPasswordActivities] = useState<PasswordActivityState[]>([]);
   const [userProfile, setUserProfile] = useState({
     name: "Alex Ali",
     email: "Alex.Ali@uic.co",
@@ -457,6 +481,195 @@ export default function App() {
     }
   };
 
+  const loadPasswordActivities = async (accessToken: string, limit = 20) => {
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/me/security-preferences/password-activities?limit=${Math.max(1, Math.min(100, limit))}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = await response.json().catch(() => ({}));
+      const rows = Array.isArray(payload?.passwordActivities)
+        ? payload.passwordActivities
+        : [];
+
+      setPasswordActivities(
+        rows.map((row: any) => ({
+          activityId: Number(row.activityId),
+          action: String(row.action ?? "Update Password"),
+          activityAt: String(row.activityAt ?? ""),
+          platform: String(row.platform ?? "Unknown"),
+          status: String(row.status ?? "Successful"),
+          isWaived: Boolean(row.isWaived),
+          details: row.details ?? null,
+          ipAddress: row.ipAddress ?? null,
+          userAgent: row.userAgent ?? null,
+        })),
+      );
+    } catch {
+      // Keep existing list when endpoint is unavailable.
+    }
+  };
+
+  const loadSecurityPreferences = async (accessToken: string) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/me/security-preferences`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = await response.json().catch(() => ({}));
+      const pref = payload?.preferences ?? {};
+
+      setSecurityPreferences({
+        biometricLogin: Boolean(pref.biometricLogin),
+        biometricClockInOut: Boolean(pref.biometricClockInOut),
+        passwordWaived: Boolean(pref.passwordWaived),
+      });
+
+      const rows = Array.isArray(payload?.passwordActivities)
+        ? payload.passwordActivities
+        : [];
+      setPasswordActivities(
+        rows.map((row: any) => ({
+          activityId: Number(row.activityId),
+          action: String(row.action ?? "Update Password"),
+          activityAt: String(row.activityAt ?? ""),
+          platform: String(row.platform ?? "Unknown"),
+          status: String(row.status ?? "Successful"),
+          isWaived: Boolean(row.isWaived),
+          details: row.details ?? null,
+          ipAddress: row.ipAddress ?? null,
+          userAgent: row.userAgent ?? null,
+        })),
+      );
+    } catch {
+      // Keep defaults when endpoint is unavailable.
+    }
+  };
+
+  const updateSecurityPreferences = async (updates: Partial<SecurityPreferencesState>) => {
+    if (!authSession?.accessToken) {
+      toast.error("Unable to update security preferences", {
+        description: "Your session is missing. Please sign in again.",
+      });
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/me/security-preferences`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authSession.accessToken}`,
+        },
+        body: JSON.stringify(updates),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error("Security preferences update failed", {
+          description: payload?.error || "Please review your security settings.",
+        });
+        return false;
+      }
+
+      const pref = payload?.preferences ?? {};
+      setSecurityPreferences({
+        biometricLogin: Boolean(pref.biometricLogin),
+        biometricClockInOut: Boolean(pref.biometricClockInOut),
+        passwordWaived: Boolean(pref.passwordWaived),
+      });
+      return true;
+    } catch {
+      toast.error("Security preferences update failed", {
+        description: "Unable to reach the API server.",
+      });
+      return false;
+    }
+  };
+
+  const updatePasswordForUser = async (payload: {
+    newPassword: string;
+    waivePassword: boolean;
+    details?: Record<string, unknown>;
+  }) => {
+    if (!authSession?.accessToken) {
+      toast.error("Unable to update password", {
+        description: "Your session is missing. Please sign in again.",
+      });
+      return false;
+    }
+
+    try {
+      const platform = `${Capacitor.getPlatform().toUpperCase()} | Philippines`;
+      const response = await fetch(`${apiBaseUrl}/me/security-preferences/password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authSession.accessToken}`,
+        },
+        body: JSON.stringify({
+          newPassword: payload.newPassword,
+          waivePassword: payload.waivePassword,
+          platform,
+          status: "Successful",
+          details: payload.details,
+        }),
+      });
+
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error("Password update failed", {
+          description: body?.error || "Please review the password requirements.",
+        });
+        return false;
+      }
+
+      setSecurityPreferences((prev) => ({
+        ...prev,
+        passwordWaived: payload.waivePassword,
+      }));
+
+      if (body?.activity) {
+        const nextActivity: PasswordActivityState = {
+          activityId: Number(body.activity.activityId),
+          action: String(body.activity.action ?? "Update Password"),
+          activityAt: String(body.activity.activityAt ?? ""),
+          platform: String(body.activity.platform ?? platform),
+          status: String(body.activity.status ?? "Successful"),
+          isWaived: Boolean(body.activity.isWaived),
+          details: body.activity.details ?? null,
+          ipAddress: body.activity.ipAddress ?? null,
+          userAgent: body.activity.userAgent ?? null,
+        };
+        setPasswordActivities((prev) => [nextActivity, ...prev].slice(0, 100));
+      }
+
+      return true;
+    } catch {
+      toast.error("Password update failed", {
+        description: "Unable to reach the API server.",
+      });
+      return false;
+    }
+  };
+
   // Mock attendance data for the calendar - October 2025 (Weekdays only, no Saturdays/Sundays)
   const [attendanceData] = useState<
     Record<string, "present" | "absent" | "on-leave" | "late">
@@ -704,6 +917,38 @@ export default function App() {
     }
   };
 
+  const completeSignIn = async (payload: Partial<LoginResponsePayload>) => {
+    if (!payload?.accessToken || !payload?.refreshToken || !payload?.sessionId) {
+      toast.error("Sign in failed", {
+        description: "API login response is missing session information.",
+      });
+      return false;
+    }
+
+    setAuthSession({
+      accessToken: payload.accessToken,
+      refreshToken: payload.refreshToken,
+      sessionId: payload.sessionId,
+    });
+
+    setUserProfile((prev) => ({
+      ...prev,
+      name: payload.user?.fullName || prev.name,
+      email: payload.user?.email || prev.email,
+    }));
+
+    await loadSelfProfile(payload.accessToken, {
+      fullName: payload.user?.fullName,
+      email: payload.user?.email,
+    });
+    await loadEmploymentOptions(payload.accessToken);
+    await loadCompanyWorkingHours(payload.accessToken);
+    await loadSecurityPreferences(payload.accessToken);
+
+    setIsLoggedIn(true);
+    return true;
+  };
+
   const handleLogin = async (email: string, password: string) => {
     try {
       const response = await fetch(`${apiBaseUrl}/auth/login`, {
@@ -728,38 +973,55 @@ export default function App() {
         return;
       }
 
-      if (!payload?.accessToken || !payload?.refreshToken || !payload?.sessionId) {
-        toast.error("Sign in failed", {
-          description: "API login response is missing session information.",
-        });
+      const didSignIn = await completeSignIn(payload);
+      if (!didSignIn) {
         return;
       }
 
-      setAuthSession({
-        accessToken: payload.accessToken,
-        refreshToken: payload.refreshToken,
-        sessionId: payload.sessionId,
-      });
-
-      setUserProfile((prev) => ({
-        ...prev,
-        name: payload.user?.fullName || prev.name,
-        email: payload.user?.email || prev.email,
-      }));
-
-      await loadSelfProfile(payload.accessToken, {
-        fullName: payload.user?.fullName,
-        email: payload.user?.email,
-      });
-      await loadEmploymentOptions(payload.accessToken);
-      await loadCompanyWorkingHours(payload.accessToken);
-
-      setIsLoggedIn(true);
       toast.success("Welcome back!", {
         description: "Successfully signed in to your account",
       });
     } catch {
       toast.error("Sign in failed", {
+        description: "Unable to reach auth server. Please check your API connection.",
+      });
+    }
+  };
+
+  const handleBiometricLogin = async (email: string) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/biometric-login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      let payload: ({ error?: string } & Partial<LoginResponsePayload>) | null = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        toast.error("Face ID sign in failed", {
+          description: payload?.error || "Biometric sign-in is not available for this user.",
+        });
+        return;
+      }
+
+      const didSignIn = await completeSignIn(payload ?? {});
+      if (!didSignIn) {
+        return;
+      }
+
+      toast.success("Face ID sign in successful", {
+        description: "Temporary biometric session started.",
+      });
+    } catch {
+      toast.error("Face ID sign in failed", {
         description: "Unable to reach auth server. Please check your API connection.",
       });
     }
@@ -938,6 +1200,16 @@ export default function App() {
             onUpdateWorkingHours={updateCompanyWorkingHours}
             notifications={notifications}
             onUpdateNotifications={setNotifications}
+            securityPreferences={securityPreferences}
+            onUpdateSecurityPreferences={updateSecurityPreferences}
+            passwordActivities={passwordActivities}
+            onUpdatePassword={updatePasswordForUser}
+            onLoadPasswordActivities={async (limit) => {
+              if (!authSession?.accessToken) {
+                return;
+              }
+              await loadPasswordActivities(authSession.accessToken, limit);
+            }}
             userProfile={userProfile}
             employmentOptions={employmentOptions}
             onUpdateProfile={updateSelfProfile}
@@ -961,6 +1233,7 @@ export default function App() {
       <>
         <LoginForm
           onLogin={handleLogin}
+          onBiometricLogin={handleBiometricLogin}
           isDarkMode={isDarkMode}
           onToggleTheme={handleToggleTheme}
         />
