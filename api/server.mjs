@@ -38,7 +38,7 @@ const refreshSchema = z.object({
 });
 
 const biometricLoginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email().optional(),
 });
 
 const isoDateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -453,25 +453,45 @@ app.post("/auth/biometric-login", async (req, res) => {
   const { email } = parsed.data;
 
   try {
-    const userResult = await query(
-      `
-      SELECT
-        u.user_id,
-        u.email,
-        u.employee_id,
-        u.is_active,
-        COALESCE(sp.biometric_login, u.biometric_enabled, FALSE) AS biometric_login,
-        r.role_name
-      FROM app_auth.users u
-      LEFT JOIN app_auth.user_security_preferences sp ON sp.user_id = u.user_id
-      LEFT JOIN app_auth.user_roles ur ON ur.user_id = u.user_id
-      LEFT JOIN app_auth.roles r ON r.role_id = ur.role_id
-      WHERE u.email = $1::citext
-      ORDER BY r.role_name DESC NULLS LAST
-      LIMIT 1
-      `,
-      [email],
-    );
+    const userResult = email
+      ? await query(
+          `
+          SELECT
+            u.user_id,
+            u.email,
+            u.employee_id,
+            u.is_active,
+            COALESCE(sp.biometric_login, u.biometric_enabled, FALSE) AS biometric_login,
+            r.role_name
+          FROM app_auth.users u
+          LEFT JOIN app_auth.user_security_preferences sp ON sp.user_id = u.user_id
+          LEFT JOIN app_auth.user_roles ur ON ur.user_id = u.user_id
+          LEFT JOIN app_auth.roles r ON r.role_id = ur.role_id
+          WHERE u.email = $1::citext
+          ORDER BY r.role_name DESC NULLS LAST
+          LIMIT 1
+          `,
+          [email],
+        )
+      : await query(
+          `
+          SELECT
+            u.user_id,
+            u.email,
+            u.employee_id,
+            u.is_active,
+            COALESCE(sp.biometric_login, u.biometric_enabled, FALSE) AS biometric_login,
+            r.role_name
+          FROM app_auth.users u
+          LEFT JOIN app_auth.user_security_preferences sp ON sp.user_id = u.user_id
+          LEFT JOIN app_auth.user_roles ur ON ur.user_id = u.user_id
+          LEFT JOIN app_auth.roles r ON r.role_id = ur.role_id
+          WHERE u.is_active = TRUE
+            AND COALESCE(sp.biometric_login, u.biometric_enabled, FALSE) = TRUE
+          ORDER BY u.last_login_at DESC NULLS LAST, u.created_at DESC
+          LIMIT 1
+          `,
+        );
 
     const userRow = userResult.rows[0] ?? null;
     if (!userRow || !userRow.is_active) {
@@ -544,6 +564,28 @@ app.post("/auth/biometric-login", async (req, res) => {
     });
   } catch (error) {
     return res.status(401).json({ error: error.message });
+  }
+});
+
+app.get("/auth/biometric-login/available", async (_req, res) => {
+  try {
+    const result = await query(
+      `
+      SELECT EXISTS (
+        SELECT 1
+        FROM app_auth.users u
+        LEFT JOIN app_auth.user_security_preferences sp ON sp.user_id = u.user_id
+        WHERE u.is_active = TRUE
+          AND COALESCE(sp.biometric_login, u.biometric_enabled, FALSE) = TRUE
+      ) AS available
+      `,
+    );
+
+    return res.json({
+      available: Boolean(result.rows[0]?.available),
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
   }
 });
 

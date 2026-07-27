@@ -16,7 +16,8 @@ import { toast } from "sonner";
 
 interface LoginFormProps {
   onLogin: (email: string, password: string) => Promise<void>;
-  onBiometricLogin: (email: string) => Promise<void>;
+  onBiometricLogin: () => Promise<void>;
+  showBiometricLogin: boolean;
   isDarkMode: boolean;
   onToggleTheme: () => void;
 }
@@ -24,6 +25,7 @@ interface LoginFormProps {
 export function LoginForm({
   onLogin,
   onBiometricLogin,
+  showBiometricLogin,
   isDarkMode,
   onToggleTheme,
 }: LoginFormProps) {
@@ -48,17 +50,12 @@ export function LoginForm({
   };
 
   const handleBiometricLogin = () => {
-    if (!email) {
-      toast.error("Email is required for Face ID sign-in");
-      return;
-    }
-
     setIsAuthenticating(true);
     setIsLoading(true);
     // Simulate biometric scan delay before requesting temporary biometric sign-in.
     setTimeout(() => {
       setIsAuthenticating(false);
-      onBiometricLogin(email)
+      onBiometricLogin()
         .finally(() => {
           setIsLoading(false);
         });
@@ -147,35 +144,39 @@ export function LoginForm({
             </form>
 
             {/* Divider */}
-            <div className="relative">
-              <Separator />
-              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-3">
-                <span className="text-sm text-muted-foreground">
-                  or
-                </span>
+            {showBiometricLogin ? (
+              <div className="relative">
+                <Separator />
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-3">
+                  <span className="text-sm text-muted-foreground">
+                    or
+                  </span>
+                </div>
               </div>
-            </div>
+            ) : null}
 
             {/* Biometric login */}
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleBiometricLogin}
-              disabled={isAuthenticating}
-              className="w-full h-12 border-2"
-            >
-              {isAuthenticating ? (
-                <>
-                  <ScanFace className="h-5 w-5 mr-2 animate-pulse" />
-                  Authenticating...
-                </>
-              ) : (
-                <>
-                  <ScanFace className="h-5 w-5 mr-2" />
-                  Sign in with Face ID
-                </>
-              )}
-            </Button>
+            {showBiometricLogin ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleBiometricLogin}
+                disabled={isAuthenticating}
+                className="w-full h-12 border-2"
+              >
+                {isAuthenticating ? (
+                  <>
+                    <ScanFace className="h-5 w-5 mr-2 animate-pulse" />
+                    Authenticating...
+                  </>
+                ) : (
+                  <>
+                    <ScanFace className="h-5 w-5 mr-2" />
+                    Sign in with Face ID
+                  </>
+                )}
+              </Button>
+            ) : null}
 
             {/* Demo notice */}
             <p className="text-center text-sm text-muted-foreground">

@@ -114,6 +114,13 @@ function resolveApiBaseUrl() {
 
 export default function App() {
   const apiBaseUrl = resolveApiBaseUrl();
+  const [isBiometricLoginAvailable, setIsBiometricLoginAvailable] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    return window.localStorage.getItem("wfh:biometricLoginEnabled") === "true";
+  });
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   const [currentPage, setCurrentPage] = useState("home");
@@ -541,6 +548,11 @@ export default function App() {
         biometricClockInOut: Boolean(pref.biometricClockInOut),
         passwordWaived: Boolean(pref.passwordWaived),
       });
+      setIsBiometricLoginAvailable(Boolean(pref.biometricLogin));
+      window.localStorage.setItem(
+        "wfh:biometricLoginEnabled",
+        String(Boolean(pref.biometricLogin)),
+      );
 
       const rows = Array.isArray(payload?.passwordActivities)
         ? payload.passwordActivities
@@ -590,11 +602,14 @@ export default function App() {
       }
 
       const pref = payload?.preferences ?? {};
+      const nextBiometricLogin = Boolean(pref.biometricLogin);
       setSecurityPreferences({
-        biometricLogin: Boolean(pref.biometricLogin),
+        biometricLogin: nextBiometricLogin,
         biometricClockInOut: Boolean(pref.biometricClockInOut),
         passwordWaived: Boolean(pref.passwordWaived),
       });
+      setIsBiometricLoginAvailable(nextBiometricLogin);
+      window.localStorage.setItem("wfh:biometricLoginEnabled", String(nextBiometricLogin));
       return true;
     } catch {
       toast.error("Security preferences update failed", {
@@ -917,6 +932,28 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    const loadBiometricAvailability = async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/auth/biometric-login/available`, {
+          method: "GET",
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = await response.json().catch(() => ({}));
+        const available = Boolean(payload?.available);
+        setIsBiometricLoginAvailable((prev) => prev || available);
+      } catch {
+        // Keep the persisted local preference when availability endpoint is unreachable.
+      }
+    };
+
+    void loadBiometricAvailability();
+  }, [apiBaseUrl]);
+
   const completeSignIn = async (payload: Partial<LoginResponsePayload>) => {
     if (!payload?.accessToken || !payload?.refreshToken || !payload?.sessionId) {
       toast.error("Sign in failed", {
@@ -930,6 +967,10 @@ export default function App() {
       refreshToken: payload.refreshToken,
       sessionId: payload.sessionId,
     });
+
+    if (payload.user?.email) {
+      window.localStorage.setItem("wfh:lastBiometricEmail", payload.user.email);
+    }
 
     setUserProfile((prev) => ({
       ...prev,
@@ -988,14 +1029,15 @@ export default function App() {
     }
   };
 
-  const handleBiometricLogin = async (email: string) => {
+  const handleBiometricLogin = async () => {
     try {
+      const rememberedEmail = window.localStorage.getItem("wfh:lastBiometricEmail") || undefined;
       const response = await fetch(`${apiBaseUrl}/auth/biometric-login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify(rememberedEmail ? { email: rememberedEmail } : {}),
       });
 
       let payload: ({ error?: string } & Partial<LoginResponsePayload>) | null = null;
@@ -1234,6 +1276,7 @@ export default function App() {
         <LoginForm
           onLogin={handleLogin}
           onBiometricLogin={handleBiometricLogin}
+          showBiometricLogin={isBiometricLoginAvailable}
           isDarkMode={isDarkMode}
           onToggleTheme={handleToggleTheme}
         />
