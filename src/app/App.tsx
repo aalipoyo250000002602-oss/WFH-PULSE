@@ -1241,7 +1241,7 @@ export default function App() {
             workingHours={formatWorkingHours()}
             scheduledStartTime={workingHours.start}
             location="Tech Hub Office, Floor 5"
-            departmentOptions={employmentOptions.departments}
+            employmentOptions={employmentOptions}
             onEmployeeClick={handleEmployeeClick}
           />
         );
@@ -1261,7 +1261,7 @@ export default function App() {
         return (
           <AnalyticsPage
             attendanceData={attendanceData}
-            departmentOptions={employmentOptions.departments}
+            employmentOptions={employmentOptions}
           />
         );
       case "settings":
@@ -1291,7 +1291,7 @@ export default function App() {
         return selectedEmployeeId ? (
           <EmployeeDetailsPage
             employeeId={selectedEmployeeId}
-            departmentOptions={employmentOptions.departments}
+            employmentOptions={employmentOptions}
             onBack={handleBackFromEmployeeDetails}
           />
         ) : null;

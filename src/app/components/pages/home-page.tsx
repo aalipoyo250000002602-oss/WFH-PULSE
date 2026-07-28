@@ -37,7 +37,11 @@ interface HomePageProps {
   workingHours: string;
   scheduledStartTime: string;
   location: string;
-  departmentOptions: Array<{ departmentId: number; name: string }>;
+  employmentOptions: {
+    employmentTypes: string[];
+    departments: Array<{ departmentId: number; name: string }>;
+    positions: Array<{ positionId: number; departmentId: number; name: string }>;
+  };
   onEmployeeClick: (employeeId: string) => void;
 }
 
@@ -53,7 +57,7 @@ export function HomePage({
   holidays,
   workingHours,
   scheduledStartTime,
-  departmentOptions,
+  employmentOptions,
   onEmployeeClick,
 }: HomePageProps) {
   // Card visibility states - hidden by default
@@ -393,7 +397,7 @@ export function HomePage({
                   >
                     <EmployeesCard
                       onEmployeeClick={onEmployeeClick}
-                      departmentOptions={departmentOptions}
+                      employmentOptions={employmentOptions}
                     />
                   </motion.div>
                 </CardContent>

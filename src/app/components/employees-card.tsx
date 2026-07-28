@@ -18,21 +18,25 @@ import {
 } from "./ui/dialog";
 import { Label } from "./ui/label";
 import { Button } from "./ui/button";
-import { Users, Search, ArrowUpDown, Filter, Plus, Calendar, Award } from "lucide-react";
+import { Users, Search, ArrowUpDown, Filter, Plus, Calendar, Award, Database } from "lucide-react";
 import {
   getEmployees,
   addEmployee,
   getDepartmentNamesFromOptions,
-  syncEmployeesWithDepartments,
+  syncEmployeesWithEmploymentOptions,
 } from "./employee-data";
 import { toast } from "sonner";
 
 interface EmployeesCardProps {
   onEmployeeClick: (employeeId: string) => void;
-  departmentOptions: Array<{ departmentId: number; name: string }>;
+  employmentOptions: {
+    employmentTypes: string[];
+    departments: Array<{ departmentId: number; name: string }>;
+    positions: Array<{ positionId: number; departmentId: number; name: string }>;
+  };
 }
 
-export function EmployeesCard({ onEmployeeClick, departmentOptions }: EmployeesCardProps) {
+export function EmployeesCard({ onEmployeeClick, employmentOptions }: EmployeesCardProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "department">("name");
   const [filterDepartment, setFilterDepartment] = useState<string>("all");
@@ -58,13 +62,118 @@ export function EmployeesCard({ onEmployeeClick, departmentOptions }: EmployeesC
   const employees = getEmployees();
 
   const normalizedDepartmentOptions = useMemo(
-    () => getDepartmentNamesFromOptions(departmentOptions),
-    [departmentOptions],
+    () => getDepartmentNamesFromOptions(employmentOptions.departments),
+    [employmentOptions.departments],
   );
 
+  const employmentTypeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: string[] = [];
+    for (const employmentType of employmentOptions.employmentTypes) {
+      const value = employmentType.trim();
+      if (!value) {
+        continue;
+      }
+
+      const key = value.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      options.push(value);
+    }
+
+    return options;
+  }, [employmentOptions.employmentTypes]);
+
   const employeesWithSyncedDepartments = useMemo(() => {
-    return syncEmployeesWithDepartments(employees, departmentOptions);
-  }, [employees, departmentOptions]);
+    return syncEmployeesWithEmploymentOptions(employees, employmentOptions);
+  }, [employees, employmentOptions]);
+
+  const positionsByDepartment = useMemo(() => {
+    const departmentNameById = new Map<number, string>();
+    for (const department of employmentOptions.departments) {
+      const name = department.name.trim();
+      if (name) {
+        departmentNameById.set(department.departmentId, name);
+      }
+    }
+
+    const map = new Map<string, string[]>();
+    for (const position of employmentOptions.positions) {
+      const positionName = position.name.trim();
+      if (!positionName) {
+        continue;
+      }
+
+      const departmentName = departmentNameById.get(position.departmentId);
+      if (!departmentName) {
+        continue;
+      }
+
+      const key = departmentName.toLowerCase();
+      const current = map.get(key) ?? [];
+      if (!current.some((name) => name.toLowerCase() === positionName.toLowerCase())) {
+        current.push(positionName);
+      }
+      map.set(key, current);
+    }
+
+    return map;
+  }, [employmentOptions.departments, employmentOptions.positions]);
+
+  const allPositionOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: string[] = [];
+    for (const position of employmentOptions.positions) {
+      const name = position.name.trim();
+      if (!name) {
+        continue;
+      }
+
+      const key = name.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      options.push(name);
+    }
+    return options;
+  }, [employmentOptions.positions]);
+
+  const departmentPositionOptions = useMemo(() => {
+    if (!formData.department) {
+      return allPositionOptions;
+    }
+
+    const byDepartment = positionsByDepartment.get(formData.department.toLowerCase());
+    return byDepartment && byDepartment.length > 0 ? byDepartment : allPositionOptions;
+  }, [allPositionOptions, formData.department, positionsByDepartment]);
+
+  useEffect(() => {
+    if (
+      formData.position &&
+      departmentPositionOptions.length > 0 &&
+      !departmentPositionOptions.includes(formData.position)
+    ) {
+      setFormData((prev) => ({ ...prev, position: "" }));
+    }
+  }, [departmentPositionOptions, formData.position]);
+
+  useEffect(() => {
+    if (
+      formData.employmentType &&
+      employmentTypeOptions.length > 0 &&
+      !employmentTypeOptions.includes(formData.employmentType)
+    ) {
+      setFormData((prev) => ({
+        ...prev,
+        employmentType: employmentTypeOptions[0],
+      }));
+    }
+  }, [employmentTypeOptions, formData.employmentType]);
 
   const departments = useMemo(() => {
     if (normalizedDepartmentOptions.length > 0) {
@@ -151,6 +260,22 @@ export function EmployeesCard({ onEmployeeClick, departmentOptions }: EmployeesC
       return;
     }
 
+    if (
+      employmentTypeOptions.length > 0 &&
+      !employmentTypeOptions.includes(formData.employmentType)
+    ) {
+      toast.error("Please select a valid employment type from employment details");
+      return;
+    }
+
+    if (
+      departmentPositionOptions.length > 0 &&
+      !departmentPositionOptions.includes(formData.position)
+    ) {
+      toast.error("Please select a valid position from employment details");
+      return;
+    }
+
     // Add employee
     const newEmployee = addEmployee({
       ...formData,
@@ -190,6 +315,10 @@ export function EmployeesCard({ onEmployeeClick, departmentOptions }: EmployeesC
           <div className="flex items-center gap-2">
             <Users className="h-4 w-4 text-vibrant-purple" />
             <span className="text-sm font-medium">Quick Access</span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-vibrant-blue/30 bg-vibrant-blue/10 px-2 py-0.5 text-[10px] font-medium text-vibrant-blue">
+              <Database className="h-3 w-3" />
+              Synced with Settings
+            </span>
           </div>
           <Button
             size="sm"
@@ -467,8 +596,11 @@ export function EmployeesCard({ onEmployeeClick, departmentOptions }: EmployeesC
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="full-time">Full-Time</SelectItem>
-                    <SelectItem value="independent contractor">Independent Contractor</SelectItem>
+                    {employmentTypeOptions.map((employmentType) => (
+                      <SelectItem key={employmentType} value={employmentType}>
+                        {employmentType}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -492,12 +624,21 @@ export function EmployeesCard({ onEmployeeClick, departmentOptions }: EmployeesC
               </div>
               <div>
                 <Label htmlFor="position">Position *</Label>
-                <Input
-                  id="position"
+                <Select
                   value={formData.position}
-                  onChange={(e) => setFormData({ ...formData, position: e.target.value })}
-                  placeholder="Senior Developer"
-                />
+                  onValueChange={(value) => setFormData({ ...formData, position: value })}
+                >
+                  <SelectTrigger id="position">
+                    <SelectValue placeholder="Select position" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departmentPositionOptions.map((position) => (
+                      <SelectItem key={position} value={position}>
+                        {position}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="joinDate">Join Date *</Label>

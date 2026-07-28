@@ -70,7 +70,7 @@ import {
   Employee,
   PayrollInfo,
   getDepartmentNamesFromOptions,
-  syncEmployeesWithDepartments,
+  syncEmployeesWithEmploymentOptions,
 } from "../employee-data";
 import { toast } from "sonner";
 import { EmployeePayrollCard } from "../employee-payroll-card";
@@ -78,23 +78,97 @@ import { EmployeeProfilePDFGenerator } from "../employee-profile-pdf-generator";
 
 interface EmployeeDetailsPageProps {
   employeeId: string;
-  departmentOptions: Array<{ departmentId: number; name: string }>;
+  employmentOptions: {
+    employmentTypes: string[];
+    departments: Array<{ departmentId: number; name: string }>;
+    positions: Array<{ positionId: number; departmentId: number; name: string }>;
+  };
   onBack: () => void;
 }
 
 export function EmployeeDetailsPage({
   employeeId,
-  departmentOptions,
+  employmentOptions,
   onBack,
 }: EmployeeDetailsPageProps) {
   const employees = useMemo(
-    () => syncEmployeesWithDepartments(getEmployees(), departmentOptions),
-    [departmentOptions],
+    () => syncEmployeesWithEmploymentOptions(getEmployees(), employmentOptions),
+    [employmentOptions],
   );
   const departmentNames = useMemo(
-    () => getDepartmentNamesFromOptions(departmentOptions),
-    [departmentOptions],
+    () => getDepartmentNamesFromOptions(employmentOptions.departments),
+    [employmentOptions.departments],
   );
+  const employmentTypeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: string[] = [];
+    for (const employmentType of employmentOptions.employmentTypes) {
+      const value = employmentType.trim();
+      if (!value) {
+        continue;
+      }
+
+      const key = value.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      options.push(value);
+    }
+
+    return options;
+  }, [employmentOptions.employmentTypes]);
+  const positionsByDepartment = useMemo(() => {
+    const departmentNameById = new Map<number, string>();
+    for (const department of employmentOptions.departments) {
+      const name = department.name.trim();
+      if (name) {
+        departmentNameById.set(department.departmentId, name);
+      }
+    }
+
+    const map = new Map<string, string[]>();
+    for (const position of employmentOptions.positions) {
+      const positionName = position.name.trim();
+      if (!positionName) {
+        continue;
+      }
+
+      const departmentName = departmentNameById.get(position.departmentId);
+      if (!departmentName) {
+        continue;
+      }
+
+      const key = departmentName.toLowerCase();
+      const current = map.get(key) ?? [];
+      if (!current.some((name) => name.toLowerCase() === positionName.toLowerCase())) {
+        current.push(positionName);
+      }
+      map.set(key, current);
+    }
+
+    return map;
+  }, [employmentOptions.departments, employmentOptions.positions]);
+  const allPositionOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: string[] = [];
+    for (const position of employmentOptions.positions) {
+      const name = position.name.trim();
+      if (!name) {
+        continue;
+      }
+
+      const key = name.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      options.push(name);
+    }
+    return options;
+  }, [employmentOptions.positions]);
   const [employee, setEmployee] = useState(employees.find((emp) => emp.id === employeeId));
   const [showEditContactDialog, setShowEditContactDialog] = useState(false);
   const [showEditEmploymentDialog, setShowEditEmploymentDialog] = useState(false);
@@ -120,11 +194,22 @@ export function EmployeeDetailsPage({
   });
 
   const [employmentFormData, setEmploymentFormData] = useState({
-    employmentType: employee?.employmentType || "full-time",
+    employmentType: employee?.employmentType || employmentTypeOptions[0] || "",
     department: employee?.department || "",
     position: employee?.position || "",
     joinDate: employee?.joinDate || "",
   });
+
+  const positionOptionsForSelectedDepartment = useMemo(() => {
+    if (!employmentFormData.department) {
+      return allPositionOptions;
+    }
+
+    const byDepartment = positionsByDepartment.get(
+      employmentFormData.department.toLowerCase(),
+    );
+    return byDepartment && byDepartment.length > 0 ? byDepartment : allPositionOptions;
+  }, [allPositionOptions, employmentFormData.department, positionsByDepartment]);
 
   useEffect(() => {
     const refreshedEmployee = employees.find((emp) => emp.id === employeeId);
@@ -132,6 +217,29 @@ export function EmployeeDetailsPage({
       setEmployee(refreshedEmployee);
     }
   }, [employeeId, employees]);
+
+  useEffect(() => {
+    if (
+      employmentFormData.position &&
+      positionOptionsForSelectedDepartment.length > 0 &&
+      !positionOptionsForSelectedDepartment.includes(employmentFormData.position)
+    ) {
+      setEmploymentFormData((prev) => ({ ...prev, position: "" }));
+    }
+  }, [employmentFormData.position, positionOptionsForSelectedDepartment]);
+
+  useEffect(() => {
+    if (
+      employmentFormData.employmentType &&
+      employmentTypeOptions.length > 0 &&
+      !employmentTypeOptions.includes(employmentFormData.employmentType)
+    ) {
+      setEmploymentFormData((prev) => ({
+        ...prev,
+        employmentType: employmentTypeOptions[0],
+      }));
+    }
+  }, [employmentFormData.employmentType, employmentTypeOptions]);
 
   if (!employee) {
     return (
@@ -246,6 +354,22 @@ export function EmployeeDetailsPage({
       !departmentNames.includes(employmentFormData.department)
     ) {
       toast.error("Please select a valid department from employment details");
+      return;
+    }
+
+    if (
+      employmentTypeOptions.length > 0 &&
+      !employmentTypeOptions.includes(employmentFormData.employmentType)
+    ) {
+      toast.error("Please select a valid employment type from employment details");
+      return;
+    }
+
+    if (
+      positionOptionsForSelectedDepartment.length > 0 &&
+      !positionOptionsForSelectedDepartment.includes(employmentFormData.position)
+    ) {
+      toast.error("Please select a valid position from employment details");
       return;
     }
 
@@ -700,7 +824,8 @@ export function EmployeeDetailsPage({
                   disabled={!isEmploymentOpen}
                   onClick={() => {
                     setEmploymentFormData({
-                      employmentType: employee.employmentType || "full-time",
+                      employmentType:
+                        employee.employmentType || employmentTypeOptions[0] || "",
                       department: employee.department || "",
                       position: employee.position || "",
                       joinDate: employee.joinDate || "",
@@ -906,8 +1031,11 @@ export function EmployeeDetailsPage({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="full-time">Full-Time</SelectItem>
-                  <SelectItem value="independent contractor">Independent Contractor</SelectItem>
+                  {employmentTypeOptions.map((employmentType) => (
+                    <SelectItem key={employmentType} value={employmentType}>
+                      {employmentType}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -933,11 +1061,23 @@ export function EmployeeDetailsPage({
             </div>
             <div>
               <Label htmlFor="edit-position">Position *</Label>
-              <Input
-                id="edit-position"
+              <Select
                 value={employmentFormData.position}
-                onChange={(e) => setEmploymentFormData({ ...employmentFormData, position: e.target.value })}
-              />
+                onValueChange={(value) =>
+                  setEmploymentFormData({ ...employmentFormData, position: value })
+                }
+              >
+                <SelectTrigger id="edit-position">
+                  <SelectValue placeholder="Select position" />
+                </SelectTrigger>
+                <SelectContent>
+                  {positionOptionsForSelectedDepartment.map((position) => (
+                    <SelectItem key={position} value={position}>
+                      {position}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="edit-joinDate">Join Date *</Label>

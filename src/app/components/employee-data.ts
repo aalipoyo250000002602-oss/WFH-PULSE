@@ -24,7 +24,7 @@ export interface Employee {
   lastName: string;
   status: "present" | "on-leave" | "absent";
   employmentStatus: "onboarding" | "active" | "inactive";
-  employmentType: "full-time" | "independent contractor";
+  employmentType: string;
   clockInTime?: string;
   clockOutTime?: string;
   workDuration?: string;
@@ -48,6 +48,18 @@ export interface Employee {
 export interface EmploymentDepartmentOption {
   departmentId: number;
   name: string;
+}
+
+export interface EmploymentPositionOption {
+  positionId: number;
+  departmentId: number;
+  name: string;
+}
+
+export interface EmploymentOptions {
+  employmentTypes: string[];
+  departments: EmploymentDepartmentOption[];
+  positions: EmploymentPositionOption[];
 }
 
 export const getDepartmentNamesFromOptions = (
@@ -95,6 +107,121 @@ export const syncEmployeesWithDepartments = (
     return {
       ...employee,
       department: departmentNames[index % departmentNames.length],
+    };
+  });
+};
+
+const getEmploymentTypeNamesFromOptions = (employmentTypes: string[]): string[] => {
+  const seen = new Set<string>();
+  const names: string[] = [];
+
+  for (const employmentType of employmentTypes) {
+    const normalized = employmentType.trim();
+    if (!normalized) {
+      continue;
+    }
+
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    names.push(normalized);
+  }
+
+  return names;
+};
+
+const getDepartmentNameById = (departments: EmploymentDepartmentOption[]): Map<number, string> => {
+  const byId = new Map<number, string>();
+  for (const department of departments) {
+    const name = department.name.trim();
+    if (!name) {
+      continue;
+    }
+    byId.set(department.departmentId, name);
+  }
+  return byId;
+};
+
+export const syncEmployeesWithEmploymentOptions = (
+  employees: Employee[],
+  options: EmploymentOptions,
+): Employee[] => {
+  const departmentNames = getDepartmentNamesFromOptions(options.departments);
+  const validDepartmentNames = new Set(
+    departmentNames.map((department) => department.toLowerCase()),
+  );
+
+  const employmentTypeNames = getEmploymentTypeNamesFromOptions(options.employmentTypes);
+  const validEmploymentTypes = new Set(
+    employmentTypeNames.map((employmentType) => employmentType.toLowerCase()),
+  );
+
+  const departmentNameById = getDepartmentNameById(options.departments);
+  const positionNamesByDepartment = new Map<string, string[]>();
+  const globalPositionNames: string[] = [];
+  const seenGlobalPositions = new Set<string>();
+
+  for (const position of options.positions) {
+    const positionName = position.name.trim();
+    if (!positionName) {
+      continue;
+    }
+
+    const globalKey = positionName.toLowerCase();
+    if (!seenGlobalPositions.has(globalKey)) {
+      seenGlobalPositions.add(globalKey);
+      globalPositionNames.push(positionName);
+    }
+
+    const departmentName = departmentNameById.get(position.departmentId);
+    if (!departmentName) {
+      continue;
+    }
+
+    const departmentKey = departmentName.toLowerCase();
+    const existing = positionNamesByDepartment.get(departmentKey) ?? [];
+    if (!existing.some((name) => name.toLowerCase() === globalKey)) {
+      existing.push(positionName);
+      positionNamesByDepartment.set(departmentKey, existing);
+    }
+  }
+
+  return employees.map((employee, index) => {
+    const syncedDepartment =
+      departmentNames.length > 0 && !validDepartmentNames.has(employee.department.toLowerCase())
+        ? departmentNames[index % departmentNames.length]
+        : employee.department;
+
+    const syncedEmploymentType =
+      employmentTypeNames.length > 0 &&
+      !validEmploymentTypes.has((employee.employmentType || "").toLowerCase())
+        ? employmentTypeNames[index % employmentTypeNames.length]
+        : employee.employmentType;
+
+    const departmentPositions = positionNamesByDepartment.get(
+      syncedDepartment.toLowerCase(),
+    ) ?? [];
+    const candidatePositions =
+      departmentPositions.length > 0 ? departmentPositions : globalPositionNames;
+    const validPositionNames = new Set(
+      candidatePositions.map((positionName) => positionName.toLowerCase()),
+    );
+
+    const currentPosition = (employee.position || "").trim();
+    const syncedPosition =
+      candidatePositions.length > 0 &&
+      (!currentPosition || !validPositionNames.has(currentPosition.toLowerCase()))
+        ? candidatePositions[index % candidatePositions.length]
+        : employee.position;
+
+    return {
+      ...employee,
+      department: syncedDepartment,
+      employmentType: syncedEmploymentType,
+      position: syncedPosition,
     };
   });
 };

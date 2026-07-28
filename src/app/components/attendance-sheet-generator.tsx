@@ -55,7 +55,7 @@ import {
 import {
   getEmployees,
   Employee,
-  syncEmployeesWithDepartments,
+  syncEmployeesWithEmploymentOptions,
 } from "./employee-data";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -409,15 +409,19 @@ interface EmailLog {
 }
 
 interface AttendanceSheetGeneratorProps {
-  departmentOptions: Array<{ departmentId: number; name: string }>;
+  employmentOptions: {
+    employmentTypes: string[];
+    departments: Array<{ departmentId: number; name: string }>;
+    positions: Array<{ positionId: number; departmentId: number; name: string }>;
+  };
 }
 
 export function AttendanceSheetGenerator({
-  departmentOptions,
+  employmentOptions,
 }: AttendanceSheetGeneratorProps) {
   const employees = useMemo(
-    () => syncEmployeesWithDepartments(getEmployees(), departmentOptions),
-    [departmentOptions],
+    () => syncEmployeesWithEmploymentOptions(getEmployees(), employmentOptions),
+    [employmentOptions],
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEmployee, setSelectedEmployee] =
