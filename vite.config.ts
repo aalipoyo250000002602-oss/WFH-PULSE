@@ -17,8 +17,9 @@ function figmaAssetResolver() {
 }
 
 export default defineConfig({
-  // Default to root for local/dev/Capacitor; override in CI for GitHub Pages.
-  base: process.env.VITE_BASE_PATH || '/',
+  // Use relative asset paths by default so the build works from GitHub Pages,
+  // Capacitor, and other static hosts without depending on a fixed subpath.
+  base: process.env.VITE_BASE_PATH || './',
   plugins: [
     figmaAssetResolver(),
     // The React and Tailwind plugins are both required for Make, even if
