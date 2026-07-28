@@ -11,6 +11,7 @@ This API wires the PostgreSQL schema to a Node.js backend with auth endpoints an
 - `GET /me/profile` (self-service)
 - `PATCH /me/profile` (self-service, limited editable fields)
 - `GET /me/attendance` (self-service)
+- `GET /employees` (authenticated, RLS-scoped)
 - `GET /hr/employees` (HR/Admin)
 - `GET /health`
 

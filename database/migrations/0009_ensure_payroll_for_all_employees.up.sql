@@ -1,0 +1,1 @@
+-- include: ../06_ensure_payroll_for_all_employees.sql

@@ -375,6 +375,11 @@ export const getEmployees = (): Employee[] => {
   return employeesInstance;
 };
 
+export const replaceEmployees = (employees: Employee[]): Employee[] => {
+  employeesInstance = [...employees];
+  return employeesInstance;
+};
+
 export const addEmployee = (employee: Omit<Employee, "id" | "employeeId">): Employee => {
   const employees = getEmployees();
   const newId = employees.length + 1;

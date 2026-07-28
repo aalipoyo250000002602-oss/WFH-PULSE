@@ -1241,6 +1241,8 @@ export default function App() {
             workingHours={formatWorkingHours()}
             scheduledStartTime={workingHours.start}
             location="Tech Hub Office, Floor 5"
+            apiBaseUrl={apiBaseUrl}
+            accessToken={authSession?.accessToken ?? ""}
             employmentOptions={employmentOptions}
             onEmployeeClick={handleEmployeeClick}
           />

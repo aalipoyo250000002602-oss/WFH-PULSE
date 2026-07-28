@@ -22,6 +22,8 @@ import { Users, Search, ArrowUpDown, Filter, Plus, Calendar, Award, Database } f
 import {
   getEmployees,
   addEmployee,
+  replaceEmployees,
+  Employee,
   getDepartmentNamesFromOptions,
   syncEmployeesWithEmploymentOptions,
 } from "./employee-data";
@@ -29,6 +31,8 @@ import { toast } from "sonner";
 
 interface EmployeesCardProps {
   onEmployeeClick: (employeeId: string) => void;
+  apiBaseUrl: string;
+  accessToken: string;
   employmentOptions: {
     employmentTypes: string[];
     departments: Array<{ departmentId: number; name: string }>;
@@ -36,12 +40,18 @@ interface EmployeesCardProps {
   };
 }
 
-export function EmployeesCard({ onEmployeeClick, employmentOptions }: EmployeesCardProps) {
+export function EmployeesCard({
+  onEmployeeClick,
+  apiBaseUrl,
+  accessToken,
+  employmentOptions,
+}: EmployeesCardProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "department">("name");
   const [filterDepartment, setFilterDepartment] = useState<string>("all");
   const [filterEmploymentStatus, setFilterEmploymentStatus] = useState<"all" | "onboarding" | "active" | "inactive">("active");
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
   
   // Form state for adding employee
   const [formData, setFormData] = useState({
@@ -59,7 +69,97 @@ export function EmployeesCard({ onEmployeeClick, employmentOptions }: EmployeesC
     employmentType: "full-time" as const,
   });
 
-  const employees = getEmployees();
+  const [employees, setEmployees] = useState<Employee[]>(() => getEmployees());
+
+  useEffect(() => {
+    const mapApiEmployeeToLocal = (row: Record<string, any>): Employee => ({
+      ...(function buildPayroll() {
+        const deductions = Array.isArray(row.payroll_deductions)
+          ? row.payroll_deductions.map((item: any, idx: number) => ({
+              id: String(item?.deduction_id ?? `ded-${row.employee_id}-${idx + 1}`),
+              name: String(item?.deduction_name ?? "Deduction"),
+              amount: Number(item?.amount ?? 0),
+            }))
+          : [];
+
+        if (row.salary == null && deductions.length === 0) {
+          return {};
+        }
+
+        return {
+          payroll: {
+            salary: Number(row.salary ?? 0),
+            governmentIds: {
+              pagIbig: String(row.pag_ibig ?? ""),
+              philHealth: String(row.phil_health ?? ""),
+              sss: String(row.sss ?? ""),
+              tin: String(row.tin ?? ""),
+            },
+            deductions,
+          },
+        };
+      })(),
+      id: String(row.employee_id),
+      employeeId: String(row.employee_code ?? row.employee_id),
+      firstName: String(row.first_name ?? ""),
+      lastName: String(row.last_name ?? ""),
+      status: (row.attendance_status ?? "present") as Employee["status"],
+      employmentStatus: (row.employment_status ?? "active") as Employee["employmentStatus"],
+      employmentType: String(row.employment_type ?? "full-time"),
+      department: String(row.department ?? ""),
+      position: row.position ? String(row.position) : "",
+      email: row.email ? String(row.email) : "",
+      phone: row.phone ? String(row.phone) : "",
+      joinDate: row.join_date ? String(row.join_date).slice(0, 10) : "",
+      birthday: row.birthday ? String(row.birthday).slice(0, 10) : "",
+      gender: row.gender ? String(row.gender) as Employee["gender"] : undefined,
+      nationality: row.nationality ? String(row.nationality) : "",
+      maritalStatus: row.marital_status
+        ? String(row.marital_status) as Employee["maritalStatus"]
+        : undefined,
+      address: row.address ? String(row.address) : "",
+      invitationSentDate: row.invitation_sent_date
+        ? String(row.invitation_sent_date).slice(0, 10)
+        : undefined,
+      passwordChanged:
+        row.password_changed == null
+          ? undefined
+          : Boolean(row.password_changed),
+      profilePicture: row.profile_picture_url ? String(row.profile_picture_url) : undefined,
+    });
+
+    const loadEmployees = async () => {
+      if (!accessToken) {
+        return;
+      }
+
+      try {
+        setIsLoadingEmployees(true);
+        const response = await fetch(`${apiBaseUrl}/employees`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = await response.json().catch(() => ({}));
+        const rows = Array.isArray(payload?.employees) ? payload.employees : [];
+        const mappedEmployees = rows.map(mapApiEmployeeToLocal);
+        setEmployees(mappedEmployees);
+        replaceEmployees(mappedEmployees);
+      } catch {
+        // Keep local cache values when API is unavailable.
+      } finally {
+        setIsLoadingEmployees(false);
+      }
+    };
+
+    void loadEmployees();
+  }, [accessToken, apiBaseUrl]);
 
   const normalizedDepartmentOptions = useMemo(
     () => getDepartmentNamesFromOptions(employmentOptions.departments),
@@ -285,6 +385,8 @@ export function EmployeesCard({ onEmployeeClick, employmentOptions }: EmployeesC
       passwordChanged: false,
     });
 
+    setEmployees([...getEmployees()]);
+
     toast.success("Employee added successfully", {
       description: `${newEmployee.firstName} ${newEmployee.lastName} has been onboarded`,
     });
@@ -406,7 +508,16 @@ export function EmployeesCard({ onEmployeeClick, employmentOptions }: EmployeesC
 
           {/* Employee List */}
           <div className="space-y-2">
-            {displayedEmployees.length > 0 ? (
+            {isLoadingEmployees ? (
+              <motion.p
+                className="text-center text-sm text-muted-foreground py-4"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3 }}
+              >
+                Loading employees...
+              </motion.p>
+            ) : displayedEmployees.length > 0 ? (
               displayedEmployees.map((employee, index) => {
                 const yearsOfService = calculateYearsOfService(employee.joinDate!);
                 const hasAnniversary = isWorkAnniversary(employee.joinDate!);

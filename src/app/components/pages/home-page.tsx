@@ -37,6 +37,8 @@ interface HomePageProps {
   workingHours: string;
   scheduledStartTime: string;
   location: string;
+  apiBaseUrl: string;
+  accessToken: string;
   employmentOptions: {
     employmentTypes: string[];
     departments: Array<{ departmentId: number; name: string }>;
@@ -57,6 +59,8 @@ export function HomePage({
   holidays,
   workingHours,
   scheduledStartTime,
+  apiBaseUrl,
+  accessToken,
   employmentOptions,
   onEmployeeClick,
 }: HomePageProps) {
@@ -397,6 +401,8 @@ export function HomePage({
                   >
                     <EmployeesCard
                       onEmployeeClick={onEmployeeClick}
+                      apiBaseUrl={apiBaseUrl}
+                      accessToken={accessToken}
                       employmentOptions={employmentOptions}
                     />
                   </motion.div>

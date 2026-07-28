@@ -1698,6 +1698,72 @@ app.delete(
 );
 
 app.get(
+  "/employees",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const rows = await withRlsContext(req.auth, async (client) => {
+        const result = await client.query(
+          `
+          SELECT
+            e.employee_id,
+            e.employee_code,
+            e.first_name,
+            e.last_name,
+            e.email,
+            e.phone,
+            d.name AS department,
+            e.position_id,
+            COALESCE(jp.name, e.position) AS position,
+            e.attendance_status,
+            e.employment_status,
+            e.employment_type,
+            e.join_date,
+            e.birthday,
+            e.gender,
+            e.nationality,
+            e.marital_status,
+            e.address,
+            e.invitation_sent_date,
+            e.password_changed,
+            e.profile_picture_url,
+            pp.salary,
+            pp.sss,
+            pp.tin,
+            pp.phil_health,
+            pp.pag_ibig,
+            COALESCE(pd.items, '[]'::jsonb) AS payroll_deductions
+          FROM app.employees e
+          LEFT JOIN app.departments d ON d.department_id = e.department_id
+          LEFT JOIN app.job_positions jp ON jp.position_id = e.position_id
+          LEFT JOIN app.payroll_profiles pp ON pp.employee_id = e.employee_id
+          LEFT JOIN LATERAL (
+            SELECT jsonb_agg(
+              jsonb_build_object(
+                'deduction_id', d2.deduction_id,
+                'deduction_name', d2.deduction_name,
+                'amount', d2.amount
+              )
+              ORDER BY d2.deduction_id
+            ) AS items
+            FROM app.payroll_deductions d2
+            WHERE d2.employee_id = e.employee_id
+          ) pd ON TRUE
+          ORDER BY e.employee_code
+          LIMIT 500
+          `,
+        );
+        return result.rows;
+      });
+
+      return res.json({ employees: rows });
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+  },
+);
+
+app.get(
   "/hr/employees",
   requireAuth,
   requireRole("admin", "hr_manager"),
