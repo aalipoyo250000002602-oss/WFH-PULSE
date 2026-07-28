@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Input } from "./ui/input";
 import {
   Select,
@@ -19,14 +19,20 @@ import {
 import { Label } from "./ui/label";
 import { Button } from "./ui/button";
 import { Users, Search, ArrowUpDown, Filter, Plus, Calendar, Award } from "lucide-react";
-import { getEmployees, addEmployee, Employee } from "./employee-data";
+import {
+  getEmployees,
+  addEmployee,
+  getDepartmentNamesFromOptions,
+  syncEmployeesWithDepartments,
+} from "./employee-data";
 import { toast } from "sonner";
 
 interface EmployeesCardProps {
   onEmployeeClick: (employeeId: string) => void;
+  departmentOptions: Array<{ departmentId: number; name: string }>;
 }
 
-export function EmployeesCard({ onEmployeeClick }: EmployeesCardProps) {
+export function EmployeesCard({ onEmployeeClick, departmentOptions }: EmployeesCardProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "department">("name");
   const [filterDepartment, setFilterDepartment] = useState<string>("all");
@@ -51,13 +57,33 @@ export function EmployeesCard({ onEmployeeClick }: EmployeesCardProps) {
 
   const employees = getEmployees();
 
-  // Get unique departments for filter
-  const departments = Array.from(
-    new Set(employees.map((emp) => emp.department))
-  ).sort();
+  const normalizedDepartmentOptions = useMemo(
+    () => getDepartmentNamesFromOptions(departmentOptions),
+    [departmentOptions],
+  );
+
+  const employeesWithSyncedDepartments = useMemo(() => {
+    return syncEmployeesWithDepartments(employees, departmentOptions);
+  }, [employees, departmentOptions]);
+
+  const departments = useMemo(() => {
+    if (normalizedDepartmentOptions.length > 0) {
+      return normalizedDepartmentOptions;
+    }
+
+    return Array.from(
+      new Set(employeesWithSyncedDepartments.map((emp) => emp.department)),
+    ).sort();
+  }, [employeesWithSyncedDepartments, normalizedDepartmentOptions]);
+
+  useEffect(() => {
+    if (filterDepartment !== "all" && !departments.includes(filterDepartment)) {
+      setFilterDepartment("all");
+    }
+  }, [departments, filterDepartment]);
 
   // Filter employees by search query, department, and employment status
-  const filteredEmployees = employees.filter((emp) => {
+  const filteredEmployees = employeesWithSyncedDepartments.filter((emp) => {
     const matchesSearch =
       searchQuery === "" ||
       emp.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -114,6 +140,14 @@ export function EmployeesCard({ onEmployeeClick }: EmployeesCardProps) {
         !formData.phone || !formData.department || !formData.position || 
         !formData.joinDate || !formData.birthday || !formData.nationality || !formData.employmentType) {
       toast.error("Please fill in all required fields");
+      return;
+    }
+
+    if (
+      departments.length > 0 &&
+      !departments.some((department) => department === formData.department)
+    ) {
+      toast.error("Please select a valid department from employment details");
       return;
     }
 
@@ -440,12 +474,21 @@ export function EmployeesCard({ onEmployeeClick }: EmployeesCardProps) {
               </div>
               <div>
                 <Label htmlFor="department">Department *</Label>
-                <Input
-                  id="department"
+                <Select
                   value={formData.department}
-                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                  placeholder="Engineering"
-                />
+                  onValueChange={(value) => setFormData({ ...formData, department: value })}
+                >
+                  <SelectTrigger id="department">
+                    <SelectValue placeholder="Select department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departments.map((department) => (
+                      <SelectItem key={department} value={department}>
+                        {department}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="position">Position *</Label>

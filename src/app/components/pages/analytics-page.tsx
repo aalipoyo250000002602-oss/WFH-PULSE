@@ -49,10 +49,12 @@ interface AnalyticsPageProps {
     string,
     "present" | "absent" | "holiday" | "late"
   >;
+  departmentOptions: Array<{ departmentId: number; name: string }>;
 }
 
 export function AnalyticsPage({
   attendanceData,
+  departmentOptions,
 }: AnalyticsPageProps) {
   const [selectedPeriod, setSelectedPeriod] =
     useState("thisMonth");
@@ -521,7 +523,9 @@ export function AnalyticsPage({
                 style={{ overflow: "hidden" }}
               >
                 <CardContent className="pt-0">
-                  <AttendanceSheetGenerator />
+                  <AttendanceSheetGenerator
+                    departmentOptions={departmentOptions}
+                  />
                 </CardContent>
               </motion.div>
             )}

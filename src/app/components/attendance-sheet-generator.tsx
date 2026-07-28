@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+﻿import { useState, useEffect, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -52,7 +52,11 @@ import {
   Send,
   CheckCircle,
 } from "lucide-react";
-import { getEmployees, Employee } from "./employee-data";
+import {
+  getEmployees,
+  Employee,
+  syncEmployeesWithDepartments,
+} from "./employee-data";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -404,8 +408,17 @@ interface EmailLog {
   sentBy: string;
 }
 
-export function AttendanceSheetGenerator() {
-  const [employees] = useState<Employee[]>(getEmployees());
+interface AttendanceSheetGeneratorProps {
+  departmentOptions: Array<{ departmentId: number; name: string }>;
+}
+
+export function AttendanceSheetGenerator({
+  departmentOptions,
+}: AttendanceSheetGeneratorProps) {
+  const employees = useMemo(
+    () => syncEmployeesWithDepartments(getEmployees(), departmentOptions),
+    [departmentOptions],
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEmployee, setSelectedEmployee] =
     useState<Employee | null>(null);
@@ -426,6 +439,19 @@ export function AttendanceSheetGenerator() {
   const [includeAttendanceReport, setIncludeAttendanceReport] = useState(false);
   const [emailMessage, setEmailMessage] = useState("");
   const [emailLogs, setEmailLogs] = useState<EmailLog[]>([]);
+
+  useEffect(() => {
+    if (!selectedEmployee) {
+      return;
+    }
+
+    const refreshedEmployee = employees.find(
+      (employee) => employee.id === selectedEmployee.id,
+    );
+    if (refreshedEmployee) {
+      setSelectedEmployee(refreshedEmployee);
+    }
+  }, [employees, selectedEmployee]);
 
   // Convert logo to base64 for PDF embedding
   useEffect(() => {

@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import {
   Card,
   CardContent,
@@ -64,21 +64,37 @@ import {
   DollarSign,
   MapPin,
 } from "lucide-react";
-import { getEmployees, updateEmployee, Employee, PayrollInfo } from "../employee-data";
+import {
+  getEmployees,
+  updateEmployee,
+  Employee,
+  PayrollInfo,
+  getDepartmentNamesFromOptions,
+  syncEmployeesWithDepartments,
+} from "../employee-data";
 import { toast } from "sonner";
 import { EmployeePayrollCard } from "../employee-payroll-card";
 import { EmployeeProfilePDFGenerator } from "../employee-profile-pdf-generator";
 
 interface EmployeeDetailsPageProps {
   employeeId: string;
+  departmentOptions: Array<{ departmentId: number; name: string }>;
   onBack: () => void;
 }
 
 export function EmployeeDetailsPage({
   employeeId,
+  departmentOptions,
   onBack,
 }: EmployeeDetailsPageProps) {
-  const employees = getEmployees();
+  const employees = useMemo(
+    () => syncEmployeesWithDepartments(getEmployees(), departmentOptions),
+    [departmentOptions],
+  );
+  const departmentNames = useMemo(
+    () => getDepartmentNamesFromOptions(departmentOptions),
+    [departmentOptions],
+  );
   const [employee, setEmployee] = useState(employees.find((emp) => emp.id === employeeId));
   const [showEditContactDialog, setShowEditContactDialog] = useState(false);
   const [showEditEmploymentDialog, setShowEditEmploymentDialog] = useState(false);
@@ -109,6 +125,13 @@ export function EmployeeDetailsPage({
     position: employee?.position || "",
     joinDate: employee?.joinDate || "",
   });
+
+  useEffect(() => {
+    const refreshedEmployee = employees.find((emp) => emp.id === employeeId);
+    if (refreshedEmployee) {
+      setEmployee(refreshedEmployee);
+    }
+  }, [employeeId, employees]);
 
   if (!employee) {
     return (
@@ -215,6 +238,14 @@ export function EmployeeDetailsPage({
   const handleUpdateEmployment = () => {
     if (!employmentFormData.employmentType || !employmentFormData.department || !employmentFormData.position || !employmentFormData.joinDate) {
       toast.error("Please fill in all required fields");
+      return;
+    }
+
+    if (
+      departmentNames.length > 0 &&
+      !departmentNames.includes(employmentFormData.department)
+    ) {
+      toast.error("Please select a valid department from employment details");
       return;
     }
 
@@ -882,11 +913,23 @@ export function EmployeeDetailsPage({
             </div>
             <div>
               <Label htmlFor="edit-department">Department *</Label>
-              <Input
-                id="edit-department"
+              <Select
                 value={employmentFormData.department}
-                onChange={(e) => setEmploymentFormData({ ...employmentFormData, department: e.target.value })}
-              />
+                onValueChange={(value) =>
+                  setEmploymentFormData({ ...employmentFormData, department: value })
+                }
+              >
+                <SelectTrigger id="edit-department">
+                  <SelectValue placeholder="Select department" />
+                </SelectTrigger>
+                <SelectContent>
+                  {departmentNames.map((department) => (
+                    <SelectItem key={department} value={department}>
+                      {department}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="edit-position">Position *</Label>

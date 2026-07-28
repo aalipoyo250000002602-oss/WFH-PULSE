@@ -45,6 +45,60 @@ export interface Employee {
   profilePicture?: string; // Base64 encoded image or URL
 }
 
+export interface EmploymentDepartmentOption {
+  departmentId: number;
+  name: string;
+}
+
+export const getDepartmentNamesFromOptions = (
+  departmentOptions: EmploymentDepartmentOption[],
+): string[] => {
+  const seen = new Set<string>();
+  const names: string[] = [];
+
+  for (const option of departmentOptions) {
+    const normalizedName = option.name.trim();
+    if (!normalizedName) {
+      continue;
+    }
+
+    const key = normalizedName.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    names.push(normalizedName);
+  }
+
+  return names;
+};
+
+export const syncEmployeesWithDepartments = (
+  employees: Employee[],
+  departmentOptions: EmploymentDepartmentOption[],
+): Employee[] => {
+  const departmentNames = getDepartmentNamesFromOptions(departmentOptions);
+  if (departmentNames.length === 0) {
+    return employees;
+  }
+
+  const validDepartments = new Set(
+    departmentNames.map((department) => department.toLowerCase()),
+  );
+
+  return employees.map((employee, index) => {
+    if (validDepartments.has(employee.department.toLowerCase())) {
+      return employee;
+    }
+
+    return {
+      ...employee,
+      department: departmentNames[index % departmentNames.length],
+    };
+  });
+};
+
 // Generate 30 sample employees with enhanced data
 export const generateEmployees = (): Employee[] => {
   const firstNames = [
