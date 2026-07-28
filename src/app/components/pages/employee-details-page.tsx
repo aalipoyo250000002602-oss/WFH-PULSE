@@ -76,6 +76,8 @@ import { toast } from "sonner";
 import { EmployeePayrollCard } from "../employee-payroll-card";
 import { EmployeeProfilePDFGenerator } from "../employee-profile-pdf-generator";
 
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 interface EmployeeDetailsPageProps {
   employeeId: string;
   apiBaseUrl: string;
@@ -516,10 +518,15 @@ export function EmployeeDetailsPage({
       return;
     }
 
+    if (!emailRegex.test(contactFormData.email.trim())) {
+      toast.error("Please enter a valid email address");
+      return;
+    }
+
     void (async () => {
       const didUpdate = await updateEmployeeOnApi(
         {
-          email: contactFormData.email,
+          email: contactFormData.email.trim(),
           phone: contactFormData.phone,
           birthday: contactFormData.birthday,
           gender: contactFormData.gender,

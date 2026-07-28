@@ -21,13 +21,14 @@ import { Button } from "./ui/button";
 import { Users, Search, ArrowUpDown, Filter, Plus, Calendar, Award, Database } from "lucide-react";
 import {
   getEmployees,
-  addEmployee,
   replaceEmployees,
   Employee,
   getDepartmentNamesFromOptions,
   syncEmployeesWithEmploymentOptions,
 } from "./employee-data";
 import { toast } from "sonner";
+
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface EmployeesCardProps {
   onEmployeeClick: (employeeId: string) => void;
@@ -71,63 +72,63 @@ export function EmployeesCard({
 
   const [employees, setEmployees] = useState<Employee[]>(() => getEmployees());
 
-  useEffect(() => {
-    const mapApiEmployeeToLocal = (row: Record<string, any>): Employee => ({
-      ...(function buildPayroll() {
-        const deductions = Array.isArray(row.payroll_deductions)
-          ? row.payroll_deductions.map((item: any, idx: number) => ({
-              id: String(item?.deduction_id ?? `ded-${row.employee_id}-${idx + 1}`),
-              name: String(item?.deduction_name ?? "Deduction"),
-              amount: Number(item?.amount ?? 0),
-            }))
-          : [];
+  const mapApiEmployeeToLocal = (row: Record<string, any>): Employee => ({
+    ...(function buildPayroll() {
+      const deductions = Array.isArray(row.payroll_deductions)
+        ? row.payroll_deductions.map((item: any, idx: number) => ({
+            id: String(item?.deduction_id ?? `ded-${row.employee_id}-${idx + 1}`),
+            name: String(item?.deduction_name ?? "Deduction"),
+            amount: Number(item?.amount ?? 0),
+          }))
+        : [];
 
-        if (row.salary == null && deductions.length === 0) {
-          return {};
-        }
+      if (row.salary == null && deductions.length === 0) {
+        return {};
+      }
 
-        return {
-          payroll: {
-            salary: Number(row.salary ?? 0),
-            governmentIds: {
-              pagIbig: String(row.pag_ibig ?? ""),
-              philHealth: String(row.phil_health ?? ""),
-              sss: String(row.sss ?? ""),
-              tin: String(row.tin ?? ""),
-            },
-            deductions,
+      return {
+        payroll: {
+          salary: Number(row.salary ?? 0),
+          governmentIds: {
+            pagIbig: String(row.pag_ibig ?? ""),
+            philHealth: String(row.phil_health ?? ""),
+            sss: String(row.sss ?? ""),
+            tin: String(row.tin ?? ""),
           },
-        };
-      })(),
-      id: String(row.employee_id),
-      employeeId: String(row.employee_code ?? row.employee_id),
-      firstName: String(row.first_name ?? ""),
-      lastName: String(row.last_name ?? ""),
-      status: (row.attendance_status ?? "present") as Employee["status"],
-      employmentStatus: (row.employment_status ?? "active") as Employee["employmentStatus"],
-      employmentType: String(row.employment_type ?? "full-time"),
-      department: String(row.department ?? ""),
-      position: row.position ? String(row.position) : "",
-      email: row.email ? String(row.email) : "",
-      phone: row.phone ? String(row.phone) : "",
-      joinDate: row.join_date ? String(row.join_date).slice(0, 10) : "",
-      birthday: row.birthday ? String(row.birthday).slice(0, 10) : "",
-      gender: row.gender ? String(row.gender) as Employee["gender"] : undefined,
-      nationality: row.nationality ? String(row.nationality) : "",
-      maritalStatus: row.marital_status
-        ? String(row.marital_status) as Employee["maritalStatus"]
-        : undefined,
-      address: row.address ? String(row.address) : "",
-      invitationSentDate: row.invitation_sent_date
-        ? String(row.invitation_sent_date).slice(0, 10)
-        : undefined,
-      passwordChanged:
-        row.password_changed == null
-          ? undefined
-          : Boolean(row.password_changed),
-      profilePicture: row.profile_picture_url ? String(row.profile_picture_url) : undefined,
-    });
+          deductions,
+        },
+      };
+    })(),
+    id: String(row.employee_id),
+    employeeId: String(row.employee_code ?? row.employee_id),
+    firstName: String(row.first_name ?? ""),
+    lastName: String(row.last_name ?? ""),
+    status: (row.attendance_status ?? "present") as Employee["status"],
+    employmentStatus: (row.employment_status ?? "active") as Employee["employmentStatus"],
+    employmentType: String(row.employment_type ?? "full-time"),
+    department: String(row.department ?? ""),
+    position: row.position ? String(row.position) : "",
+    email: row.email ? String(row.email) : "",
+    phone: row.phone ? String(row.phone) : "",
+    joinDate: row.join_date ? String(row.join_date).slice(0, 10) : "",
+    birthday: row.birthday ? String(row.birthday).slice(0, 10) : "",
+    gender: row.gender ? String(row.gender) as Employee["gender"] : undefined,
+    nationality: row.nationality ? String(row.nationality) : "",
+    maritalStatus: row.marital_status
+      ? String(row.marital_status) as Employee["maritalStatus"]
+      : undefined,
+    address: row.address ? String(row.address) : "",
+    invitationSentDate: row.invitation_sent_date
+      ? String(row.invitation_sent_date).slice(0, 10)
+      : undefined,
+    passwordChanged:
+      row.password_changed == null
+        ? undefined
+        : Boolean(row.password_changed),
+    profilePicture: row.profile_picture_url ? String(row.profile_picture_url) : undefined,
+  });
 
+  useEffect(() => {
     const loadEmployees = async () => {
       if (!accessToken) {
         return;
@@ -376,38 +377,97 @@ export function EmployeesCard({
       return;
     }
 
-    // Add employee
-    const newEmployee = addEmployee({
-      ...formData,
-      status: "absent",
-      employmentStatus: "onboarding",
-      invitationSentDate: undefined,
-      passwordChanged: false,
-    });
+    if (!emailRegex.test(formData.email.trim())) {
+      toast.error("Please enter a valid email address");
+      return;
+    }
 
-    setEmployees([...getEmployees()]);
+    if (!accessToken) {
+      toast.error("Unable to add employee", {
+        description: "Missing access token. Please sign in again.",
+      });
+      return;
+    }
 
-    toast.success("Employee added successfully", {
-      description: `${newEmployee.firstName} ${newEmployee.lastName} has been onboarded`,
-    });
+    const selectedDepartment = employmentOptions.departments.find(
+      (department) => department.name === formData.department,
+    );
+    const selectedPosition = employmentOptions.positions.find(
+      (position) =>
+        position.name === formData.position
+        && (!selectedDepartment || position.departmentId === selectedDepartment.departmentId),
+    );
 
-    // Reset form
-    setFormData({
-      firstName: "",
-      lastName: "",
-      email: "",
-      phone: "",
-      department: "",
-      position: "",
-      joinDate: "",
-      birthday: "",
-      gender: "Male",
-      nationality: "",
-      maritalStatus: "Single",
-      employmentType: "full-time",
-    });
-    
-    setShowAddDialog(false);
+    if (!selectedDepartment || !selectedPosition) {
+      toast.error("Please select valid department and position options");
+      return;
+    }
+
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/employees`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            firstName: formData.firstName,
+            lastName: formData.lastName,
+            email: formData.email.trim(),
+            phone: formData.phone,
+            birthday: formData.birthday,
+            gender: formData.gender,
+            nationality: formData.nationality,
+            maritalStatus: formData.maritalStatus,
+            departmentId: selectedDepartment.departmentId,
+            positionId: selectedPosition.positionId,
+            employmentType: formData.employmentType,
+            employmentStatus: "onboarding",
+            joinDate: formData.joinDate,
+            passwordChanged: false,
+          }),
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.employee) {
+          toast.error("Employee add failed", {
+            description: payload?.error || "Unable to create employee in the database.",
+          });
+          return;
+        }
+
+        const createdEmployee = mapApiEmployeeToLocal(payload.employee);
+        const nextEmployees = [...employees, createdEmployee];
+        setEmployees(nextEmployees);
+        replaceEmployees(nextEmployees);
+
+        toast.success("Employee added successfully", {
+          description: `${createdEmployee.firstName} ${createdEmployee.lastName} has been onboarded`,
+        });
+
+        setFormData({
+          firstName: "",
+          lastName: "",
+          email: "",
+          phone: "",
+          department: "",
+          position: "",
+          joinDate: "",
+          birthday: "",
+          gender: "Male",
+          nationality: "",
+          maritalStatus: "Single",
+          employmentType: "full-time",
+        });
+
+        setShowAddDialog(false);
+      } catch {
+        toast.error("Employee add failed", {
+          description: "Unable to reach the API server.",
+        });
+      }
+    })();
   };
 
   return (

@@ -283,6 +283,33 @@ const hrEmployeeUpdateSchema = z
     message: "At least one field is required",
   });
 
+const hrEmployeeCreateSchema = z.object({
+  firstName: z.string().min(1).max(120),
+  lastName: z.string().min(1).max(120),
+  email: z.union([z.string().email(), z.null()]).optional(),
+  phone: z.union([z.string().min(3).max(50), z.null()]).optional(),
+  birthday: z.union([z.string().regex(isoDateRegex), z.null()]).optional(),
+  gender: z.union([z.string().min(1).max(50), z.null()]).optional(),
+  nationality: z.union([z.string().min(1).max(100), z.null()]).optional(),
+  maritalStatus: z.union([z.string().min(1).max(100), z.null()]).optional(),
+  address: z.union([z.string().min(3).max(300), z.null()]).optional(),
+  departmentId: z.union([z.number().int().positive(), z.null()]).optional(),
+  employmentType: z.enum(employmentTypeOptions),
+  position: z.union([z.string().min(2).max(120), z.null()]).optional(),
+  positionId: z.union([z.number().int().positive(), z.null()]).optional(),
+  employmentStatus: z.enum(["onboarding", "active", "inactive"]).optional(),
+  joinDate: z.union([z.string().regex(isoDateRegex), z.null()]).optional(),
+  invitationSentDate: z.union([z.string().regex(isoDateRegex), z.null()]).optional(),
+  passwordChanged: z.union([z.boolean(), z.null()]).optional(),
+  profilePictureUrl: z
+    .union([
+      z.string().url().max(1000),
+      z.string().regex(base64ImageDataUrlRegex).max(7000000),
+      z.null(),
+    ])
+    .optional(),
+});
+
 const hrPayrollUpdateSchema = z.object({
   salary: z.number().nonnegative(),
   governmentIds: z.object({
@@ -501,6 +528,60 @@ async function getEmployeeRowForApi(client, employeeId) {
   );
 
   return result.rows[0] ?? null;
+}
+
+async function resolveEmployeeId(client, employeeIdentifier) {
+  const result = await client.query(
+    `
+    SELECT e.employee_id
+    FROM app.employees e
+    WHERE e.employee_id = $1::text
+       OR e.employee_code = $1::text
+       OR LOWER(e.employee_id) = LOWER($1::text)
+       OR LOWER(e.employee_code) = LOWER($1::text)
+    ORDER BY
+      CASE
+        WHEN e.employee_id = $1::text THEN 1
+        WHEN e.employee_code = $1::text THEN 2
+        WHEN LOWER(e.employee_id) = LOWER($1::text) THEN 3
+        ELSE 4
+      END
+    LIMIT 1
+    `,
+    [employeeIdentifier],
+  );
+
+  return result.rows[0]?.employee_id ?? null;
+}
+
+async function isEmailTakenByAnotherEmployee(client, email, employeeId = null) {
+  const normalizedEmail = typeof email === "string" ? email.trim() : "";
+  if (!normalizedEmail) {
+    return false;
+  }
+
+  const result = employeeId
+    ? await client.query(
+      `
+      SELECT 1
+      FROM app.employees
+      WHERE email = $1::citext
+        AND employee_id <> $2::text
+      LIMIT 1
+      `,
+      [normalizedEmail, employeeId],
+    )
+    : await client.query(
+      `
+      SELECT 1
+      FROM app.employees
+      WHERE email = $1::citext
+      LIMIT 1
+      `,
+      [normalizedEmail],
+    );
+
+  return result.rowCount > 0;
 }
 
 app.post("/auth/login", async (req, res) => {
@@ -1866,6 +1947,133 @@ app.get(
   },
 );
 
+app.post(
+  "/employees",
+  requireAuth,
+  requireRole("admin", "hr_manager"),
+  async (req, res) => {
+    const parsed = hrEmployeeCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
+
+    const payload = parsed.data;
+
+    try {
+      const employee = await withRlsContext(req.auth, async (client) => {
+        if (payload.email != null) {
+          const taken = await isEmailTakenByAnotherEmployee(client, payload.email);
+          if (taken) {
+            throw new Error("Email is already assigned to another employee");
+          }
+        }
+
+        const nextResult = await client.query(
+          `
+          SELECT COALESCE(
+            MAX((SUBSTRING(LOWER(employee_id) FROM '^emp-([0-9]+)$'))::int),
+            0
+          ) + 1 AS next_id
+          FROM app.employees
+          `,
+        );
+
+        const nextId = Number(nextResult.rows[0]?.next_id ?? 1);
+        const employeeId = `emp-${nextId}`;
+        const employeeCode = `WFP${new Date().getFullYear()}${String(nextId).padStart(4, "0")}`;
+
+        await client.query(
+          `
+          INSERT INTO app.employees (
+            employee_id,
+            employee_code,
+            first_name,
+            last_name,
+            email,
+            phone,
+            department_id,
+            position,
+            position_id,
+            attendance_status,
+            employment_status,
+            employment_type,
+            join_date,
+            birthday,
+            gender,
+            nationality,
+            marital_status,
+            address,
+            invitation_sent_date,
+            password_changed,
+            profile_picture_url
+          )
+          VALUES (
+            $1::text,
+            $2::text,
+            $3::text,
+            $4::text,
+            $5::citext,
+            $6::text,
+            $7::bigint,
+            $8::text,
+            $9::bigint,
+            'absent'::app.attendance_status,
+            $10::app.employment_status,
+            $11::app.employment_type,
+            $12::date,
+            $13::date,
+            $14::text,
+            $15::text,
+            $16::text,
+            $17::text,
+            $18::date,
+            $19::boolean,
+            $20::text
+          )
+          `,
+          [
+            employeeId,
+            employeeCode,
+            payload.firstName,
+            payload.lastName,
+            payload.email ?? null,
+            payload.phone ?? null,
+            payload.departmentId ?? null,
+            payload.position ?? null,
+            payload.positionId ?? null,
+            payload.employmentStatus ?? "onboarding",
+            payload.employmentType,
+            payload.joinDate ?? null,
+            payload.birthday ?? null,
+            payload.gender ?? null,
+            payload.nationality ?? null,
+            payload.maritalStatus ?? null,
+            payload.address ?? null,
+            payload.invitationSentDate ?? null,
+            payload.passwordChanged ?? false,
+            payload.profilePictureUrl ?? null,
+          ],
+        );
+
+        await client.query(
+          `
+          INSERT INTO app.payroll_profiles (employee_id, salary, pag_ibig, phil_health, sss, tin)
+          VALUES ($1::text, 0, '', '', '', '')
+          ON CONFLICT (employee_id) DO NOTHING
+          `,
+          [employeeId],
+        );
+
+        return getEmployeeRowForApi(client, employeeId);
+      });
+
+      return res.status(201).json({ employee });
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+  },
+);
+
 app.patch(
   "/employees/:employeeId",
   requireAuth,
@@ -1918,7 +2126,23 @@ app.patch(
 
     try {
       const employee = await withRlsContext(req.auth, async (client) => {
-        const updateParams = [...params, employeeId];
+        const resolvedEmployeeId = await resolveEmployeeId(client, employeeId);
+        if (!resolvedEmployeeId) {
+          return null;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(payload, "email") && payload.email != null) {
+          const taken = await isEmailTakenByAnotherEmployee(
+            client,
+            payload.email,
+            resolvedEmployeeId,
+          );
+          if (taken) {
+            throw new Error("Email is already assigned to another employee");
+          }
+        }
+
+        const updateParams = [...params, resolvedEmployeeId];
         const updateResult = await client.query(
           `
           UPDATE app.employees
@@ -1942,7 +2166,7 @@ app.patch(
             WHERE e.employee_id = $1::text
               AND jp.position_id = e.position_id
             `,
-            [employeeId],
+            [resolvedEmployeeId],
           );
 
           if (payload.positionId === null) {
@@ -1952,12 +2176,12 @@ app.patch(
               SET position = NULL
               WHERE employee_id = $1::text
               `,
-              [employeeId],
+              [resolvedEmployeeId],
             );
           }
         }
 
-        return getEmployeeRowForApi(client, employeeId);
+        return getEmployeeRowForApi(client, resolvedEmployeeId);
       });
 
       if (!employee) {
@@ -1989,13 +2213,18 @@ app.put(
 
     try {
       const employee = await withRlsContext(req.auth, async (client) => {
+        const resolvedEmployeeId = await resolveEmployeeId(client, employeeId);
+        if (!resolvedEmployeeId) {
+          return null;
+        }
+
         const employeeExists = await client.query(
           `
           SELECT employee_id
           FROM app.employees
           WHERE employee_id = $1::text
           `,
-          [employeeId],
+          [resolvedEmployeeId],
         );
 
         if (employeeExists.rowCount === 0) {
@@ -2023,7 +2252,7 @@ app.put(
             updated_at = NOW()
           `,
           [
-            employeeId,
+            resolvedEmployeeId,
             payload.salary,
             payload.governmentIds.pagIbig,
             payload.governmentIds.philHealth,
@@ -2037,12 +2266,12 @@ app.put(
           DELETE FROM app.payroll_deductions
           WHERE employee_id = $1::text
           `,
-          [employeeId],
+          [resolvedEmployeeId],
         );
 
         for (let index = 0; index < payload.deductions.length; index += 1) {
           const deduction = payload.deductions[index];
-          const fallbackId = `ded-${employeeId}-${index + 1}-${Date.now()}`;
+          const fallbackId = `ded-${resolvedEmployeeId}-${index + 1}-${Date.now()}`;
           const deductionId = deduction.id && deduction.id.trim().length > 0
             ? deduction.id.trim()
             : fallbackId;
@@ -2057,11 +2286,11 @@ app.put(
             )
             VALUES ($1::text, $2::text, $3::text, $4::numeric)
             `,
-            [deductionId, employeeId, deduction.name, deduction.amount],
+            [deductionId, resolvedEmployeeId, deduction.name, deduction.amount],
           );
         }
 
-        return getEmployeeRowForApi(client, employeeId);
+        return getEmployeeRowForApi(client, resolvedEmployeeId);
       });
 
       if (!employee) {
