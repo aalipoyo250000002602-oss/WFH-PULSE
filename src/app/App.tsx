@@ -1293,6 +1293,8 @@ export default function App() {
         return selectedEmployeeId ? (
           <EmployeeDetailsPage
             employeeId={selectedEmployeeId}
+            apiBaseUrl={apiBaseUrl}
+            accessToken={authSession?.accessToken ?? ""}
             employmentOptions={employmentOptions}
             onBack={handleBackFromEmployeeDetails}
           />

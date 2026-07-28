@@ -252,6 +252,54 @@ const selfProfileUpdateSchema = z
     message: "At least one field is required",
   });
 
+const hrEmployeeUpdateSchema = z
+  .object({
+    firstName: z.string().min(1).max(120).optional(),
+    lastName: z.string().min(1).max(120).optional(),
+    email: z.union([z.string().email(), z.null()]).optional(),
+    phone: z.union([z.string().min(3).max(50), z.null()]).optional(),
+    birthday: z.union([z.string().regex(isoDateRegex), z.null()]).optional(),
+    gender: z.union([z.string().min(1).max(50), z.null()]).optional(),
+    nationality: z.union([z.string().min(1).max(100), z.null()]).optional(),
+    maritalStatus: z.union([z.string().min(1).max(100), z.null()]).optional(),
+    address: z.union([z.string().min(3).max(300), z.null()]).optional(),
+    departmentId: z.union([z.number().int().positive(), z.null()]).optional(),
+    employmentType: z.enum(employmentTypeOptions).optional(),
+    position: z.union([z.string().min(2).max(120), z.null()]).optional(),
+    positionId: z.union([z.number().int().positive(), z.null()]).optional(),
+    employmentStatus: z.enum(["onboarding", "active", "inactive"]).optional(),
+    joinDate: z.union([z.string().regex(isoDateRegex), z.null()]).optional(),
+    invitationSentDate: z.union([z.string().regex(isoDateRegex), z.null()]).optional(),
+    passwordChanged: z.union([z.boolean(), z.null()]).optional(),
+    profilePictureUrl: z
+      .union([
+        z.string().url().max(1000),
+        z.string().regex(base64ImageDataUrlRegex).max(7000000),
+        z.null(),
+      ])
+      .optional(),
+  })
+  .refine((payload) => Object.keys(payload).length > 0, {
+    message: "At least one field is required",
+  });
+
+const hrPayrollUpdateSchema = z.object({
+  salary: z.number().nonnegative(),
+  governmentIds: z.object({
+    pagIbig: z.string().max(50),
+    philHealth: z.string().max(50),
+    sss: z.string().max(50),
+    tin: z.string().max(50),
+  }),
+  deductions: z.array(
+    z.object({
+      id: z.string().min(1).max(120).optional(),
+      name: z.string().min(1).max(120),
+      amount: z.number().nonnegative(),
+    }),
+  ).max(100),
+});
+
 async function getUserProfileByUserId(userId) {
   const profileResult = await query(
     `
@@ -398,6 +446,61 @@ async function ensureEmployeeLinkForUser(userId) {
   );
 
   return resolvedEmployeeId;
+}
+
+async function getEmployeeRowForApi(client, employeeId) {
+  const result = await client.query(
+    `
+    SELECT
+      e.employee_id,
+      e.employee_code,
+      e.first_name,
+      e.last_name,
+      e.email,
+      e.phone,
+      d.name AS department,
+      e.position_id,
+      COALESCE(jp.name, e.position) AS position,
+      e.attendance_status,
+      e.employment_status,
+      e.employment_type,
+      e.join_date,
+      e.birthday,
+      e.gender,
+      e.nationality,
+      e.marital_status,
+      e.address,
+      e.invitation_sent_date,
+      e.password_changed,
+      e.profile_picture_url,
+      pp.salary,
+      pp.sss,
+      pp.tin,
+      pp.phil_health,
+      pp.pag_ibig,
+      COALESCE(pd.items, '[]'::jsonb) AS payroll_deductions
+    FROM app.employees e
+    LEFT JOIN app.departments d ON d.department_id = e.department_id
+    LEFT JOIN app.job_positions jp ON jp.position_id = e.position_id
+    LEFT JOIN app.payroll_profiles pp ON pp.employee_id = e.employee_id
+    LEFT JOIN LATERAL (
+      SELECT jsonb_agg(
+        jsonb_build_object(
+          'deduction_id', d2.deduction_id,
+          'deduction_name', d2.deduction_name,
+          'amount', d2.amount
+        )
+        ORDER BY d2.deduction_id
+      ) AS items
+      FROM app.payroll_deductions d2
+      WHERE d2.employee_id = e.employee_id
+    ) pd ON TRUE
+    WHERE e.employee_id = $1::text
+    `,
+    [employeeId],
+  );
+
+  return result.rows[0] ?? null;
 }
 
 app.post("/auth/login", async (req, res) => {
@@ -1757,6 +1860,215 @@ app.get(
       });
 
       return res.json({ employees: rows });
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+  },
+);
+
+app.patch(
+  "/employees/:employeeId",
+  requireAuth,
+  requireRole("admin", "hr_manager"),
+  async (req, res) => {
+    const parsed = hrEmployeeUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
+
+    const payload = parsed.data;
+    const employeeId = String(req.params.employeeId || "").trim();
+    if (!employeeId) {
+      return res.status(400).json({ error: "Invalid employeeId" });
+    }
+
+    const fieldMap = {
+      firstName: "first_name",
+      lastName: "last_name",
+      email: "email",
+      phone: "phone",
+      birthday: "birthday",
+      gender: "gender",
+      nationality: "nationality",
+      maritalStatus: "marital_status",
+      address: "address",
+      departmentId: "department_id",
+      employmentType: "employment_type",
+      position: "position",
+      positionId: "position_id",
+      employmentStatus: "employment_status",
+      joinDate: "join_date",
+      invitationSentDate: "invitation_sent_date",
+      passwordChanged: "password_changed",
+      profilePictureUrl: "profile_picture_url",
+    };
+
+    const assignments = [];
+    const params = [];
+    for (const [jsonKey, dbColumn] of Object.entries(fieldMap)) {
+      if (Object.prototype.hasOwnProperty.call(payload, jsonKey)) {
+        params.push(payload[jsonKey]);
+        assignments.push(`${dbColumn} = $${params.length}`);
+      }
+    }
+
+    if (assignments.length === 0) {
+      return res.status(400).json({ error: "No fields provided" });
+    }
+
+    try {
+      const employee = await withRlsContext(req.auth, async (client) => {
+        const updateParams = [...params, employeeId];
+        const updateResult = await client.query(
+          `
+          UPDATE app.employees
+          SET ${assignments.join(", ")}, updated_at = NOW()
+          WHERE employee_id = $${updateParams.length}::text
+          RETURNING employee_id
+          `,
+          updateParams,
+        );
+
+        if (updateResult.rowCount === 0) {
+          return null;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(payload, "positionId")) {
+          await client.query(
+            `
+            UPDATE app.employees e
+            SET position = jp.name
+            FROM app.job_positions jp
+            WHERE e.employee_id = $1::text
+              AND jp.position_id = e.position_id
+            `,
+            [employeeId],
+          );
+
+          if (payload.positionId === null) {
+            await client.query(
+              `
+              UPDATE app.employees
+              SET position = NULL
+              WHERE employee_id = $1::text
+              `,
+              [employeeId],
+            );
+          }
+        }
+
+        return getEmployeeRowForApi(client, employeeId);
+      });
+
+      if (!employee) {
+        return res.status(404).json({ error: "Employee not found" });
+      }
+
+      return res.json({ employee });
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+  },
+);
+
+app.put(
+  "/employees/:employeeId/payroll",
+  requireAuth,
+  requireRole("admin", "hr_manager"),
+  async (req, res) => {
+    const parsed = hrPayrollUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
+
+    const payload = parsed.data;
+    const employeeId = String(req.params.employeeId || "").trim();
+    if (!employeeId) {
+      return res.status(400).json({ error: "Invalid employeeId" });
+    }
+
+    try {
+      const employee = await withRlsContext(req.auth, async (client) => {
+        const employeeExists = await client.query(
+          `
+          SELECT employee_id
+          FROM app.employees
+          WHERE employee_id = $1::text
+          `,
+          [employeeId],
+        );
+
+        if (employeeExists.rowCount === 0) {
+          return null;
+        }
+
+        await client.query(
+          `
+          INSERT INTO app.payroll_profiles (
+            employee_id,
+            salary,
+            pag_ibig,
+            phil_health,
+            sss,
+            tin
+          )
+          VALUES ($1::text, $2::numeric, $3::text, $4::text, $5::text, $6::text)
+          ON CONFLICT (employee_id) DO UPDATE
+          SET
+            salary = EXCLUDED.salary,
+            pag_ibig = EXCLUDED.pag_ibig,
+            phil_health = EXCLUDED.phil_health,
+            sss = EXCLUDED.sss,
+            tin = EXCLUDED.tin,
+            updated_at = NOW()
+          `,
+          [
+            employeeId,
+            payload.salary,
+            payload.governmentIds.pagIbig,
+            payload.governmentIds.philHealth,
+            payload.governmentIds.sss,
+            payload.governmentIds.tin,
+          ],
+        );
+
+        await client.query(
+          `
+          DELETE FROM app.payroll_deductions
+          WHERE employee_id = $1::text
+          `,
+          [employeeId],
+        );
+
+        for (let index = 0; index < payload.deductions.length; index += 1) {
+          const deduction = payload.deductions[index];
+          const fallbackId = `ded-${employeeId}-${index + 1}-${Date.now()}`;
+          const deductionId = deduction.id && deduction.id.trim().length > 0
+            ? deduction.id.trim()
+            : fallbackId;
+
+          await client.query(
+            `
+            INSERT INTO app.payroll_deductions (
+              deduction_id,
+              employee_id,
+              deduction_name,
+              amount
+            )
+            VALUES ($1::text, $2::text, $3::text, $4::numeric)
+            `,
+            [deductionId, employeeId, deduction.name, deduction.amount],
+          );
+        }
+
+        return getEmployeeRowForApi(client, employeeId);
+      });
+
+      if (!employee) {
+        return res.status(404).json({ error: "Employee not found" });
+      }
+
+      return res.json({ employee });
     } catch (error) {
       return res.status(400).json({ error: error.message });
     }

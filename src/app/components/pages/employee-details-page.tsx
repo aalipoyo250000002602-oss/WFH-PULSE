@@ -66,7 +66,7 @@ import {
 } from "lucide-react";
 import {
   getEmployees,
-  updateEmployee,
+  replaceEmployees,
   Employee,
   PayrollInfo,
   getDepartmentNamesFromOptions,
@@ -78,6 +78,8 @@ import { EmployeeProfilePDFGenerator } from "../employee-profile-pdf-generator";
 
 interface EmployeeDetailsPageProps {
   employeeId: string;
+  apiBaseUrl: string;
+  accessToken: string;
   employmentOptions: {
     employmentTypes: string[];
     departments: Array<{ departmentId: number; name: string }>;
@@ -86,8 +88,65 @@ interface EmployeeDetailsPageProps {
   onBack: () => void;
 }
 
+function mapApiEmployeeToState(row: Record<string, any>): Employee {
+  const deductions = Array.isArray(row.payroll_deductions)
+    ? row.payroll_deductions.map((item: any, idx: number) => ({
+        id: String(item?.deduction_id ?? `ded-${row.employee_id}-${idx + 1}`),
+        name: String(item?.deduction_name ?? "Deduction"),
+        amount: Number(item?.amount ?? 0),
+      }))
+    : [];
+
+  const payroll =
+    row.salary == null && deductions.length === 0
+      ? undefined
+      : {
+          salary: Number(row.salary ?? 0),
+          governmentIds: {
+            pagIbig: String(row.pag_ibig ?? ""),
+            philHealth: String(row.phil_health ?? ""),
+            sss: String(row.sss ?? ""),
+            tin: String(row.tin ?? ""),
+          },
+          deductions,
+        };
+
+  return {
+    id: String(row.employee_id),
+    employeeId: String(row.employee_code ?? row.employee_id),
+    firstName: String(row.first_name ?? ""),
+    lastName: String(row.last_name ?? ""),
+    status: (row.attendance_status ?? "present") as Employee["status"],
+    employmentStatus: (row.employment_status ?? "active") as Employee["employmentStatus"],
+    employmentType: String(row.employment_type ?? "full-time"),
+    department: String(row.department ?? ""),
+    position: row.position ? String(row.position) : "",
+    email: row.email ? String(row.email) : "",
+    phone: row.phone ? String(row.phone) : "",
+    joinDate: row.join_date ? String(row.join_date).slice(0, 10) : "",
+    birthday: row.birthday ? String(row.birthday).slice(0, 10) : "",
+    gender: row.gender ? String(row.gender) as Employee["gender"] : undefined,
+    nationality: row.nationality ? String(row.nationality) : "",
+    maritalStatus: row.marital_status
+      ? String(row.marital_status) as Employee["maritalStatus"]
+      : undefined,
+    address: row.address ? String(row.address) : "",
+    invitationSentDate: row.invitation_sent_date
+      ? String(row.invitation_sent_date).slice(0, 10)
+      : undefined,
+    passwordChanged:
+      row.password_changed == null
+        ? undefined
+        : Boolean(row.password_changed),
+    profilePicture: row.profile_picture_url ? String(row.profile_picture_url) : undefined,
+    payroll,
+  };
+}
+
 export function EmployeeDetailsPage({
   employeeId,
+  apiBaseUrl,
+  accessToken,
   employmentOptions,
   onBack,
 }: EmployeeDetailsPageProps) {
@@ -181,6 +240,7 @@ export function EmployeeDetailsPage({
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isEmploymentOpen, setIsEmploymentOpen] = useState(false);
   const [isPayrollOpen, setIsPayrollOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Edit form states
   const [contactFormData, setContactFormData] = useState({
@@ -317,15 +377,136 @@ export function EmployeeDetailsPage({
   };
 
   const handleSendInvitation = () => {
-    const updated = updateEmployee(employee.id, {
-      invitationSentDate: new Date().toISOString().split('T')[0],
-    });
-    
-    if (updated) {
-      setEmployee(updated);
-      toast.success("Invitation sent successfully", {
-        description: `An invitation email has been sent to ${employee.email}`,
+    void updateEmployeeOnApi(
+      {
+        invitationSentDate: new Date().toISOString().split("T")[0],
+      },
+      {
+        successTitle: "Invitation sent successfully",
+        successDescription: `An invitation email has been sent to ${employee.email}`,
+      },
+    );
+  };
+
+  const syncEmployeeCache = (nextEmployee: Employee) => {
+    const currentEmployees = getEmployees();
+    const nextEmployees = currentEmployees.some((entry) => entry.id === nextEmployee.id)
+      ? currentEmployees.map((entry) => (entry.id === nextEmployee.id ? nextEmployee : entry))
+      : [...currentEmployees, nextEmployee];
+    replaceEmployees(nextEmployees);
+  };
+
+  const updateEmployeeOnApi = async (
+    updates: Record<string, unknown>,
+    options?: { successTitle?: string; successDescription?: string },
+  ) => {
+    if (!accessToken) {
+      toast.error("Unable to update employee", {
+        description: "Missing access token. Please sign in again.",
       });
+      return false;
+    }
+
+    if (isSaving) {
+      return false;
+    }
+
+    setIsSaving(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/employees/${employee.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(updates),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error("Employee update failed", {
+          description: payload?.error || "Please review your changes and try again.",
+        });
+        return false;
+      }
+
+      if (payload?.employee) {
+        const mapped = mapApiEmployeeToState(payload.employee);
+        setEmployee(mapped);
+        syncEmployeeCache(mapped);
+      }
+
+      if (options?.successTitle) {
+        toast.success(options.successTitle, {
+          description: options.successDescription,
+        });
+      }
+
+      return true;
+    } catch {
+      toast.error("Employee update failed", {
+        description: "Unable to reach the API server.",
+      });
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const updatePayrollOnApi = async (payroll: PayrollInfo) => {
+    if (!accessToken) {
+      toast.error("Unable to update payroll", {
+        description: "Missing access token. Please sign in again.",
+      });
+      return false;
+    }
+
+    if (isSaving) {
+      return false;
+    }
+
+    setIsSaving(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/employees/${employee.id}/payroll`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          salary: payroll.salary,
+          governmentIds: payroll.governmentIds,
+          deductions: payroll.deductions.map((deduction) => ({
+            id: deduction.id,
+            name: deduction.name,
+            amount: deduction.amount,
+          })),
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error("Payroll update failed", {
+          description: payload?.error || "Please review payroll fields and try again.",
+        });
+        return false;
+      }
+
+      if (payload?.employee) {
+        const mapped = mapApiEmployeeToState(payload.employee);
+        setEmployee(mapped);
+        syncEmployeeCache(mapped);
+      }
+
+      toast.success("Payroll updated successfully");
+      return true;
+    } catch {
+      toast.error("Payroll update failed", {
+        description: "Unable to reach the API server.",
+      });
+      return false;
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -335,12 +516,24 @@ export function EmployeeDetailsPage({
       return;
     }
 
-    const updated = updateEmployee(employee.id, contactFormData);
-    if (updated) {
-      setEmployee(updated);
-      toast.success("Contact information updated successfully");
-      setShowEditContactDialog(false);
-    }
+    void (async () => {
+      const didUpdate = await updateEmployeeOnApi(
+        {
+          email: contactFormData.email,
+          phone: contactFormData.phone,
+          birthday: contactFormData.birthday,
+          gender: contactFormData.gender,
+          nationality: contactFormData.nationality,
+          maritalStatus: contactFormData.maritalStatus,
+          address: contactFormData.address,
+        },
+        { successTitle: "Contact information updated successfully" },
+      );
+
+      if (didUpdate) {
+        setShowEditContactDialog(false);
+      }
+    })();
   };
 
   const handleUpdateEmployment = () => {
@@ -373,34 +566,59 @@ export function EmployeeDetailsPage({
       return;
     }
 
-    const updated = updateEmployee(employee.id, employmentFormData);
-    if (updated) {
-      setEmployee(updated);
-      toast.success("Employment details updated successfully");
-      setShowEditEmploymentDialog(false);
+    const selectedDepartment = employmentOptions.departments.find(
+      (department) => department.name === employmentFormData.department,
+    );
+    const selectedPosition = employmentOptions.positions.find(
+      (position) =>
+        position.name === employmentFormData.position &&
+        (!selectedDepartment || position.departmentId === selectedDepartment.departmentId),
+    );
+
+    if (!selectedDepartment || !selectedPosition) {
+      toast.error("Please select valid department and position options");
+      return;
     }
+
+    void (async () => {
+      const didUpdate = await updateEmployeeOnApi(
+        {
+          employmentType: employmentFormData.employmentType,
+          departmentId: selectedDepartment.departmentId,
+          positionId: selectedPosition.positionId,
+          joinDate: employmentFormData.joinDate,
+        },
+        { successTitle: "Employment details updated successfully" },
+      );
+
+      if (didUpdate) {
+        setShowEditEmploymentDialog(false);
+      }
+    })();
   };
 
   const handleStatusChange = () => {
     if (!targetStatus) return;
 
-    const updated = updateEmployee(employee.id, {
-      employmentStatus: targetStatus,
-    });
+    void (async () => {
+      const didUpdate = await updateEmployeeOnApi(
+        {
+          employmentStatus: targetStatus,
+        },
+        {
+          successTitle: `Employee status changed to ${targetStatus}`,
+        },
+      );
 
-    if (updated) {
-      setEmployee(updated);
-      toast.success(`Employee status changed to ${targetStatus}`);
-      setShowStatusChangeDialog(false);
-      setTargetStatus(null);
-    }
+      if (didUpdate) {
+        setShowStatusChangeDialog(false);
+        setTargetStatus(null);
+      }
+    })();
   };
 
   const handleUpdatePayroll = (payroll: PayrollInfo) => {
-    const updated = updateEmployee(employee.id, { payroll });
-    if (updated) {
-      setEmployee(updated);
-    }
+    void updatePayrollOnApi(payroll);
   };
 
   const handleProfilePictureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -447,29 +665,39 @@ export function EmployeeDetailsPage({
       return;
     }
 
-    const updated = updateEmployee(employee.id, {
-      profilePicture: profilePicturePreview,
-    });
+    void (async () => {
+      const didUpdate = await updateEmployeeOnApi(
+        {
+          profilePictureUrl: profilePicturePreview,
+        },
+        {
+          successTitle: "Profile picture updated successfully",
+        },
+      );
 
-    if (updated) {
-      setEmployee(updated);
-      toast.success("Profile picture updated successfully");
-      setShowProfilePictureDialog(false);
-      setProfilePicturePreview(null);
-    }
+      if (didUpdate) {
+        setShowProfilePictureDialog(false);
+        setProfilePicturePreview(null);
+      }
+    })();
   };
 
   const handleRemoveProfilePicture = () => {
-    const updated = updateEmployee(employee.id, {
-      profilePicture: undefined,
-    });
+    void (async () => {
+      const didUpdate = await updateEmployeeOnApi(
+        {
+          profilePictureUrl: null,
+        },
+        {
+          successTitle: "Profile picture removed",
+        },
+      );
 
-    if (updated) {
-      setEmployee(updated);
-      toast.success("Profile picture removed");
-      setShowProfilePictureDialog(false);
-      setProfilePicturePreview(null);
-    }
+      if (didUpdate) {
+        setShowProfilePictureDialog(false);
+        setProfilePicturePreview(null);
+      }
+    })();
   };
 
   const canChangeToInactive = () => {
@@ -557,11 +785,11 @@ export function EmployeeDetailsPage({
               
               <Button
                 onClick={handleSendInvitation}
-                disabled={!!employee.invitationSentDate || !!employee.passwordChanged}
+                disabled={isSaving || !!employee.invitationSentDate || !!employee.passwordChanged}
                 className="w-full bg-vibrant-blue hover:bg-vibrant-blue/90"
               >
                 <Send className="h-4 w-4 mr-2" />
-                Send Invitation Link
+                {isSaving ? "Saving..." : "Send Invitation Link"}
               </Button>
 
               {/* Invitation Logs */}
@@ -606,6 +834,7 @@ export function EmployeeDetailsPage({
                 </div>
                 <Switch
                   checked={true}
+                  disabled={isSaving}
                   onCheckedChange={(checked) => {
                     if (!checked) {
                       setTargetStatus("inactive");
@@ -630,6 +859,7 @@ export function EmployeeDetailsPage({
                 </div>
                 <Switch
                   checked={false}
+                  disabled={isSaving}
                   onCheckedChange={(checked) => {
                     if (checked) {
                       setTargetStatus("active");
@@ -1000,11 +1230,11 @@ export function EmployeeDetailsPage({
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditContactDialog(false)}>
+            <Button variant="outline" disabled={isSaving} onClick={() => setShowEditContactDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleUpdateContact} className="bg-vibrant-blue hover:bg-vibrant-blue/90">
-              Save Changes
+            <Button disabled={isSaving} onClick={handleUpdateContact} className="bg-vibrant-blue hover:bg-vibrant-blue/90">
+              {isSaving ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1091,11 +1321,11 @@ export function EmployeeDetailsPage({
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditEmploymentDialog(false)}>
+            <Button variant="outline" disabled={isSaving} onClick={() => setShowEditEmploymentDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleUpdateEmployment} className="bg-vibrant-purple hover:bg-vibrant-purple/90">
-              Save Changes
+            <Button disabled={isSaving} onClick={handleUpdateEmployment} className="bg-vibrant-purple hover:bg-vibrant-purple/90">
+              {isSaving ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1112,9 +1342,9 @@ export function EmployeeDetailsPage({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setTargetStatus(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleStatusChange}>
-              Confirm
+            <AlertDialogCancel disabled={isSaving} onClick={() => setTargetStatus(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={isSaving} onClick={handleStatusChange}>
+              {isSaving ? "Saving..." : "Confirm"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1178,10 +1408,11 @@ export function EmployeeDetailsPage({
                 {(employee.profilePicture || profilePicturePreview) && (
                   <Button
                     variant="outline"
+                    disabled={isSaving}
                     onClick={handleRemoveProfilePicture}
                     className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
                   >
-                    Remove Picture
+                    {isSaving ? "Saving..." : "Remove Picture"}
                   </Button>
                 )}
               </div>
@@ -1191,6 +1422,7 @@ export function EmployeeDetailsPage({
           <DialogFooter className="gap-2">
             <Button
               variant="outline"
+              disabled={isSaving}
               onClick={() => {
                 setShowProfilePictureDialog(false);
                 setProfilePicturePreview(null);
@@ -1200,10 +1432,10 @@ export function EmployeeDetailsPage({
             </Button>
             <Button
               onClick={handleSaveProfilePicture}
-              disabled={!profilePicturePreview}
+              disabled={isSaving || !profilePicturePreview}
               className="bg-vibrant-blue hover:bg-vibrant-blue/90"
             >
-              Save
+              {isSaving ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
