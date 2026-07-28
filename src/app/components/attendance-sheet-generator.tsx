@@ -1538,7 +1538,7 @@ WFH PULSE`;
                       {selectedEmployee.firstName}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {selectedEmployee.department} â€¢{" "}
+                      {selectedEmployee.department} |{" "}
                       {selectedEmployee.position}
                     </p>
                   </div>
@@ -1794,7 +1794,7 @@ WFH PULSE`;
                         {payrollData.totalWorkHoursDecimal.toFixed(
                           2,
                         )}
-                        h Ã—{" "}
+                        h x{" "}
                         {formatCurrency(payrollData.hourlyRate)}
                       </p>
                     </div>

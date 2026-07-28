@@ -96,8 +96,16 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
   const hourlyRate = dailyRate / 8;
 
   const maskValue = (value: string) => {
-    return "â€¢".repeat(value.length);
+    const compactLength = value.replace(/[\s-]/g, "").length;
+    const maskLength = Math.max(8, Math.min(12, compactLength || 8));
+    return "*".repeat(maskLength);
   };
+
+  const renderMaskedToken = (mask = "******") => (
+    <span className="inline-flex rounded-md bg-muted px-2 py-0.5 font-mono text-xs tracking-[0.28em] text-muted-foreground">
+      {mask}
+    </span>
+  );
 
   const formatCurrency = (amount: number) => {
     return `Php ${amount.toLocaleString("en-US", {
@@ -249,7 +257,9 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-muted-foreground">Pag-IBIG No.</p>
                   <p className="font-mono text-sm break-all">
-                    {showPagIbig ? payroll.governmentIds.pagIbig : maskValue(payroll.governmentIds.pagIbig)}
+                    {showPagIbig
+                      ? payroll.governmentIds.pagIbig
+                      : renderMaskedToken(maskValue(payroll.governmentIds.pagIbig))}
                   </p>
                 </div>
                 <Button
@@ -265,7 +275,9 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-muted-foreground">PhilHealth No.</p>
                   <p className="font-mono text-sm break-all">
-                    {showPhilHealth ? payroll.governmentIds.philHealth : maskValue(payroll.governmentIds.philHealth)}
+                    {showPhilHealth
+                      ? payroll.governmentIds.philHealth
+                      : renderMaskedToken(maskValue(payroll.governmentIds.philHealth))}
                   </p>
                 </div>
                 <Button
@@ -281,7 +293,9 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-muted-foreground">SSS No.</p>
                   <p className="font-mono text-sm break-all">
-                    {showSSS ? payroll.governmentIds.sss : maskValue(payroll.governmentIds.sss)}
+                    {showSSS
+                      ? payroll.governmentIds.sss
+                      : renderMaskedToken(maskValue(payroll.governmentIds.sss))}
                   </p>
                 </div>
                 <Button
@@ -297,7 +311,9 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-muted-foreground">Tax No.</p>
                   <p className="font-mono text-sm break-all">
-                    {showTIN ? payroll.governmentIds.tin : maskValue(payroll.governmentIds.tin)}
+                    {showTIN
+                      ? payroll.governmentIds.tin
+                      : renderMaskedToken(maskValue(payroll.governmentIds.tin))}
                   </p>
                 </div>
                 <Button
@@ -322,7 +338,7 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-muted-foreground">Monthly Salary</p>
                   <p className="font-medium text-vibrant-green break-words">
-                    {showSalary ? formatCurrency(payroll.salary) : "â€¢â€¢â€¢â€¢â€¢â€¢"}
+                    {showSalary ? formatCurrency(payroll.salary) : renderMaskedToken()}
                   </p>
                 </div>
                 <Button
@@ -338,9 +354,9 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-muted-foreground">Daily Rate</p>
                   <p className="font-medium break-words">
-                    {showDailyRate ? formatCurrency(dailyRate) : "â€¢â€¢â€¢â€¢â€¢â€¢"}
+                    {showDailyRate ? formatCurrency(dailyRate) : renderMaskedToken()}
                   </p>
-                  <p className="text-xs text-muted-foreground">Salary Ã· 21 days</p>
+                  <p className="text-xs text-muted-foreground">Salary / 21 days</p>
                 </div>
                 <Button
                   variant="ghost"
@@ -355,9 +371,9 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-muted-foreground">Hourly Rate</p>
                   <p className="font-medium break-words">
-                    {showHourlyRate ? formatCurrency(hourlyRate) : "â€¢â€¢â€¢â€¢â€¢â€¢"}
+                    {showHourlyRate ? formatCurrency(hourlyRate) : renderMaskedToken()}
                   </p>
-                  <p className="text-xs text-muted-foreground">Daily Rate Ã· 8 hours</p>
+                  <p className="text-xs text-muted-foreground">Daily Rate / 8 hours</p>
                 </div>
                 <Button
                   variant="ghost"
@@ -401,7 +417,7 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
                     <p className="text-sm font-medium text-destructive break-words">
                       {visibleDeductions.has(deduction.id)
                         ? `- ${formatCurrency(deduction.amount)}`
-                        : "- â€¢â€¢â€¢â€¢â€¢â€¢"}
+                        : "- ******"}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
@@ -450,7 +466,7 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
               <span className="text-muted-foreground flex-shrink-0">Total Deductions</span>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className="text-destructive font-medium break-words">
-                  {showTotalDeductions ? `- ${formatCurrency(totalDeductions)}` : "- â€¢â€¢â€¢â€¢â€¢â€¢"}
+                  {showTotalDeductions ? `- ${formatCurrency(totalDeductions)}` : "- ******"}
                 </span>
                 <Button
                   variant="ghost"
@@ -466,7 +482,7 @@ export function EmployeePayrollCard({ payroll, onUpdate, isOpen = true, onOpenCh
               <span className="font-medium flex-shrink-0">Net Salary</span>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className="font-medium text-vibrant-blue break-words">
-                  {showNetSalary ? formatCurrency(netSalary) : "â€¢â€¢â€¢â€¢â€¢â€¢"}
+                  {showNetSalary ? formatCurrency(netSalary) : renderMaskedToken()}
                 </span>
                 <Button
                   variant="ghost"

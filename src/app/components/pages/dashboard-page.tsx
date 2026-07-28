@@ -1080,7 +1080,7 @@ export function DashboardPage() {
                         </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground">{request.leaveType}</p>
-                      <p className="text-xs text-muted-foreground">{request.position} â€¢ {request.department}</p>
+                      <p className="text-xs text-muted-foreground">{request.position} | {request.department}</p>
                       <p className="text-xs text-muted-foreground mt-1">
                         Submitted: {format(request.submittedDate, "MMM dd, yyyy")}
                       </p>
@@ -1209,7 +1209,7 @@ export function DashboardPage() {
                     <div className="p-3 bg-muted rounded-md text-sm">
                       <div className="font-medium">{selectedLeaveRequest.employeeName}</div>
                       <div className="text-xs text-muted-foreground mt-1">
-                        {selectedLeaveRequest.position} â€¢ {selectedLeaveRequest.department}
+                        {selectedLeaveRequest.position} | {selectedLeaveRequest.department}
                       </div>
                     </div>
                   </div>

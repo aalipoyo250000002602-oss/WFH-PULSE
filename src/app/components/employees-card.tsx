@@ -435,7 +435,7 @@ export function EmployeesCard({ onEmployeeClick, employmentOptions }: EmployeesC
                         {hasAnniversary && (
                           <p className="text-xs text-vibrant-blue flex items-center gap-1">
                             <Award className="h-3 w-3" />
-                            Work Anniversary Today! ðŸŽ‰
+                            Work Anniversary Today
                           </p>
                         )}
                       </div>

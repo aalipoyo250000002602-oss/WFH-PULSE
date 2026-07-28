@@ -883,7 +883,7 @@ export function EmployeeDetailsPage({
                       </p>
                       {isWorkAnniversary(employee.joinDate) && (
                         <Badge className="mt-1 bg-vibrant-blue/20 text-vibrant-blue">
-                          Work Anniversary Today! ðŸŽ‰
+                          Work Anniversary Today
                         </Badge>
                       )}
                     </div>
