@@ -1,14 +1,23 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { Clock, Calendar, FileText, CheckCircle, AlertCircle, Edit } from "lucide-react";
-import { AttendanceDetails } from "./attendance-details-data";
+import { Clock, Calendar, FileText, CheckCircle, AlertCircle, Edit, XCircle } from "lucide-react";
+import { AttendanceAdjustmentRequest, AttendanceDetails } from "./attendance-details-data";
 import { format } from "date-fns";
 
 interface AttendanceDetailsModalProps {
   open: boolean;
   onClose: () => void;
   details: AttendanceDetails | null;
+  adjustmentRequest?: (AttendanceAdjustmentRequest & {
+    status: "pending" | "approved" | "denied" | "cancelled";
+    logTrail?: Array<{
+      status: "pending" | "approved" | "denied" | "cancelled";
+      date: Date;
+      approvedBy?: string;
+      reason?: string;
+    }>;
+  }) | null;
   onRequestAdjustment?: (date: string) => void;
 }
 
@@ -16,9 +25,119 @@ export function AttendanceDetailsModal({
   open,
   onClose,
   details,
+  adjustmentRequest,
   onRequestAdjustment,
 }: AttendanceDetailsModalProps) {
   if (!details) return null;
+
+  const requestActionLabel = adjustmentRequest
+    ? adjustmentRequest.status === "approved"
+      ? "View Adjustment Request"
+      : "Edit Adjustment Request"
+    : "Request Attendance Adjustment";
+
+  const getAdjustmentStatusBadge = (status: "pending" | "approved" | "denied" | "cancelled") => {
+    switch (status) {
+      case "pending":
+        return (
+          <Badge variant="outline" className="bg-vibrant-blue/10 text-vibrant-blue border-vibrant-blue/30">
+            <Clock className="h-3 w-3 mr-1" />
+            Pending
+          </Badge>
+        );
+      case "approved":
+        return (
+          <Badge variant="outline" className="bg-vibrant-green/10 text-vibrant-green border-vibrant-green/30">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            Approved
+          </Badge>
+        );
+      case "denied":
+        return (
+          <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30">
+            <XCircle className="h-3 w-3 mr-1" />
+            Declined
+          </Badge>
+        );
+      case "cancelled":
+        return (
+          <Badge variant="outline">
+            Cancelled
+          </Badge>
+        );
+    }
+  };
+
+  const renderAdjustmentAction = () => {
+    if (!onRequestAdjustment) {
+      return null;
+    }
+
+    return (
+      <div className="pt-4 border-t">
+        <Button
+          onClick={() => {
+            onRequestAdjustment(details.date);
+            onClose();
+          }}
+          className="w-full"
+          variant="outline"
+        >
+          <Edit className="h-4 w-4 mr-2" />
+          {requestActionLabel}
+        </Button>
+      </div>
+    );
+  };
+
+  const renderAdjustmentRequestDetails = () => {
+    if (!adjustmentRequest) {
+      return null;
+    }
+
+    return (
+      <div className="space-y-4 pt-4 border-t">
+        <div className="flex items-center justify-between gap-2">
+          <div className="font-medium">Attendance Adjustment</div>
+          {getAdjustmentStatusBadge(adjustmentRequest.status)}
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-sm text-muted-foreground">Reason</div>
+          <div className="font-medium">{adjustmentRequest.reason}</div>
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-sm text-muted-foreground">Message</div>
+          <div className="font-medium whitespace-pre-wrap">{adjustmentRequest.message}</div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-sm text-muted-foreground">Request Logs</div>
+          <div className="space-y-2">
+            {(adjustmentRequest.logTrail ?? []).length === 0 && (
+              <div className="text-sm text-muted-foreground">No request logs yet.</div>
+            )}
+
+            {(adjustmentRequest.logTrail ?? []).map((log, index) => (
+              <div key={`${log.status}-${index}`} className="rounded-md border bg-muted/30 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-medium">{format(log.date, "MMM dd, yyyy hh:mm a")}</div>
+                  {getAdjustmentStatusBadge(log.status)}
+                </div>
+                {log.approvedBy && (
+                  <div className="mt-1 text-sm text-muted-foreground">By: {log.approvedBy}</div>
+                )}
+                {log.reason && (
+                  <div className="mt-1 text-sm text-muted-foreground">{log.reason}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const renderPresentDetails = () => (
     <div className="space-y-4">
@@ -64,33 +183,23 @@ export function AttendanceDetailsModal({
         </div>
       </div>
 
-      {onRequestAdjustment && (
-        <div className="pt-4 border-t">
-          <Button
-            onClick={() => {
-              onRequestAdjustment(details.date);
-              onClose();
-            }}
-            className="w-full"
-            variant="outline"
-          >
-            <Edit className="h-4 w-4 mr-2" />
-            Request Attendance Adjustment
-          </Button>
-        </div>
-      )}
+      {renderAdjustmentAction()}
     </div>
   );
 
   const renderAbsentDetails = () => (
-    <div className="py-8 text-center">
-      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-destructive/10 mb-4">
-        <AlertCircle className="h-8 w-8 text-destructive" />
+    <div className="space-y-4 py-4 text-center">
+      <div>
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-destructive/10 mb-4">
+          <AlertCircle className="h-8 w-8 text-destructive" />
+        </div>
+        <div className="text-lg font-medium mb-2">Absent</div>
+        <div className="text-sm text-muted-foreground">
+          You were marked absent on this day
+        </div>
       </div>
-      <div className="text-lg font-medium mb-2">Absent</div>
-      <div className="text-sm text-muted-foreground">
-        You were marked absent on this day
-      </div>
+
+      {renderAdjustmentAction()}
     </div>
   );
 
@@ -201,6 +310,7 @@ export function AttendanceDetailsModal({
           {(details.status === "present" || details.status === "late") && renderPresentDetails()}
           {details.status === "absent" && renderAbsentDetails()}
           {details.status === "on-leave" && renderLeaveDetails()}
+          {renderAdjustmentRequestDetails()}
         </div>
       </DialogContent>
     </Dialog>

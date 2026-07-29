@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+﻿import { useState, useEffect, useRef, type ChangeEvent } from "react";
 import {
   Dialog,
   DialogContent,
@@ -42,10 +42,20 @@ interface AttendanceAdjustmentModalProps {
   open: boolean;
   onClose: () => void;
   selectedDate: string | null;
-  existingRequest?: AttendanceAdjustmentRequest | null;
+  existingRequest?: (AttendanceAdjustmentRequest & {
+    status: "pending" | "approved" | "denied" | "cancelled";
+    logTrail?: Array<{
+      status: "pending" | "approved" | "denied" | "cancelled";
+      date: Date;
+      approvedBy?: string;
+      reason?: string;
+    }>;
+  }) | null;
   prefilledTimes?: { clockIn: string; clockOut: string } | null;
-  onSubmit: (request: Omit<AttendanceAdjustmentRequest, "id" | "submittedDate">) => void;
-  onDelete?: (requestId: string) => void;
+  onSubmit: (request: Omit<AttendanceAdjustmentRequest, "id" | "submittedDate">) => Promise<boolean>;
+  onDelete?: (requestId: string) => Promise<boolean>;
+  onRevoke?: (requestId: string) => Promise<boolean>;
+  isLoading?: boolean;
 }
 
 export function AttendanceAdjustmentModal({
@@ -56,6 +66,8 @@ export function AttendanceAdjustmentModal({
   prefilledTimes,
   onSubmit,
   onDelete,
+  onRevoke,
+  isLoading = false,
 }: AttendanceAdjustmentModalProps) {
   const [reason, setReason] = useState<"Forgot to Clock-in/Clock-out" | "Missing logs">(
     "Forgot to Clock-in/Clock-out"
@@ -68,6 +80,9 @@ export function AttendanceAdjustmentModal({
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [showLogs, setShowLogs] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [durationValidationMessage, setDurationValidationMessage] = useState("");
 
   // Initialize form with existing request or selected date
   useEffect(() => {
@@ -85,9 +100,8 @@ export function AttendanceAdjustmentModal({
         setShiftDateFrom(new Date(selectedDate));
         setShiftDateTo(new Date(selectedDate));
         setReason("Forgot to Clock-in/Clock-out");
-        // Use prefilled times if available, otherwise empty strings
-        setClockInTime(prefilledTimes?.clockIn || "");
-        setClockOutTime(prefilledTimes?.clockOut || "");
+        setClockInTime(prefilledTimes?.clockIn || "09:00");
+        setClockOutTime(prefilledTimes?.clockOut || "18:00");
         setBreakDuration("60");
         setMessage("");
         setAttachments([]);
@@ -102,13 +116,89 @@ export function AttendanceAdjustmentModal({
     const [outHour, outMin] = clockOutTime.split(":").map(Number);
 
     const totalMinutes = outHour * 60 + outMin - (inHour * 60 + inMin) - Number(breakDuration);
+    if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) {
+      return "0h 0m";
+    }
+
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
 
     return `${hours}h ${minutes}m`;
   };
 
-  const handleSubmit = () => {
+  const validateDurationForValues = (nextClockIn: string, nextClockOut: string, nextBreak: string) => {
+    if (!nextClockIn || !nextClockOut) {
+      setDurationValidationMessage("");
+      return true;
+    }
+
+    const [inHour, inMin] = nextClockIn.split(":").map(Number);
+    const [outHour, outMin] = nextClockOut.split(":").map(Number);
+    if (
+      Number.isNaN(inHour) ||
+      Number.isNaN(inMin) ||
+      Number.isNaN(outHour) ||
+      Number.isNaN(outMin)
+    ) {
+      setDurationValidationMessage("Invalid time format.");
+      return false;
+    }
+
+    const breakMinutes = Number(nextBreak);
+    if (!Number.isFinite(breakMinutes) || breakMinutes < 0 || breakMinutes > 360) {
+      setDurationValidationMessage("Break duration must be between 0 and 360 minutes.");
+      return false;
+    }
+
+    const total = outHour * 60 + outMin - (inHour * 60 + inMin) - breakMinutes;
+    if (total <= 0) {
+      setDurationValidationMessage(
+        "Clock-in, clock-out, and break values produce non-positive work duration.",
+      );
+      return false;
+    }
+
+    setDurationValidationMessage("");
+    return true;
+  };
+
+  useEffect(() => {
+    void validateDurationForValues(clockInTime, clockOutTime, breakDuration);
+  }, [clockInTime, clockOutTime, breakDuration]);
+
+  const handleClockInTimeChange = (value: string) => {
+    setClockInTime(value);
+  };
+
+  const handleClockOutTimeChange = (value: string) => {
+    setClockOutTime(value);
+  };
+
+  const handleBreakDurationChange = (value: string) => {
+    setBreakDuration(value);
+  };
+
+  const computeTotalMinutes = () => {
+    if (!clockInTime || !clockOutTime) {
+      return null;
+    }
+
+    const [inHour, inMin] = clockInTime.split(":").map(Number);
+    const [outHour, outMin] = clockOutTime.split(":").map(Number);
+    if (
+      Number.isNaN(inHour) ||
+      Number.isNaN(inMin) ||
+      Number.isNaN(outHour) ||
+      Number.isNaN(outMin)
+    ) {
+      return null;
+    }
+
+    const total = outHour * 60 + outMin - (inHour * 60 + inMin) - Number(breakDuration);
+    return total;
+  };
+
+  const handleSubmit = async () => {
     // Validation
     if (!reason) {
       toast.error("Please select a reason");
@@ -122,6 +212,29 @@ export function AttendanceAdjustmentModal({
       toast.error("Please enter clock-in and clock-out times");
       return;
     }
+
+    if (shiftDateFrom > shiftDateTo) {
+      toast.error("Shift Date From must not be later than Shift Date To");
+      return;
+    }
+
+    const breakMinutes = Number(breakDuration);
+    if (!Number.isFinite(breakMinutes) || breakMinutes < 0 || breakMinutes > 360) {
+      toast.error("Break duration must be between 0 and 360 minutes");
+      return;
+    }
+
+    const totalMinutes = computeTotalMinutes();
+    if (totalMinutes == null || totalMinutes <= 0) {
+      toast.error("Clock-out time must be after clock-in time after deducting break duration");
+      return;
+    }
+
+    if (attachments.length > 10) {
+      toast.error("You can upload at most 10 attachments");
+      return;
+    }
+
     if (!message.trim()) {
       toast.error("Please enter a message");
       return;
@@ -134,9 +247,9 @@ export function AttendanceAdjustmentModal({
       shiftDateTo: format(shiftDateTo, "yyyy-MM-dd"),
       clockInTime,
       clockOutTime,
-      breakDuration: Number(breakDuration),
+      breakDuration: breakMinutes,
       totalWorkDuration: calculateWorkDuration(),
-      message,
+      message: message.trim(),
       attachments,
       status: existingRequest?.status || "pending",
       approvedBy: existingRequest?.approvedBy,
@@ -144,19 +257,40 @@ export function AttendanceAdjustmentModal({
       deniedReason: existingRequest?.deniedReason,
     };
 
-    onSubmit(request);
-    toast.success(
-      existingRequest
-        ? "Adjustment request updated successfully"
-        : "Adjustment request submitted successfully"
-    );
-    onClose();
+    setIsSubmitting(true);
+    const saved = await onSubmit(request);
+    setIsSubmitting(false);
+
+    if (saved) {
+      toast.success(
+        existingRequest
+          ? "Adjustment request updated successfully"
+          : "Adjustment request submitted successfully"
+      );
+      onClose();
+    }
   };
 
   const handleAddAttachment = () => {
-    const fileName = `document-${Date.now()}.pdf`;
-    setAttachments([...attachments, fileName]);
-    toast.success("Attachment added");
+    fileInputRef.current?.click();
+  };
+
+  const handleFilePicked = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    if (files.length === 0) {
+      return;
+    }
+
+    const next = [...attachments];
+    for (const file of files) {
+      if (!next.includes(file.name)) {
+        next.push(file.name);
+      }
+    }
+
+    setAttachments(next);
+    event.target.value = "";
+    toast.success("Attachment list updated");
   };
 
   const handleRemoveAttachment = (index: number) => {
@@ -164,11 +298,27 @@ export function AttendanceAdjustmentModal({
     toast.success("Attachment removed");
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (existingRequest && onDelete) {
-      onDelete(existingRequest.id);
-      toast.success("Adjustment request deleted");
-      onClose();
+      setIsSubmitting(true);
+      const deleted = await onDelete(existingRequest.id);
+      setIsSubmitting(false);
+      if (deleted) {
+        toast.success("Adjustment request deleted");
+        onClose();
+      }
+    }
+  };
+
+  const handleRevoke = async () => {
+    if (existingRequest && onRevoke) {
+      setIsSubmitting(true);
+      const revoked = await onRevoke(existingRequest.id);
+      setIsSubmitting(false);
+      if (revoked) {
+        toast.success("Approved request has been revoked and reset to pending");
+        onClose();
+      }
     }
   };
 
@@ -205,7 +355,9 @@ export function AttendanceAdjustmentModal({
     }
   };
 
-  const isReadOnly = existingRequest?.status === "approved" || existingRequest?.status === "denied";
+  const isReadOnly = existingRequest?.status === "approved";
+  const hasBusyState = isSubmitting || isLoading;
+  const areShiftDatesLocked = true;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -233,7 +385,7 @@ export function AttendanceAdjustmentModal({
             <Select
               value={reason}
               onValueChange={(value: any) => setReason(value)}
-              disabled={isReadOnly}
+              disabled={isReadOnly || hasBusyState}
             >
               <SelectTrigger id="reason">
                 <SelectValue />
@@ -261,7 +413,7 @@ export function AttendanceAdjustmentModal({
                       "w-full justify-start text-left font-normal",
                       !shiftDateFrom && "text-muted-foreground"
                     )}
-                    disabled={isReadOnly}
+                    disabled={areShiftDatesLocked || isReadOnly || hasBusyState}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {shiftDateFrom ? format(shiftDateFrom, "MMM dd, yyyy") : "Select date"}
@@ -290,7 +442,7 @@ export function AttendanceAdjustmentModal({
                       "w-full justify-start text-left font-normal",
                       !shiftDateTo && "text-muted-foreground"
                     )}
-                    disabled={isReadOnly}
+                    disabled={areShiftDatesLocked || isReadOnly || hasBusyState}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {shiftDateTo ? format(shiftDateTo, "MMM dd, yyyy") : "Select date"}
@@ -318,8 +470,8 @@ export function AttendanceAdjustmentModal({
                 id="clockIn"
                 type="time"
                 value={clockInTime}
-                onChange={(e) => setClockInTime(e.target.value)}
-                disabled={isReadOnly}
+                onChange={(e) => handleClockInTimeChange(e.target.value)}
+                disabled={isReadOnly || hasBusyState}
               />
             </div>
 
@@ -331,8 +483,8 @@ export function AttendanceAdjustmentModal({
                 id="clockOut"
                 type="time"
                 value={clockOutTime}
-                onChange={(e) => setClockOutTime(e.target.value)}
-                disabled={isReadOnly}
+                onChange={(e) => handleClockOutTimeChange(e.target.value)}
+                disabled={isReadOnly || hasBusyState}
               />
             </div>
           </div>
@@ -344,8 +496,8 @@ export function AttendanceAdjustmentModal({
               id="breakDuration"
               type="number"
               value={breakDuration}
-              onChange={(e) => setBreakDuration(e.target.value)}
-              disabled={isReadOnly}
+              onChange={(e) => handleBreakDurationChange(e.target.value)}
+              disabled={isReadOnly || hasBusyState}
             />
           </div>
 
@@ -355,6 +507,9 @@ export function AttendanceAdjustmentModal({
             <div className="p-3 rounded-md border bg-muted/50 font-medium">
               {calculateWorkDuration()}
             </div>
+            {durationValidationMessage && (
+              <p className="text-sm text-destructive">{durationValidationMessage}</p>
+            )}
           </div>
 
           {/* Message */}
@@ -368,7 +523,7 @@ export function AttendanceAdjustmentModal({
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Provide details about your adjustment request..."
               rows={4}
-              disabled={isReadOnly}
+              disabled={isReadOnly || hasBusyState}
             />
           </div>
 
@@ -401,6 +556,7 @@ export function AttendanceAdjustmentModal({
                           size="icon"
                           className="h-8 w-8 text-destructive"
                           onClick={() => handleRemoveAttachment(index)}
+                          disabled={hasBusyState}
                         >
                           <X className="h-4 w-4" />
                         </Button>
@@ -411,15 +567,25 @@ export function AttendanceAdjustmentModal({
               </div>
             )}
             {!isReadOnly && (
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={handleAddAttachment}
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                Upload Attachment
-              </Button>
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  multiple
+                  onChange={handleFilePicked}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleAddAttachment}
+                  disabled={hasBusyState}
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload Attachment
+                </Button>
+              </>
             )}
           </div>
 
@@ -430,65 +596,47 @@ export function AttendanceAdjustmentModal({
                 variant="outline"
                 className="w-full"
                 onClick={() => setShowLogs(!showLogs)}
+                disabled={hasBusyState}
               >
                 {showLogs ? "Hide" : "View"} Request Logs
               </Button>
 
               {showLogs && (
                 <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-vibrant-blue/20 flex items-center justify-center">
-                      <Clock className="h-4 w-4 text-vibrant-blue" />
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">Request Submitted</span>
-                        {getStatusBadge("pending")}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {existingRequest.submittedDate}
-                      </div>
-                    </div>
-                  </div>
-
-                  {existingRequest.status === "approved" && existingRequest.approvedBy && (
-                    <div className="flex items-start gap-3">
-                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-vibrant-green/20 flex items-center justify-center">
-                        <CheckCircle className="h-4 w-4 text-vibrant-green" />
-                      </div>
-                      <div className="flex-1 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium">Request Approved</span>
-                          {getStatusBadge("approved")}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          Approved by {existingRequest.approvedBy}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {existingRequest.approvedDate}
-                        </div>
-                      </div>
-                    </div>
+                  {(existingRequest.logTrail ?? []).length === 0 && (
+                    <div className="text-sm text-muted-foreground">No logs found for this request.</div>
                   )}
 
-                  {existingRequest.status === "denied" && (
-                    <div className="flex items-start gap-3">
-                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-destructive/20 flex items-center justify-center">
-                        <XCircle className="h-4 w-4 text-destructive" />
+                  {(existingRequest.logTrail ?? []).map((log, index) => (
+                    <div key={`${log.status}-${index}`} className="flex items-start gap-3">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-vibrant-blue/20 flex items-center justify-center">
+                        {log.status === "approved" && (
+                          <CheckCircle className="h-4 w-4 text-vibrant-green" />
+                        )}
+                        {log.status === "denied" && (
+                          <XCircle className="h-4 w-4 text-destructive" />
+                        )}
+                        {(log.status === "pending" || log.status === "cancelled") && (
+                          <Clock className="h-4 w-4 text-vibrant-blue" />
+                        )}
                       </div>
                       <div className="flex-1 space-y-1">
                         <div className="flex items-center justify-between">
-                          <span className="font-medium">Request Denied</span>
-                          {getStatusBadge("denied")}
+                          <span className="font-medium">{log.status.toUpperCase()}</span>
+                          {getStatusBadge(log.status)}
                         </div>
-                        {existingRequest.deniedReason && (
-                          <div className="text-sm text-muted-foreground">
-                            Reason: {existingRequest.deniedReason}
-                          </div>
+                        <div className="text-sm text-muted-foreground">
+                          {format(log.date, "MMM dd, yyyy hh:mm a")}
+                        </div>
+                        {log.approvedBy && (
+                          <div className="text-sm text-muted-foreground">By: {log.approvedBy}</div>
+                        )}
+                        {log.reason && (
+                          <div className="text-sm text-muted-foreground">Reason: {log.reason}</div>
                         )}
                       </div>
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
             </div>
@@ -507,16 +655,21 @@ export function AttendanceAdjustmentModal({
 
         <DialogFooter className="gap-2">
           {existingRequest && existingRequest.status === "pending" && onDelete && (
-            <Button variant="destructive" onClick={handleDelete}>
+            <Button variant="destructive" onClick={handleDelete} disabled={hasBusyState}>
               <Trash2 className="h-4 w-4 mr-2" />
               Delete Request
             </Button>
           )}
-          <Button variant="outline" onClick={onClose}>
+          {existingRequest && existingRequest.status === "approved" && onRevoke && (
+            <Button variant="secondary" onClick={handleRevoke} disabled={hasBusyState}>
+              Revoke Approval
+            </Button>
+          )}
+          <Button variant="outline" onClick={onClose} disabled={hasBusyState}>
             {isReadOnly ? "Close" : "Cancel"}
           </Button>
           {!isReadOnly && (
-            <Button onClick={handleSubmit}>
+            <Button onClick={handleSubmit} disabled={hasBusyState}>
               {existingRequest ? "Update Request" : "Submit Request"}
             </Button>
           )}

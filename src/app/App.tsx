@@ -76,6 +76,25 @@ interface PasswordActivityState {
   userAgent?: string | null;
 }
 
+type AttendanceStatusState = "present" | "absent" | "holiday" | "late" | "on-leave";
+
+interface HolidayState {
+  id: string;
+  name: string;
+  date: string;
+  type: "public" | "personal";
+  daysUntil: number;
+}
+
+interface CalendarAttendanceDetailState {
+  date: string;
+  status: AttendanceStatusState;
+  clockIn: string | null;
+  clockOut: string | null;
+  workDurationMinutes: number | null;
+  lateMinutes: number | null;
+}
+
 interface LoginResponsePayload {
   accessToken: string;
   refreshToken: string;
@@ -96,6 +115,8 @@ const orderedWorkingDayKeys = [
   "saturday",
   "sunday",
 ] as const;
+
+const isoDateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 type WorkingDayKey = (typeof orderedWorkingDayKeys)[number];
 type WorkingDaysState = Record<WorkingDayKey, boolean>;
@@ -697,9 +718,127 @@ export default function App() {
     }
   };
 
+  const loadCalendarData = async (accessToken: string) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/me/calendar`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (Array.isArray(payload?.attendance)) {
+        const validStatuses = new Set<AttendanceStatusState>([
+          "present",
+          "absent",
+          "holiday",
+          "late",
+          "on-leave",
+        ]);
+
+        const nextDetails: Record<string, CalendarAttendanceDetailState> = {};
+        for (const row of payload.attendance as any[]) {
+          const date = typeof row?.date === "string" ? row.date.slice(0, 10) : "";
+          const status = typeof row?.status === "string" ? row.status : "";
+          if (!date || !isoDateRegex.test(date) || !validStatuses.has(status as AttendanceStatusState)) {
+            continue;
+          }
+
+          nextDetails[date] = {
+            date,
+            status: status as AttendanceStatusState,
+            clockIn: typeof row?.clockIn === "string" ? row.clockIn.slice(0, 5) : null,
+            clockOut: typeof row?.clockOut === "string" ? row.clockOut.slice(0, 5) : null,
+            workDurationMinutes:
+              typeof row?.workDurationMinutes === "number" ? row.workDurationMinutes : null,
+            lateMinutes: typeof row?.lateMinutes === "number" ? row.lateMinutes : null,
+          };
+        }
+
+        if (Object.keys(nextDetails).length > 0) {
+          setCalendarAttendanceDetails(nextDetails);
+        }
+      }
+
+      if (payload?.attendanceByDate && typeof payload.attendanceByDate === "object") {
+        const validStatuses = new Set<AttendanceStatusState>([
+          "present",
+          "absent",
+          "holiday",
+          "late",
+          "on-leave",
+        ]);
+
+        const nextAttendanceData: Record<string, AttendanceStatusState> = {};
+        for (const [dateKey, status] of Object.entries(payload.attendanceByDate as Record<string, unknown>)) {
+          if (typeof dateKey !== "string" || typeof status !== "string") {
+            continue;
+          }
+          if (!validStatuses.has(status as AttendanceStatusState)) {
+            continue;
+          }
+          nextAttendanceData[dateKey] = status as AttendanceStatusState;
+        }
+
+        if (Object.keys(nextAttendanceData).length > 0) {
+          setAttendanceData(nextAttendanceData);
+        }
+      }
+
+      if (Array.isArray(payload?.holidays)) {
+        const nextHolidays: HolidayState[] = payload.holidays
+          .map((holiday: any) => {
+            const date = typeof holiday?.date === "string" ? holiday.date.slice(0, 10) : "";
+            if (!date || !isoDateRegex.test(date)) {
+              return null;
+            }
+
+            const rawType = String(holiday?.type ?? "public");
+            const type: HolidayState["type"] = rawType === "personal" ? "personal" : "public";
+
+            const holidayDate = new Date(`${date}T00:00:00`);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const computedDaysUntil = Math.ceil(
+              (holidayDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+            );
+
+            return {
+              id: String(holiday?.id ?? `${date}-${holiday?.name ?? "holiday"}`),
+              name: String(holiday?.name ?? "Holiday"),
+              date,
+              type,
+              daysUntil:
+                typeof holiday?.daysUntil === "number"
+                  ? holiday.daysUntil
+                  : computedDaysUntil,
+            };
+          })
+          .filter(Boolean) as HolidayState[];
+
+        if (nextHolidays.length > 0) {
+          setHolidays(nextHolidays);
+        }
+      }
+    } catch {
+      // Keep static fallback calendar data when endpoint is unavailable.
+    }
+  };
+
   // Mock attendance data for the calendar - October 2025 (Weekdays only, no Saturdays/Sundays)
-  const [attendanceData] = useState<
-    Record<string, "present" | "absent" | "on-leave" | "late">
+  const [calendarAttendanceDetails, setCalendarAttendanceDetails] = useState<
+    Record<string, CalendarAttendanceDetailState>
+  >({});
+
+  // Mock attendance data for the calendar - October 2025 (Weekdays only, no Saturdays/Sundays)
+  const [attendanceData, setAttendanceData] = useState<
+    Record<string, AttendanceStatusState>
   >({
     // October 2025 data - All weekdays from Oct 1 to Oct 31
     "2025-10-01": "present",    // Wednesday
@@ -826,7 +965,7 @@ export default function App() {
 
   // Mock holidays data - USA & Philippines (Current date: Jul 21, 2026)
   // Only upcoming holidays shown (past holidays filtered out)
-  const [holidays, setHolidays] = useState([
+  const [holidays, setHolidays] = useState<HolidayState[]>([
     {
       id: "h1",
       name: "Ninoy Aquino Day (Philippines)",
@@ -1010,6 +1149,7 @@ export default function App() {
     await loadEmploymentOptions(payload.accessToken);
     await loadCompanyWorkingHours(payload.accessToken);
     await loadSecurityPreferences(payload.accessToken);
+    await loadCalendarData(payload.accessToken);
 
     setIsLoggedIn(true);
     return true;
@@ -1156,7 +1296,7 @@ export default function App() {
   };
 
   const handleAddHoliday = (
-    holiday: Omit<(typeof holidays)[0], "id" | "daysUntil">,
+    holiday: Omit<HolidayState, "id" | "daysUntil">,
   ) => {
     const today = new Date();
     const holidayDate = new Date(holiday.date);
@@ -1176,7 +1316,7 @@ export default function App() {
 
   const handleEditHoliday = (
     id: string,
-    holiday: Omit<(typeof holidays)[0], "id" | "daysUntil">,
+    holiday: Omit<HolidayState, "id" | "daysUntil">,
   ) => {
     const today = new Date();
     const holidayDate = new Date(holiday.date);
@@ -1237,6 +1377,7 @@ export default function App() {
             onClockOut={handleClockOut}
             onBreak={handleBreak}
             attendanceData={attendanceData}
+            calendarAttendanceDetails={calendarAttendanceDetails}
             holidays={holidays}
             workingHours={formatWorkingHours()}
             scheduledStartTime={workingHours.start}
@@ -1245,6 +1386,12 @@ export default function App() {
             accessToken={authSession?.accessToken ?? ""}
             employmentOptions={employmentOptions}
             onEmployeeClick={handleEmployeeClick}
+            onCalendarRefresh={async () => {
+              if (!authSession?.accessToken) {
+                return;
+              }
+              await loadCalendarData(authSession.accessToken);
+            }}
           />
         );
       case "dashboard":

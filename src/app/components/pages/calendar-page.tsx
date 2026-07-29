@@ -48,7 +48,7 @@ interface LeaveRequest {
 }
 
 interface CalendarPageProps {
-  attendanceData: Record<string, 'present' | 'absent' | 'holiday' | 'late'>;
+  attendanceData: Record<string, 'present' | 'absent' | 'holiday' | 'late' | 'on-leave'>;
   holidays: Holiday[];
   onAddHoliday: (holiday: Omit<Holiday, 'id' | 'daysUntil'>) => void;
   onEditHoliday: (id: string, holiday: Omit<Holiday, 'id' | 'daysUntil'>) => void;
@@ -276,6 +276,13 @@ export function CalendarPage({
   const [showLeaveDetailsDialog, setShowLeaveDetailsDialog] = useState(false);
   const [showCancelConfirmDialog, setShowCancelConfirmDialog] = useState(false);
 
+  const formatLocalDateKey = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
@@ -301,7 +308,7 @@ export function CalendarPage({
 
   const getDateKey = (day: number) => {
     const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-    return date.toISOString().split('T')[0];
+    return formatLocalDateKey(date);
   };
 
   const getDayStatus = (day: number) => {
@@ -507,7 +514,7 @@ export function CalendarPage({
     const currentDate = new Date(startDate);
     
     while (currentDate <= endDate) {
-      dates.push(currentDate.toISOString().split('T')[0]);
+      dates.push(formatLocalDateKey(currentDate));
       currentDate.setDate(currentDate.getDate() + 1);
     }
     

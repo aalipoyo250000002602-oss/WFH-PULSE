@@ -44,6 +44,150 @@ const biometricLoginSchema = z.object({
 const isoDateRegex = /^\d{4}-\d{2}-\d{2}$/;
 const base64ImageDataUrlRegex =
   /^data:image\/(jpeg|jpg|png|gif|webp);base64,[A-Za-z0-9+/=]+$/;
+const calendarSampleStatusByDate = {
+  "2025-10-01": "present",
+  "2025-10-02": "present",
+  "2025-10-03": "late",
+  "2025-10-06": "present",
+  "2025-10-07": "present",
+  "2025-10-08": "present",
+  "2025-10-09": "late",
+  "2025-10-10": "present",
+  "2025-10-13": "present",
+  "2025-10-14": "present",
+  "2025-10-15": "absent",
+  "2025-10-16": "on-leave",
+  "2025-10-17": "present",
+  "2025-10-20": "present",
+  "2025-10-21": "late",
+  "2025-10-22": "present",
+  "2025-10-23": "present",
+  "2025-10-24": "present",
+  "2025-10-27": "present",
+  "2025-10-28": "present",
+  "2025-10-29": "late",
+  "2025-10-30": "present",
+  "2025-10-31": "present",
+  "2025-09-01": "present",
+  "2025-09-02": "present",
+  "2025-09-03": "absent",
+  "2025-09-04": "present",
+  "2025-09-05": "present",
+  "2025-09-08": "present",
+  "2025-09-09": "present",
+  "2025-09-10": "late",
+  "2025-09-11": "present",
+  "2025-09-12": "present",
+  "2025-09-15": "absent",
+  "2025-09-16": "present",
+  "2025-09-17": "present",
+  "2025-09-18": "present",
+  "2025-09-19": "late",
+  "2025-09-22": "present",
+  "2025-09-23": "present",
+  "2025-09-24": "absent",
+  "2025-09-25": "present",
+  "2025-09-26": "late",
+  "2025-09-29": "present",
+  "2025-09-30": "present",
+  "2025-11-03": "present",
+  "2025-11-04": "present",
+  "2025-11-05": "present",
+  "2025-11-06": "late",
+  "2025-11-07": "present",
+  "2025-11-10": "present",
+  "2025-11-12": "present",
+  "2025-11-13": "present",
+  "2025-11-14": "present",
+  "2025-11-17": "present",
+  "2025-11-18": "present",
+  "2025-11-19": "late",
+  "2025-11-20": "present",
+  "2025-11-21": "present",
+  "2025-11-24": "present",
+  "2025-11-25": "present",
+  "2025-11-26": "on-leave",
+  "2025-08-18": "present",
+  "2025-08-19": "present",
+  "2025-08-20": "late",
+  "2025-08-21": "present",
+  "2025-08-22": "present",
+  "2025-08-25": "present",
+  "2025-08-26": "present",
+  "2025-08-27": "present",
+  "2025-08-28": "absent",
+  "2025-08-29": "present",
+  "2026-06-01": "present",
+  "2026-06-02": "present",
+  "2026-06-03": "present",
+  "2026-06-04": "present",
+  "2026-06-05": "late",
+  "2026-06-08": "present",
+  "2026-06-09": "present",
+  "2026-06-10": "present",
+  "2026-06-11": "absent",
+  "2026-06-12": "holiday",
+  "2026-06-15": "on-leave",
+  "2026-06-16": "present",
+  "2026-06-17": "present",
+  "2026-06-18": "present",
+  "2026-06-19": "late",
+  "2026-06-22": "present",
+  "2026-06-23": "present",
+  "2026-06-24": "present",
+  "2026-06-25": "present",
+  "2026-06-26": "present",
+  "2026-06-29": "present",
+  "2026-06-30": "present",
+  "2026-07-01": "present",
+  "2026-07-02": "present",
+  "2026-07-03": "present",
+  "2026-07-06": "present",
+  "2026-07-07": "late",
+  "2026-07-08": "present",
+  "2026-07-09": "present",
+  "2026-07-10": "present",
+  "2026-07-13": "present",
+  "2026-07-14": "on-leave",
+  "2026-07-15": "absent",
+  "2026-07-16": "present",
+  "2026-07-17": "present",
+  "2026-07-20": "late",
+  "2026-07-21": "present",
+};
+
+const calendarSampleTimingByStatus = {
+  present: {
+    clockIn: "08:55",
+    clockOut: "17:10",
+    workDurationMinutes: 495,
+    lateMinutes: 0,
+  },
+  late: {
+    clockIn: "09:20",
+    clockOut: "17:30",
+    workDurationMinutes: 490,
+    lateMinutes: 20,
+  },
+  absent: {
+    clockIn: null,
+    clockOut: null,
+    workDurationMinutes: null,
+    lateMinutes: 0,
+  },
+  "on-leave": {
+    clockIn: null,
+    clockOut: null,
+    workDurationMinutes: 480,
+    lateMinutes: 0,
+  },
+  holiday: {
+    clockIn: null,
+    clockOut: null,
+    workDurationMinutes: null,
+    lateMinutes: 0,
+  },
+};
 const employmentTypeOptions = [
   "full-time",
   "independent contractor",
@@ -179,6 +323,23 @@ const updatePasswordSchema = z.object({
   details: z.record(z.any()).optional(),
 });
 
+const adjustmentReasonOptions = ["Forgot to Clock-in/Clock-out", "Missing logs"];
+const adjustmentStatusOptions = ["pending", "approved", "denied", "cancelled"];
+
+const attendanceAdjustmentCreateSchema = z.object({
+  date: z.string().regex(isoDateRegex),
+  reason: z.enum(adjustmentReasonOptions),
+  shiftDateFrom: z.string().regex(isoDateRegex),
+  shiftDateTo: z.string().regex(isoDateRegex),
+  clockInTime: z.string().regex(isoTimeRegex),
+  clockOutTime: z.string().regex(isoTimeRegex),
+  breakDuration: z.number().int().min(0).max(360),
+  message: z.string().min(3).max(5000),
+  attachments: z.array(z.string().min(1).max(260)).max(10).optional(),
+});
+
+const attendanceAdjustmentUpdateSchema = attendanceAdjustmentCreateSchema;
+
 function mapSecurityPreferenceRow(row) {
   return {
     biometricLogin: row.biometric_login,
@@ -201,6 +362,57 @@ function mapPasswordActivityRow(row) {
     details: row.details,
     ipAddress: row.ip_address,
     userAgent: row.user_agent,
+  };
+}
+
+function parseTimeToMinutes(value) {
+  if (!isoTimeRegex.test(value)) {
+    return null;
+  }
+
+  const [hour, minute] = value.split(":").map(Number);
+  return hour * 60 + minute;
+}
+
+function computeTotalWorkDurationMinutes(clockInTime, clockOutTime, breakDurationMinutes) {
+  const clockInMinutes = parseTimeToMinutes(clockInTime);
+  const clockOutMinutes = parseTimeToMinutes(clockOutTime);
+  if (clockInMinutes == null || clockOutMinutes == null) {
+    return null;
+  }
+
+  const total = clockOutMinutes - clockInMinutes - Number(breakDurationMinutes);
+  if (!Number.isFinite(total) || total <= 0) {
+    return null;
+  }
+
+  return total;
+}
+
+function mapAdjustmentRequestRow(row) {
+  return {
+    requestId: row.request_id,
+    employeeId: row.employee_id,
+    employeeName: row.employee_name,
+    position: row.position,
+    department: row.department,
+    requestDate: row.request_date ? String(row.request_date).slice(0, 10) : null,
+    shiftDateFrom: row.shift_date_from ? String(row.shift_date_from).slice(0, 10) : null,
+    shiftDateTo: row.shift_date_to ? String(row.shift_date_to).slice(0, 10) : null,
+    clockInTime: row.clock_in_time ?? null,
+    clockOutTime: row.clock_out_time ?? null,
+    reason: row.reason,
+    breakDurationMinutes: row.break_duration_minutes,
+    totalWorkDurationMinutes: row.total_work_duration_minutes,
+    message: row.message,
+    status: row.status,
+    submittedAt: row.submitted_at,
+    approvedBy: row.approved_by,
+    approvedAt: row.approved_at,
+    deniedReason: row.denied_reason,
+    sourcePage: row.source_page,
+    attachments: Array.isArray(row.attachments) ? row.attachments : [],
+    logs: Array.isArray(row.logs) ? row.logs : [],
   };
 }
 
@@ -475,6 +687,69 @@ async function ensureEmployeeLinkForUser(userId) {
   return resolvedEmployeeId;
 }
 
+async function seedCalendarSampleAttendanceIfEmpty(authContext) {
+  const resolvedEmployeeId = await ensureEmployeeLinkForUser(authContext.userId);
+  if (!resolvedEmployeeId) {
+    return { seeded: false, inserted: 0 };
+  }
+
+  return withRlsContext(authContext, async (client) => {
+    const existingResult = await client.query(
+      `
+      SELECT 1
+      FROM app.attendance_records
+      WHERE employee_id = $1::text
+      LIMIT 1
+      `,
+      [resolvedEmployeeId],
+    );
+
+    if (existingResult.rowCount > 0) {
+      return { seeded: false, inserted: 0 };
+    }
+
+    let inserted = 0;
+    for (const [attendanceDate, status] of Object.entries(calendarSampleStatusByDate)) {
+      const timing = calendarSampleTimingByStatus[status];
+      const insertResult = await client.query(
+        `
+        INSERT INTO app.attendance_records (
+          employee_id,
+          attendance_date,
+          status,
+          clock_in,
+          clock_out,
+          work_duration_minutes,
+          late_minutes
+        )
+        VALUES (
+          $1::text,
+          $2::date,
+          $3::app.attendance_status,
+          $4::time,
+          $5::time,
+          $6::integer,
+          $7::integer
+        )
+        ON CONFLICT (employee_id, attendance_date) DO NOTHING
+        `,
+        [
+          resolvedEmployeeId,
+          attendanceDate,
+          status,
+          timing.clockIn,
+          timing.clockOut,
+          timing.workDurationMinutes,
+          timing.lateMinutes,
+        ],
+      );
+      inserted += insertResult.rowCount;
+    }
+
+    return { seeded: inserted > 0, inserted };
+  });
+}
+
 async function getEmployeeRowForApi(client, employeeId) {
   const result = await client.query(
     `
@@ -525,6 +800,67 @@ async function getEmployeeRowForApi(client, employeeId) {
     WHERE e.employee_id = $1::text
     `,
     [employeeId],
+  );
+
+  return result.rows[0] ?? null;
+}
+
+async function getAdjustmentRequestByIdForApi(client, requestId) {
+  const result = await client.query(
+    `
+    SELECT
+      r.request_id,
+      r.employee_id,
+      r.employee_name,
+      r.position,
+      r.department,
+      r.request_date::text AS request_date,
+      r.shift_date_from::text AS shift_date_from,
+      r.shift_date_to::text AS shift_date_to,
+      r.clock_in_time,
+      r.clock_out_time,
+      r.reason,
+      r.break_duration_minutes,
+      r.total_work_duration_minutes,
+      r.message,
+      r.status,
+      r.submitted_at,
+      r.approved_by,
+      r.approved_at,
+      r.denied_reason,
+      r.source_page,
+      COALESCE(a.items, '[]'::jsonb) AS attachments,
+      COALESCE(l.items, '[]'::jsonb) AS logs
+    FROM app.attendance_adjustment_requests r
+    LEFT JOIN LATERAL (
+      SELECT jsonb_agg(
+        jsonb_build_object(
+          'attachmentId', att.attachment_id,
+          'fileName', att.file_name
+        )
+        ORDER BY att.attachment_id
+      ) AS items
+      FROM app.adjustment_request_attachments att
+      WHERE att.request_id = r.request_id
+    ) a ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT jsonb_agg(
+        jsonb_build_object(
+          'logId', lg.log_id,
+          'status', lg.status,
+          'loggedAt', lg.logged_at,
+          'approvedBy', lg.approved_by,
+          'reason', lg.reason
+        )
+        ORDER BY lg.logged_at ASC
+      ) AS items
+      FROM app.adjustment_request_logs lg
+      WHERE lg.request_id = r.request_id
+    ) l ON TRUE
+    WHERE r.request_id = $1::text
+    LIMIT 1
+    `,
+    [requestId],
   );
 
   return result.rows[0] ?? null;
@@ -1527,6 +1863,757 @@ app.get("/me/attendance", requireAuth, async (req, res) => {
     });
 
     return res.json({ attendance: rows });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.get("/me/attendance-adjustments", requireAuth, async (req, res) => {
+  try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({
+        error: "No employee profile is linked to this account yet.",
+      });
+    }
+
+    const requestDate = typeof req.query.date === "string" ? req.query.date : null;
+    if (requestDate && !isoDateRegex.test(requestDate)) {
+      return res.status(400).json({ error: "Invalid date query. Use YYYY-MM-DD" });
+    }
+
+    const requests = await withRlsContext(req.auth, async (client) => {
+      const params = [resolvedEmployeeId, "home"];
+      let dateFilterSql = "";
+      if (requestDate) {
+        params.push(requestDate);
+        dateFilterSql = `AND r.request_date = $${params.length}::date`;
+      }
+
+      const result = await client.query(
+        `
+        SELECT
+          r.request_id,
+          r.employee_id,
+          r.employee_name,
+          r.position,
+          r.department,
+          r.request_date::text AS request_date,
+          r.shift_date_from::text AS shift_date_from,
+          r.shift_date_to::text AS shift_date_to,
+          r.clock_in_time,
+          r.clock_out_time,
+          r.reason,
+          r.break_duration_minutes,
+          r.total_work_duration_minutes,
+          r.message,
+          r.status,
+          r.submitted_at,
+          r.approved_by,
+          r.approved_at,
+          r.denied_reason,
+          r.source_page,
+          COALESCE(a.items, '[]'::jsonb) AS attachments,
+          COALESCE(l.items, '[]'::jsonb) AS logs
+        FROM app.attendance_adjustment_requests r
+        LEFT JOIN LATERAL (
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'attachmentId', att.attachment_id,
+              'fileName', att.file_name
+            )
+            ORDER BY att.attachment_id
+          ) AS items
+          FROM app.adjustment_request_attachments att
+          WHERE att.request_id = r.request_id
+        ) a ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'logId', lg.log_id,
+              'status', lg.status,
+              'loggedAt', lg.logged_at,
+              'approvedBy', lg.approved_by,
+              'reason', lg.reason
+            )
+            ORDER BY lg.logged_at ASC
+          ) AS items
+          FROM app.adjustment_request_logs lg
+          WHERE lg.request_id = r.request_id
+        ) l ON TRUE
+        WHERE r.employee_id = $1::text
+          AND r.source_page = $2::text
+          ${dateFilterSql}
+        ORDER BY r.request_date DESC, r.submitted_at DESC
+        LIMIT 300
+        `,
+        params,
+      );
+
+      return result.rows;
+    });
+
+    return res.json({
+      requests: requests.map(mapAdjustmentRequestRow),
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/me/attendance-adjustments", requireAuth, async (req, res) => {
+  const parsed = attendanceAdjustmentCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const payload = parsed.data;
+  if (payload.shiftDateFrom > payload.shiftDateTo) {
+    return res.status(400).json({ error: "shiftDateFrom must be on or before shiftDateTo" });
+  }
+
+  if (payload.date !== payload.shiftDateFrom || payload.date !== payload.shiftDateTo) {
+    return res.status(400).json({
+      error: "For calendar adjustment requests, date, shiftDateFrom, and shiftDateTo must match.",
+    });
+  }
+
+  const totalMinutes = computeTotalWorkDurationMinutes(
+    payload.clockInTime,
+    payload.clockOutTime,
+    payload.breakDuration,
+  );
+  if (totalMinutes == null) {
+    return res.status(400).json({
+      error: "Invalid work duration. Ensure clockOutTime is later than clockInTime after break.",
+    });
+  }
+
+  try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({
+        error: "No employee profile is linked to this account yet.",
+      });
+    }
+
+    const request = await withRlsContext(req.auth, async (client) => {
+      const duplicateResult = await client.query(
+        `
+        SELECT request_id, status, submitted_at
+        FROM app.attendance_adjustment_requests
+        WHERE employee_id = $1::text
+          AND request_date = $2::date
+          AND source_page = 'home'
+          AND status <> 'cancelled'::app.request_status
+        LIMIT 1
+        `,
+        [resolvedEmployeeId, payload.date],
+      );
+
+      if (duplicateResult.rowCount > 0) {
+        const existingRequest = duplicateResult.rows[0];
+
+        if (existingRequest.status === "approved") {
+          throw new Error(
+            "An approved adjustment request already exists for this date. Revoke it first before submitting a new one.",
+          );
+        }
+
+        const existingRequestId = existingRequest.request_id;
+
+        await client.query(
+          `
+          UPDATE app.attendance_adjustment_requests
+          SET
+            shift_date_from = $1::date,
+            shift_date_to = $2::date,
+            clock_in_time = $3::text,
+            clock_out_time = $4::text,
+            reason = $5::app.adjustment_reason,
+            break_duration_minutes = $6::integer,
+            total_work_duration_minutes = $7::integer,
+            message = $8::text,
+            status = 'pending'::app.request_status,
+            approved_by = NULL,
+            approved_at = NULL,
+            denied_reason = NULL
+          WHERE request_id = $9::text
+          `,
+          [
+            payload.shiftDateFrom,
+            payload.shiftDateTo,
+            payload.clockInTime,
+            payload.clockOutTime,
+            payload.reason,
+            payload.breakDuration,
+            totalMinutes,
+            payload.message.trim(),
+            existingRequestId,
+          ],
+        );
+
+        await client.query(
+          `
+          DELETE FROM app.adjustment_request_attachments
+          WHERE request_id = $1::text
+          `,
+          [existingRequestId],
+        );
+
+        const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+        for (const fileName of attachments) {
+          await client.query(
+            `
+            INSERT INTO app.adjustment_request_attachments (request_id, file_name)
+            VALUES ($1::text, $2::text)
+            `,
+            [existingRequestId, fileName],
+          );
+        }
+
+        await client.query(
+          `
+          DELETE FROM app.adjustment_request_logs
+          WHERE request_id = $1::text
+          `,
+          [existingRequestId],
+        );
+
+        await client.query(
+          `
+          INSERT INTO app.adjustment_request_logs (request_id, status, logged_at, approved_by, reason)
+          VALUES (
+            $1::text,
+            'pending'::app.request_status,
+            COALESCE($2::timestamptz, NOW()),
+            NULL,
+            'Request submitted'
+          )
+          `,
+          [existingRequestId, existingRequest.submitted_at],
+        );
+
+        return getAdjustmentRequestByIdForApi(client, existingRequestId);
+      }
+
+      const employeeResult = await client.query(
+        `
+        SELECT
+          e.first_name,
+          e.last_name,
+          COALESCE(jp.name, e.position, 'Employee') AS position,
+          COALESCE(d.name, 'N/A') AS department
+        FROM app.employees e
+        LEFT JOIN app.job_positions jp ON jp.position_id = e.position_id
+        LEFT JOIN app.departments d ON d.department_id = e.department_id
+        WHERE e.employee_id = $1::text
+        LIMIT 1
+        `,
+        [resolvedEmployeeId],
+      );
+
+      const employeeRow = employeeResult.rows[0] ?? null;
+      const employeeName = employeeRow
+        ? `${employeeRow.first_name ?? ""} ${employeeRow.last_name ?? ""}`.trim() || "Employee"
+        : "Employee";
+
+      const requestId = `adj-home-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+      await client.query(
+        `
+        INSERT INTO app.attendance_adjustment_requests (
+          request_id,
+          employee_id,
+          employee_name,
+          position,
+          department,
+          request_date,
+          shift_date_from,
+          shift_date_to,
+          clock_in_time,
+          clock_out_time,
+          reason,
+          break_duration_minutes,
+          total_work_duration_minutes,
+          message,
+          status,
+          submitted_at,
+          source_page
+        )
+        VALUES (
+          $1::text,
+          $2::text,
+          $3::text,
+          $4::text,
+          $5::text,
+          $6::date,
+          $7::date,
+          $8::date,
+          $9::text,
+          $10::text,
+          $11::app.adjustment_reason,
+          $12::integer,
+          $13::integer,
+          $14::text,
+          'pending'::app.request_status,
+          NOW(),
+          'home'
+        )
+        `,
+        [
+          requestId,
+          resolvedEmployeeId,
+          employeeName,
+          employeeRow?.position ?? "Employee",
+          employeeRow?.department ?? "N/A",
+          payload.date,
+          payload.shiftDateFrom,
+          payload.shiftDateTo,
+          payload.clockInTime,
+          payload.clockOutTime,
+          payload.reason,
+          payload.breakDuration,
+          totalMinutes,
+          payload.message.trim(),
+        ],
+      );
+
+      const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+      for (const fileName of attachments) {
+        await client.query(
+          `
+          INSERT INTO app.adjustment_request_attachments (request_id, file_name)
+          VALUES ($1::text, $2::text)
+          `,
+          [requestId, fileName],
+        );
+      }
+
+      await client.query(
+        `
+        INSERT INTO app.adjustment_request_logs (request_id, status, logged_at, approved_by, reason)
+        VALUES ($1::text, 'pending'::app.request_status, NOW(), NULL, 'Request submitted')
+        `,
+        [requestId],
+      );
+
+      return getAdjustmentRequestByIdForApi(client, requestId);
+    });
+
+    return res.status(201).json({ request: mapAdjustmentRequestRow(request) });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.put("/me/attendance-adjustments/:requestId", requireAuth, async (req, res) => {
+  const requestId = String(req.params.requestId || "").trim();
+  if (!requestId) {
+    return res.status(400).json({ error: "Invalid requestId" });
+  }
+
+  const parsed = attendanceAdjustmentUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const payload = parsed.data;
+  if (payload.shiftDateFrom > payload.shiftDateTo) {
+    return res.status(400).json({ error: "shiftDateFrom must be on or before shiftDateTo" });
+  }
+
+  if (payload.date !== payload.shiftDateFrom || payload.date !== payload.shiftDateTo) {
+    return res.status(400).json({
+      error: "For calendar adjustment requests, date, shiftDateFrom, and shiftDateTo must match.",
+    });
+  }
+
+  const totalMinutes = computeTotalWorkDurationMinutes(
+    payload.clockInTime,
+    payload.clockOutTime,
+    payload.breakDuration,
+  );
+  if (totalMinutes == null) {
+    return res.status(400).json({
+      error: "Invalid work duration. Ensure clockOutTime is later than clockInTime after break.",
+    });
+  }
+
+  try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({
+        error: "No employee profile is linked to this account yet.",
+      });
+    }
+
+    const request = await withRlsContext(req.auth, async (client) => {
+      const existingResult = await client.query(
+        `
+        SELECT request_id, status, submitted_at
+        FROM app.attendance_adjustment_requests
+        WHERE request_id = $1::text
+          AND employee_id = $2::text
+          AND source_page = 'home'
+        LIMIT 1
+        `,
+        [requestId, resolvedEmployeeId],
+      );
+
+      if (existingResult.rowCount === 0) {
+        throw new Error("Adjustment request not found");
+      }
+
+      const existing = existingResult.rows[0];
+      if (existing.status === "approved") {
+        throw new Error("Approved requests must be revoked before updating");
+      }
+
+      if (existing.status === "cancelled") {
+        throw new Error("Cancelled requests cannot be updated");
+      }
+
+      await client.query(
+        `
+        UPDATE app.attendance_adjustment_requests
+        SET
+          request_date = $1::date,
+          shift_date_from = $2::date,
+          shift_date_to = $3::date,
+          clock_in_time = $4::text,
+          clock_out_time = $5::text,
+          reason = $6::app.adjustment_reason,
+          break_duration_minutes = $7::integer,
+          total_work_duration_minutes = $8::integer,
+          message = $9::text,
+          status = 'pending'::app.request_status,
+          approved_by = NULL,
+          approved_at = NULL,
+          denied_reason = NULL
+        WHERE request_id = $10::text
+        `,
+        [
+          payload.date,
+          payload.shiftDateFrom,
+          payload.shiftDateTo,
+          payload.clockInTime,
+          payload.clockOutTime,
+          payload.reason,
+          payload.breakDuration,
+          totalMinutes,
+          payload.message.trim(),
+          requestId,
+        ],
+      );
+
+      await client.query(
+        `
+        DELETE FROM app.adjustment_request_attachments
+        WHERE request_id = $1::text
+        `,
+        [requestId],
+      );
+
+      const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+      for (const fileName of attachments) {
+        await client.query(
+          `
+          INSERT INTO app.adjustment_request_attachments (request_id, file_name)
+          VALUES ($1::text, $2::text)
+          `,
+          [requestId, fileName],
+        );
+      }
+
+      await client.query(
+        `
+        DELETE FROM app.adjustment_request_logs
+        WHERE request_id = $1::text
+        `,
+        [requestId],
+      );
+
+      await client.query(
+        `
+        INSERT INTO app.adjustment_request_logs (request_id, status, logged_at, approved_by, reason)
+        VALUES (
+          $1::text,
+          'pending'::app.request_status,
+          COALESCE($2::timestamptz, NOW()),
+          NULL,
+          'Request updated by employee'
+        )
+        `,
+        [requestId, existing.submitted_at],
+      );
+
+      return getAdjustmentRequestByIdForApi(client, requestId);
+    });
+
+    return res.json({ request: mapAdjustmentRequestRow(request) });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete("/me/attendance-adjustments/:requestId", requireAuth, async (req, res) => {
+  const requestId = String(req.params.requestId || "").trim();
+  if (!requestId) {
+    return res.status(400).json({ error: "Invalid requestId" });
+  }
+
+  try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({
+        error: "No employee profile is linked to this account yet.",
+      });
+    }
+
+    await withRlsContext(req.auth, async (client) => {
+      const existingResult = await client.query(
+        `
+        SELECT request_id, status
+        FROM app.attendance_adjustment_requests
+        WHERE request_id = $1::text
+          AND employee_id = $2::text
+          AND source_page = 'home'
+        LIMIT 1
+        `,
+        [requestId, resolvedEmployeeId],
+      );
+
+      if (existingResult.rowCount === 0) {
+        throw new Error("Adjustment request not found");
+      }
+
+      const existing = existingResult.rows[0];
+      if (existing.status === "approved") {
+        throw new Error("Approved requests cannot be deleted. Revoke first.");
+      }
+
+      await client.query(
+        `
+        DELETE FROM app.attendance_adjustment_requests
+        WHERE request_id = $1::text
+        `,
+        [requestId],
+      );
+    });
+
+    return res.json({ deleted: true, requestId });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/me/attendance-adjustments/:requestId/revoke", requireAuth, async (req, res) => {
+  const requestId = String(req.params.requestId || "").trim();
+  if (!requestId) {
+    return res.status(400).json({ error: "Invalid requestId" });
+  }
+
+  try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({
+        error: "No employee profile is linked to this account yet.",
+      });
+    }
+
+    const request = await withRlsContext(req.auth, async (client) => {
+      const existingResult = await client.query(
+        `
+        SELECT request_id, status, submitted_at
+        FROM app.attendance_adjustment_requests
+        WHERE request_id = $1::text
+          AND employee_id = $2::text
+          AND source_page = 'home'
+        LIMIT 1
+        `,
+        [requestId, resolvedEmployeeId],
+      );
+
+      if (existingResult.rowCount === 0) {
+        throw new Error("Adjustment request not found");
+      }
+
+      const existing = existingResult.rows[0];
+      if (existing.status !== "approved") {
+        throw new Error("Only approved requests can be revoked");
+      }
+
+      await client.query(
+        `
+        UPDATE app.attendance_adjustment_requests
+        SET
+          status = 'pending'::app.request_status,
+          approved_by = NULL,
+          approved_at = NULL,
+          denied_reason = NULL
+        WHERE request_id = $1::text
+        `,
+        [requestId],
+      );
+
+      await client.query(
+        `
+        DELETE FROM app.adjustment_request_logs
+        WHERE request_id = $1::text
+        `,
+        [requestId],
+      );
+
+      await client.query(
+        `
+        INSERT INTO app.adjustment_request_logs (request_id, status, logged_at, approved_by, reason)
+        VALUES (
+          $1::text,
+          'pending'::app.request_status,
+          COALESCE($2::timestamptz, NOW()),
+          NULL,
+          'Request submitted'
+        )
+        `,
+        [requestId, existing.submitted_at],
+      );
+
+      return getAdjustmentRequestByIdForApi(client, requestId);
+    });
+
+    return res.json({ request: mapAdjustmentRequestRow(request), revoked: true });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.get("/me/calendar", requireAuth, async (req, res) => {
+  const from = req.query.from;
+  const to = req.query.to;
+
+  if (typeof from === "string" && !isoDateRegex.test(from)) {
+    return res.status(400).json({ error: "Invalid from date. Use YYYY-MM-DD" });
+  }
+  if (typeof to === "string" && !isoDateRegex.test(to)) {
+    return res.status(400).json({ error: "Invalid to date. Use YYYY-MM-DD" });
+  }
+
+  try {
+    const seedResult = await seedCalendarSampleAttendanceIfEmpty(req.auth);
+
+    const attendanceWhere = [];
+    const attendanceParams = [];
+
+    if (typeof from === "string") {
+      attendanceParams.push(from);
+      attendanceWhere.push(`ar.attendance_date >= $${attendanceParams.length}::date`);
+    }
+    if (typeof to === "string") {
+      attendanceParams.push(to);
+      attendanceWhere.push(`ar.attendance_date <= $${attendanceParams.length}::date`);
+    }
+
+    const attendanceFilterSql = attendanceWhere.length
+      ? `WHERE ${attendanceWhere.join(" AND ")}`
+      : "";
+
+    const holidaysWhere = [];
+    const holidaysParams = [];
+    if (typeof from === "string") {
+      holidaysParams.push(from);
+      holidaysWhere.push(`h.holiday_date >= $${holidaysParams.length}::date`);
+    }
+    if (typeof to === "string") {
+      holidaysParams.push(to);
+      holidaysWhere.push(`h.holiday_date <= $${holidaysParams.length}::date`);
+    }
+
+    const holidaysFilterSql = holidaysWhere.length
+      ? `WHERE ${holidaysWhere.join(" AND ")}`
+      : "";
+
+    const { attendanceRows, holidayRows } = await withRlsContext(req.auth, async (client) => {
+      const attendanceResult = await client.query(
+        `
+        SELECT
+          ar.attendance_date::text AS attendance_date,
+          ar.status,
+          ar.clock_in,
+          ar.clock_out,
+          ar.work_duration_minutes,
+          ar.late_minutes,
+          h.name AS holiday_name,
+          h.holiday_type
+        FROM app.attendance_records ar
+        LEFT JOIN app.holidays h ON h.holiday_date = ar.attendance_date
+        ${attendanceFilterSql}
+        ORDER BY ar.attendance_date DESC
+        LIMIT 365
+        `,
+        attendanceParams,
+      );
+
+      const holidayResult = await client.query(
+        `
+        SELECT
+          h.holiday_id,
+          h.name,
+          h.holiday_date::text AS holiday_date,
+          h.holiday_type
+        FROM app.holidays h
+        ${holidaysFilterSql}
+        ORDER BY h.holiday_date ASC
+        LIMIT 365
+        `,
+        holidaysParams,
+      );
+
+      return {
+        attendanceRows: attendanceResult.rows,
+        holidayRows: holidayResult.rows,
+      };
+    });
+
+    const attendance = attendanceRows.map((row) => ({
+      date: String(row.attendance_date).slice(0, 10),
+      status: row.status,
+      clockIn: row.clock_in ? String(row.clock_in).slice(0, 5) : null,
+      clockOut: row.clock_out ? String(row.clock_out).slice(0, 5) : null,
+      workDurationMinutes: row.work_duration_minutes,
+      lateMinutes: row.late_minutes,
+      holidayName: row.holiday_name ?? null,
+      holidayType: row.holiday_type ?? null,
+    }));
+
+    const attendanceByDate = attendance.reduce((acc, row) => {
+      acc[row.date] = row.status;
+      return acc;
+    }, {});
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const holidays = holidayRows.map((row) => {
+      const holidayDate = new Date(`${String(row.holiday_date).slice(0, 10)}T00:00:00`);
+      const daysUntil = Math.ceil((holidayDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+      return {
+        id: row.holiday_id,
+        name: row.name,
+        date: String(row.holiday_date).slice(0, 10),
+        type: row.holiday_type,
+        daysUntil,
+      };
+    });
+
+    return res.json({
+      attendance,
+      attendanceByDate,
+      holidays,
+      seeded: seedResult.seeded,
+      insertedRecords: seedResult.inserted,
+    });
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }

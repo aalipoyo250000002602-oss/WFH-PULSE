@@ -10,6 +10,13 @@ interface MiniCalendarProps {
 
 export function MiniCalendar({ attendanceData, onDateClick }: MiniCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
+
+  const formatLocalDateKey = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
   
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
@@ -39,7 +46,7 @@ export function MiniCalendar({ attendanceData, onDateClick }: MiniCalendarProps)
 
   const getDateKey = (day: number) => {
     const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-    return date.toISOString().split('T')[0];
+    return formatLocalDateKey(date);
   };
 
   const getDayStatus = (day: number) => {
