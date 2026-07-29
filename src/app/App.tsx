@@ -104,6 +104,9 @@ interface CalendarAttendanceDetailState {
   clockOut: string | null;
   workDurationMinutes: number | null;
   lateMinutes: number | null;
+  effectiveRecordType?: "actual" | "adjusted";
+  adjustmentApprovalStatus?: "pending" | "approved" | "denied" | "cancelled" | null;
+  overtimeApprovalStatus?: "pending" | "approved" | "denied" | "cancelled" | null;
 }
 
 interface AttendanceActivityLogState {
@@ -740,8 +743,9 @@ export default function App() {
 
   const loadCalendarData = async (accessToken: string) => {
     try {
-      const response = await fetch(`${apiBaseUrl}/me/calendar`, {
+      const response = await fetch(`${apiBaseUrl}/me/calendar?t=${Date.now()}`, {
         method: "GET",
+        cache: "no-store",
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
@@ -778,12 +782,20 @@ export default function App() {
             workDurationMinutes:
               typeof row?.workDurationMinutes === "number" ? row.workDurationMinutes : null,
             lateMinutes: typeof row?.lateMinutes === "number" ? row.lateMinutes : null,
+            effectiveRecordType:
+              row?.effectiveRecordType === "adjusted" ? "adjusted" : "actual",
+            adjustmentApprovalStatus:
+              typeof row?.adjustmentApprovalStatus === "string"
+                ? (row.adjustmentApprovalStatus as "pending" | "approved" | "denied" | "cancelled")
+                : null,
+            overtimeApprovalStatus:
+              typeof row?.overtimeApprovalStatus === "string"
+                ? (row.overtimeApprovalStatus as "pending" | "approved" | "denied" | "cancelled")
+                : null,
           };
         }
 
-        if (Object.keys(nextDetails).length > 0) {
-          setCalendarAttendanceDetails(nextDetails);
-        }
+        setCalendarAttendanceDetails(nextDetails);
       }
 
       if (payload?.attendanceByDate && typeof payload.attendanceByDate === "object") {
@@ -806,9 +818,7 @@ export default function App() {
           nextAttendanceData[dateKey] = status as AttendanceStatusState;
         }
 
-        if (Object.keys(nextAttendanceData).length > 0) {
-          setAttendanceData(nextAttendanceData);
-        }
+        setAttendanceData(nextAttendanceData);
       }
 
       if (Array.isArray(payload?.holidays)) {

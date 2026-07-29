@@ -19,6 +19,23 @@ interface AttendanceDetailsModalProps {
     }>;
   }) | null;
   onRequestAdjustment?: (date: string) => void;
+  overtimeRequest?: {
+    requestId: string;
+    requestDate: string;
+    startTime: string;
+    endTime: string;
+    purpose: string;
+    attachments: string[];
+    status: "pending" | "approved" | "denied" | "cancelled";
+    logs?: Array<{
+      logId?: number;
+      status: "pending" | "approved" | "denied" | "cancelled";
+      loggedAt: string;
+      approvedBy?: string | null;
+      reason?: string | null;
+    }>;
+  } | null;
+  onRequestOvertime?: (date: string) => void;
 }
 
 export function AttendanceDetailsModal({
@@ -27,14 +44,77 @@ export function AttendanceDetailsModal({
   details,
   adjustmentRequest,
   onRequestAdjustment,
+  overtimeRequest,
+  onRequestOvertime,
 }: AttendanceDetailsModalProps) {
   if (!details) return null;
+
+  const parseTimeToMinutes = (value: string | null | undefined) => {
+    const text = String(value ?? "").trim();
+    if (!/^\d{2}:\d{2}$/.test(text)) {
+      return null;
+    }
+
+    const [hours, minutes] = text.split(":").map(Number);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+      return null;
+    }
+
+    return hours * 60 + minutes;
+  };
+
+  const formatDuration = (totalMinutes: number | null) => {
+    if (totalMinutes == null || totalMinutes <= 0) {
+      return "-";
+    }
+
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours}h ${minutes}m`;
+  };
+
+  const parseOvertimeValuesFromLog = (reason: string | null | undefined) => {
+    const text = String(reason ?? "");
+    const startTime = text.match(/Start Time:\s*([^\n\r]+)/i)?.[1]?.trim() ?? "";
+    const endTime = text.match(/End Time:\s*([^\n\r]+)/i)?.[1]?.trim() ?? "";
+    const duration = text.match(/OT Duration:\s*([^\n\r]+)/i)?.[1]?.trim() ?? "";
+    const purpose = text.match(/Purpose:\s*([^\n\r]+)/i)?.[1]?.trim() ?? "";
+    return { startTime, endTime, duration, purpose };
+  };
+
+  const latestOvertimeLogWithValues = (overtimeRequest?.logs ?? [])
+    .slice()
+    .reverse()
+    .find((log) => {
+      const parsed = parseOvertimeValuesFromLog(log.reason);
+      return Boolean(parsed.startTime || parsed.endTime || parsed.duration || parsed.purpose);
+    });
+
+  const parsedOvertimeFallback = parseOvertimeValuesFromLog(latestOvertimeLogWithValues?.reason);
+  const displayOvertimeStartTime = overtimeRequest?.startTime?.trim() || parsedOvertimeFallback.startTime || "-";
+  const displayOvertimeEndTime = overtimeRequest?.endTime?.trim() || parsedOvertimeFallback.endTime || "-";
+  const computedOvertimeDuration = (() => {
+    const startMinutes = parseTimeToMinutes(displayOvertimeStartTime);
+    const endMinutes = parseTimeToMinutes(displayOvertimeEndTime);
+    if (startMinutes == null || endMinutes == null || endMinutes <= startMinutes) {
+      return "";
+    }
+    return formatDuration(endMinutes - startMinutes);
+  })();
+  const displayOvertimeDuration = computedOvertimeDuration || parsedOvertimeFallback.duration || "-";
+  const displayOvertimePurpose = overtimeRequest?.purpose?.trim() || parsedOvertimeFallback.purpose || "-";
 
   const requestActionLabel = adjustmentRequest
     ? adjustmentRequest.status === "approved"
       ? "View Adjustment Request"
       : "Edit Adjustment Request"
     : "Request Attendance Adjustment";
+
+  const overtimeActionLabel = overtimeRequest
+    ? overtimeRequest.status === "approved"
+      ? "View Overtime Request"
+      : "Edit Overtime Request"
+    : "Request Overtime";
 
   const getAdjustmentStatusBadge = (status: "pending" | "approved" | "denied" | "cancelled") => {
     switch (status) {
@@ -60,12 +140,33 @@ export function AttendanceDetailsModal({
           </Badge>
         );
       case "cancelled":
-        return (
-          <Badge variant="outline">
-            Cancelled
-          </Badge>
-        );
+        return <Badge variant="outline">Cancelled</Badge>;
     }
+  };
+
+  const getRequestStateBadge = (
+    label: string,
+    status: "pending" | "approved" | "denied" | "cancelled" | null | undefined,
+  ) => {
+    if (!status) {
+      return null;
+    }
+
+    const statusLabel = status === "denied" ? "Declined" : status.charAt(0).toUpperCase() + status.slice(1);
+    let className = "";
+    if (status === "approved") {
+      className = "bg-vibrant-green/10 text-vibrant-green border-vibrant-green/30";
+    } else if (status === "pending") {
+      className = "bg-vibrant-blue/10 text-vibrant-blue border-vibrant-blue/30";
+    } else if (status === "denied") {
+      className = "bg-destructive/10 text-destructive border-destructive/30";
+    }
+
+    return (
+      <Badge variant="outline" className={className}>
+        {label}: {statusLabel}
+      </Badge>
+    );
   };
 
   const renderAdjustmentAction = () => {
@@ -85,6 +186,28 @@ export function AttendanceDetailsModal({
         >
           <Edit className="h-4 w-4 mr-2" />
           {requestActionLabel}
+        </Button>
+      </div>
+    );
+  };
+
+  const renderOvertimeAction = () => {
+    if (!onRequestOvertime || details.status !== "present") {
+      return null;
+    }
+
+    return (
+      <div className="pt-4 border-t">
+        <Button
+          onClick={() => {
+            onRequestOvertime(details.date);
+            onClose();
+          }}
+          className="w-full"
+          variant="outline"
+        >
+          <Edit className="h-4 w-4 mr-2" />
+          {overtimeActionLabel}
         </Button>
       </div>
     );
@@ -121,16 +244,92 @@ export function AttendanceDetailsModal({
 
             {(adjustmentRequest.logTrail ?? []).map((log, index) => (
               <div key={`${log.status}-${index}`} className="rounded-md border bg-muted/30 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="font-medium">{format(log.date, "MMM dd, yyyy hh:mm a")}</div>
-                  {getAdjustmentStatusBadge(log.status)}
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 h-8 w-8 rounded-full bg-vibrant-blue/15 text-vibrant-blue flex items-center justify-center">
+                    <Clock className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <div className="font-medium">{format(log.date, "MMM dd, yyyy hh:mm a")}</div>
+                    {log.approvedBy && (
+                      <div className="text-sm text-muted-foreground">By: {log.approvedBy}</div>
+                    )}
+                    {log.reason && (
+                      <div className="text-sm text-muted-foreground whitespace-pre-wrap">{log.reason}</div>
+                    )}
+                  </div>
                 </div>
-                {log.approvedBy && (
-                  <div className="mt-1 text-sm text-muted-foreground">By: {log.approvedBy}</div>
-                )}
-                {log.reason && (
-                  <div className="mt-1 text-sm text-muted-foreground">{log.reason}</div>
-                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderOvertimeRequestDetails = () => {
+    if (!overtimeRequest) {
+      return null;
+    }
+
+    return (
+      <div className="space-y-4 pt-4 border-t">
+        <div className="flex items-center justify-between gap-2">
+          <div className="font-medium">Overtime Request</div>
+          {getAdjustmentStatusBadge(overtimeRequest.status)}
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <div className="text-sm text-muted-foreground">Request Date</div>
+            <div className="font-medium">{format(new Date(overtimeRequest.requestDate), "MMM dd, yyyy")}</div>
+          </div>
+          <div className="space-y-1" />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <div className="text-sm text-muted-foreground">Start Time</div>
+            <div className="font-medium">{displayOvertimeStartTime}</div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-sm text-muted-foreground">End Time</div>
+            <div className="font-medium">{displayOvertimeEndTime}</div>
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-sm text-muted-foreground">OT Duration</div>
+          <div className="font-medium">{displayOvertimeDuration}</div>
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-sm text-muted-foreground">Purpose</div>
+          <div className="font-medium whitespace-pre-wrap">{displayOvertimePurpose}</div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-sm text-muted-foreground">Request Logs</div>
+          <div className="space-y-2">
+            {(overtimeRequest.logs ?? []).length === 0 && (
+              <div className="text-sm text-muted-foreground">No request logs yet.</div>
+            )}
+
+            {(overtimeRequest.logs ?? []).map((log, index) => (
+              <div key={`${log.status}-${index}`} className="rounded-md border bg-muted/30 p-3">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 h-8 w-8 rounded-full bg-vibrant-blue/15 text-vibrant-blue flex items-center justify-center">
+                    <Clock className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <div className="font-medium">{format(new Date(log.loggedAt), "MMM dd, yyyy hh:mm a")}</div>
+                    {log.approvedBy && (
+                      <div className="text-sm text-muted-foreground">By: {log.approvedBy}</div>
+                    )}
+                    {log.reason && (
+                      <div className="text-sm text-muted-foreground whitespace-pre-wrap">{log.reason}</div>
+                    )}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -141,19 +340,37 @@ export function AttendanceDetailsModal({
 
   const renderPresentDetails = () => (
     <div className="space-y-4">
+      <div className="space-y-2">
+        <div className="text-sm text-muted-foreground">Attendance Source</div>
+        <div className="flex flex-wrap gap-2">
+          <Badge
+            variant="outline"
+            className={
+              details.effectiveRecordType === "adjusted"
+                ? "bg-vibrant-orange/10 text-vibrant-orange border-vibrant-orange/30"
+                : "bg-muted"
+            }
+          >
+            {details.effectiveRecordType === "adjusted" ? "Adjusted" : "Actual"}
+          </Badge>
+          {getRequestStateBadge("Adjustment", details.adjustmentApprovalStatus ?? null)}
+          {getRequestStateBadge("Overtime", details.overtimeApprovalStatus ?? null)}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1">
           <div className="text-sm text-muted-foreground">Clock-in Time</div>
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-vibrant-green" />
-            <span className="font-medium">{details.clockInTime}</span>
+            <span className="font-medium">{details.clockInTime || "-"}</span>
           </div>
         </div>
         <div className="space-y-1">
           <div className="text-sm text-muted-foreground">Clock-out Time</div>
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-vibrant-orange" />
-            <span className="font-medium">{details.clockOutTime}</span>
+            <span className="font-medium">{details.clockOutTime || "-"}</span>
           </div>
         </div>
       </div>
@@ -162,7 +379,7 @@ export function AttendanceDetailsModal({
         <div className="text-sm text-muted-foreground">Work Duration</div>
         <div className="flex items-center gap-2">
           <Calendar className="h-4 w-4 text-vibrant-blue" />
-          <span className="font-medium">{details.workDuration}</span>
+          <span className="font-medium">{details.workDuration || "-"}</span>
         </div>
       </div>
 
@@ -184,6 +401,7 @@ export function AttendanceDetailsModal({
       </div>
 
       {renderAdjustmentAction()}
+      {renderOvertimeAction()}
     </div>
   );
 
@@ -285,11 +503,7 @@ export function AttendanceDetailsModal({
           </Badge>
         );
       default:
-        return (
-          <Badge variant="outline">
-            Unknown
-          </Badge>
-        );
+        return <Badge variant="outline">Unknown</Badge>;
     }
   };
 
@@ -311,6 +525,7 @@ export function AttendanceDetailsModal({
           {details.status === "absent" && renderAbsentDetails()}
           {details.status === "on-leave" && renderLeaveDetails()}
           {renderAdjustmentRequestDetails()}
+          {renderOvertimeRequestDetails()}
         </div>
       </DialogContent>
     </Dialog>

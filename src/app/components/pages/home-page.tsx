@@ -6,6 +6,11 @@ import { EmployeesCard } from "../employees-card";
 import { AttendanceDetailsModal } from "../attendance-details-modal";
 import { AttendanceAdjustmentModal } from "../attendance-adjustment-modal";
 import {
+  OvertimeRequestModal,
+  type OvertimeRequestDraft,
+  type OvertimeRequestState,
+} from "../overtime-request-modal";
+import {
   Card,
   CardContent,
   CardHeader,
@@ -18,6 +23,7 @@ import {
   AttendanceDetails,
   AttendanceAdjustmentRequest,
 } from "../attendance-details-data";
+import { toast } from "sonner";
 
 interface HomePageProps {
   isClockedIn: boolean;
@@ -47,6 +53,9 @@ interface HomePageProps {
       clockOut: string | null;
       workDurationMinutes: number | null;
       lateMinutes: number | null;
+      effectiveRecordType?: "actual" | "adjusted";
+      adjustmentApprovalStatus?: "pending" | "approved" | "denied" | "cancelled" | null;
+      overtimeApprovalStatus?: "pending" | "approved" | "denied" | "cancelled" | null;
     }
   >;
   holidays: any[];
@@ -121,6 +130,10 @@ export function HomePage({
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
   const [editingRequest, setEditingRequest] = useState<AdjustmentRequestState | null>(null);
   const [prefilledTimes, setPrefilledTimes] = useState<{ clockIn: string; clockOut: string } | null>(null);
+  const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequestState[]>([]);
+  const [isLoadingOvertimeRequests, setIsLoadingOvertimeRequests] = useState(false);
+  const [showOvertimeModal, setShowOvertimeModal] = useState(false);
+  const [editingOvertimeRequest, setEditingOvertimeRequest] = useState<OvertimeRequestState | null>(null);
 
   const attendanceDetailsData = useMemo<Record<string, AttendanceDetails>>(() => {
     const detailsMap: Record<string, AttendanceDetails> = {};
@@ -138,6 +151,9 @@ export function HomePage({
         clockOutTime: source?.clockOut ?? undefined,
         workDuration,
         lateMinutes: source?.lateMinutes ?? undefined,
+        effectiveRecordType: source?.effectiveRecordType ?? "actual",
+        adjustmentApprovalStatus: source?.adjustmentApprovalStatus ?? null,
+        overtimeApprovalStatus: source?.overtimeApprovalStatus ?? null,
       };
     }
 
@@ -246,8 +262,91 @@ export function HomePage({
     setAdjustmentRequests((prev) => prev.filter((item) => item.id !== requestId));
   };
 
+  const parseOvertimeMessage = (value: string | null | undefined) => {
+    const text = String(value ?? "");
+    const purposeMatch = text.match(/Purpose:\s*([\s\S]*)$/im);
+    return {
+      purpose: purposeMatch?.[1]?.trim() ?? text.trim(),
+    };
+  };
+
+  const mapApiOvertimeRequest = (row: any): OvertimeRequestState | null => {
+    if (!row?.requestId || !row?.requestDate) {
+      return null;
+    }
+
+    const parsed = parseOvertimeMessage(row?.message);
+    return {
+      requestId: String(row.requestId),
+      requestDate: String(row.requestDate).slice(0, 10),
+      startTime: String(row.startTime ?? row.clockInTime ?? ""),
+      endTime: String(row.endTime ?? row.clockOutTime ?? ""),
+      purpose: String(row.purpose ?? parsed.purpose ?? "").trim(),
+      attachments: Array.isArray(row.attachments)
+        ? row.attachments.map((attachment: any) => String(attachment.fileName ?? "")).filter(Boolean)
+        : [],
+      status: String(row.status) as "pending" | "approved" | "denied" | "cancelled",
+      submittedAt: row.submittedAt ? String(row.submittedAt) : null,
+      approvedBy: row.approvedBy ? String(row.approvedBy) : null,
+      approvedAt: row.approvedAt ? String(row.approvedAt) : null,
+      deniedReason: row.deniedReason ? String(row.deniedReason) : null,
+      logs: Array.isArray(row.logs)
+        ? row.logs.map((log: any) => ({
+            logId: Number(log?.logId ?? 0),
+            status: String(log?.status ?? "pending") as "pending" | "approved" | "denied" | "cancelled",
+            loggedAt: String(log?.loggedAt ?? new Date().toISOString()),
+            approvedBy: log?.approvedBy ? String(log.approvedBy) : null,
+            reason: log?.reason ? String(log.reason) : null,
+          }))
+        : [],
+    };
+  };
+
+  const loadOvertimeRequests = async () => {
+    if (!accessToken) {
+      return;
+    }
+
+    setIsLoadingOvertimeRequests(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/me/overtime-requests`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = await response.json().catch(() => ({}));
+      const rows = Array.isArray(payload?.requests) ? payload.requests : [];
+      const mapped = rows.map(mapApiOvertimeRequest).filter(Boolean) as OvertimeRequestState[];
+      setOvertimeRequests(mapped);
+    } catch {
+      // Keep current overtime request state if API is temporarily unreachable.
+    } finally {
+      setIsLoadingOvertimeRequests(false);
+    }
+  };
+
+  const upsertOvertimeRequest = (request: OvertimeRequestState) => {
+    setOvertimeRequests((prev) => {
+      const next = prev.filter(
+        (item) => item.requestId !== request.requestId && item.requestDate !== request.requestDate,
+      );
+      return [request, ...next];
+    });
+  };
+
+  const removeOvertimeRequest = (requestId: string) => {
+    setOvertimeRequests((prev) => prev.filter((item) => item.requestId !== requestId));
+  };
+
   useEffect(() => {
     void loadAdjustmentRequests();
+    void loadOvertimeRequests();
   }, [accessToken, apiBaseUrl]);
 
   // Handle date click from mini calendar
@@ -277,6 +376,19 @@ export function HomePage({
     }
 
     setShowAdjustmentModal(true);
+  };
+
+  const handleRequestOvertime = (date: string) => {
+    const details = attendanceDetailsData[date];
+    if (!details || details.status !== "present") {
+      toast.error("Overtime requests are only available for present dates.");
+      return;
+    }
+
+    setSelectedDate(date);
+    const existingRequest = overtimeRequests.find((req) => req.requestDate === date) ?? null;
+    setEditingOvertimeRequest(existingRequest);
+    setShowOvertimeModal(true);
   };
 
   // Handle submit adjustment request
@@ -316,10 +428,6 @@ export function HomePage({
       } else {
         await loadAdjustmentRequests();
       }
-
-      if (onCalendarRefresh) {
-        await onCalendarRefresh();
-      }
       return true;
     } catch {
       toast.error("Unable to reach API for adjustment request");
@@ -350,9 +458,6 @@ export function HomePage({
 
       removeAdjustmentRequest(requestId);
       setEditingRequest(null);
-      if (onCalendarRefresh) {
-        await onCalendarRefresh();
-      }
       return true;
     } catch {
       toast.error("Unable to reach API for deletion");
@@ -394,6 +499,114 @@ export function HomePage({
       return true;
     } catch {
       toast.error("Unable to reach API for revoke");
+      return false;
+    }
+  };
+
+  const handleSubmitOvertime = async (request: OvertimeRequestDraft) => {
+    if (!accessToken) {
+      toast.error("Your session has expired. Please sign in again.");
+      return false;
+    }
+
+    const endpoint = editingOvertimeRequest
+      ? `${apiBaseUrl}/me/overtime-requests/${editingOvertimeRequest.requestId}`
+      : `${apiBaseUrl}/me/overtime-requests`;
+    const method = editingOvertimeRequest ? "PUT" : "POST";
+
+    try {
+      const response = await fetch(endpoint, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(request),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(payload?.error || "Unable to save overtime request");
+        return false;
+      }
+
+      const savedRequest = mapApiOvertimeRequest(payload?.request);
+      if (savedRequest) {
+        upsertOvertimeRequest(savedRequest);
+        setEditingOvertimeRequest(savedRequest);
+      } else {
+        await loadOvertimeRequests();
+      }
+      return true;
+    } catch {
+      toast.error("Unable to reach API for overtime request");
+      return false;
+    }
+  };
+
+  const handleDeleteOvertime = async (requestId: string) => {
+    if (!accessToken) {
+      toast.error("Your session has expired. Please sign in again.");
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/me/overtime-requests/${requestId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(payload?.error || "Unable to delete overtime request");
+        return false;
+      }
+
+      removeOvertimeRequest(requestId);
+      setEditingOvertimeRequest(null);
+      return true;
+    } catch {
+      toast.error("Unable to reach API for overtime deletion");
+      return false;
+    }
+  };
+
+  const handleRevokeOvertime = async (requestId: string) => {
+    if (!accessToken) {
+      toast.error("Your session has expired. Please sign in again.");
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/me/overtime-requests/${requestId}/revoke`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(payload?.error || "Unable to revoke overtime request");
+        return false;
+      }
+
+      const revokedRequest = mapApiOvertimeRequest(payload?.request);
+      if (revokedRequest) {
+        upsertOvertimeRequest(revokedRequest);
+        setEditingOvertimeRequest(revokedRequest);
+      } else {
+        await loadOvertimeRequests();
+      }
+
+      if (onCalendarRefresh) {
+        await onCalendarRefresh();
+      }
+      return true;
+    } catch {
+      toast.error("Unable to reach API for overtime revoke");
       return false;
     }
   };
@@ -755,9 +968,15 @@ export function HomePage({
         onClose={() => setShowDetailsModal(false)}
         details={selectedDate ? attendanceDetailsData[selectedDate] : null}
         onRequestAdjustment={handleRequestAdjustment}
+        onRequestOvertime={handleRequestOvertime}
         adjustmentRequest={
           selectedDate
             ? adjustmentRequests.find((request) => request.date === selectedDate) ?? null
+            : null
+        }
+        overtimeRequest={
+          selectedDate
+            ? overtimeRequests.find((request) => request.requestDate === selectedDate) ?? null
             : null
         }
       />
@@ -777,6 +996,20 @@ export function HomePage({
         onDelete={handleDeleteAdjustment}
         onRevoke={handleRevokeAdjustment}
         isLoading={isLoadingAdjustmentRequests}
+      />
+
+      <OvertimeRequestModal
+        open={showOvertimeModal}
+        onClose={() => {
+          setShowOvertimeModal(false);
+          setEditingOvertimeRequest(null);
+        }}
+        selectedDate={selectedDate}
+        existingRequest={editingOvertimeRequest}
+        onSubmit={handleSubmitOvertime}
+        onDelete={handleDeleteOvertime}
+        onRevoke={handleRevokeOvertime}
+        isLoading={isLoadingOvertimeRequests}
       />
     </div>
   );

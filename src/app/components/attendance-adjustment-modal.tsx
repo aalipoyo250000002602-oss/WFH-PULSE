@@ -377,6 +377,15 @@ export function AttendanceAdjustmentModal({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          {!isReadOnly && (
+            <div className="flex items-start gap-2 p-3 rounded-lg border bg-muted/50">
+              <AlertCircle className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-muted-foreground">
+                Pending request only. Attendance record remains unchanged until approval.
+              </div>
+            </div>
+          )}
+
           {/* Reason */}
           <div className="space-y-2">
             <Label htmlFor="reason" className="flex items-center gap-1">

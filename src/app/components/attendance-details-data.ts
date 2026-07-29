@@ -5,6 +5,9 @@ export interface AttendanceDetails {
   clockOutTime?: string;
   workDuration?: string;
   lateMinutes?: number;
+  effectiveRecordType?: "actual" | "adjusted";
+  adjustmentApprovalStatus?: "pending" | "approved" | "denied" | "cancelled" | null;
+  overtimeApprovalStatus?: "pending" | "approved" | "denied" | "cancelled" | null;
   leaveDetails?: {
     requestDate: string;
     fromDate: string;

@@ -47,6 +47,26 @@ corepack pnpm run db:migrate
 corepack pnpm run db:migrate:status
 ```
 
+## Smooth local + Supabase sync
+
+Run build first, then apply migrations to local Postgres and Supabase in order:
+
+```bash
+corepack pnpm run db:sync:all
+```
+
+Dry-run (prints commands, no changes):
+
+```bash
+corepack pnpm run db:sync:all:dry
+```
+
+Skip build and only run migrations on both targets:
+
+```bash
+corepack pnpm run db:sync:all:no-build
+```
+
 Current migration set includes:
 
 - `0001_init` - base schema + RLS setup include

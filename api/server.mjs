@@ -341,6 +341,16 @@ const attendanceAdjustmentCreateSchema = z.object({
 
 const attendanceAdjustmentUpdateSchema = attendanceAdjustmentCreateSchema;
 
+const overtimeRequestCreateSchema = z.object({
+  date: z.string().regex(isoDateRegex),
+  startTime: z.string().regex(isoTimeRegex),
+  endTime: z.string().regex(isoTimeRegex),
+  purpose: z.string().min(3).max(5000),
+  attachments: z.array(z.string().min(1).max(260)).max(10).optional(),
+});
+
+const overtimeRequestUpdateSchema = overtimeRequestCreateSchema;
+
 function mapSecurityPreferenceRow(row) {
   return {
     biometricLogin: row.biometric_login,
@@ -390,6 +400,108 @@ function computeTotalWorkDurationMinutes(clockInTime, clockOutTime, breakDuratio
   return total;
 }
 
+async function getWorkingScheduleForDate(client, _employeeId, dateValue) {
+  const result = await client.query(
+    `
+    SELECT
+      c.day_name,
+      c.is_working_day,
+      c.start_time,
+      c.end_time
+    FROM app.company_settings_working_hours c
+    WHERE c.iso_day = EXTRACT(ISODOW FROM $1::date)::smallint
+    LIMIT 1
+    `,
+    [dateValue],
+  );
+
+  const row = result.rows[0] ?? null;
+  if (!row) {
+    return null;
+  }
+
+  return {
+    day: row.day_name,
+    isWorkingDay: Boolean(row.is_working_day),
+    startTime: normalizeTimeValue(row.start_time),
+    endTime: normalizeTimeValue(row.end_time),
+  };
+}
+
+function validateOvertimeOutsideWorkingHours({ startTime, endTime, schedule }) {
+  const startMinutes = parseTimeToMinutes(startTime);
+  const endMinutes = parseTimeToMinutes(endTime);
+  if (startMinutes == null || endMinutes == null) {
+    return "Invalid time format. Use HH:MM.";
+  }
+
+  if (endMinutes <= startMinutes) {
+    return "End time must be later than start time.";
+  }
+
+  if (!schedule) {
+    return "No company working-hours schedule found for this date.";
+  }
+
+  if (!schedule.isWorkingDay) {
+    // Entire day is non-working, so any positive range is valid.
+    return null;
+  }
+
+  const scheduleStartMinutes = parseTimeToMinutes(schedule.startTime ?? "");
+  const scheduleEndMinutes = parseTimeToMinutes(schedule.endTime ?? "");
+  if (scheduleStartMinutes == null || scheduleEndMinutes == null) {
+    return "Working day schedule is incomplete. Please set start and end working hours.";
+  }
+
+  const isOutsideWorkingHours =
+    endMinutes <= scheduleStartMinutes || startMinutes >= scheduleEndMinutes;
+
+  if (!isOutsideWorkingHours) {
+    return "Overtime must be filed only for non-working hours.";
+  }
+
+  return null;
+}
+
+function formatDurationMinutesLabel(totalMinutes) {
+  const safeMinutes = Number(totalMinutes);
+  if (!Number.isFinite(safeMinutes) || safeMinutes <= 0) {
+    return "0h 0m";
+  }
+
+  const hours = Math.floor(safeMinutes / 60);
+  const minutes = safeMinutes % 60;
+  return `${hours}h ${minutes}m`;
+}
+
+function buildOvertimeLogReason({
+  actionLabel,
+  startTime,
+  endTime,
+  totalMinutes,
+  purpose,
+}) {
+  return [
+    actionLabel,
+    `Start Time: ${startTime}`,
+    `End Time: ${endTime}`,
+    `OT Duration: ${formatDurationMinutesLabel(totalMinutes)}`,
+    `Purpose: ${String(purpose ?? "").trim()}`,
+  ].join("\n");
+}
+
+function parsePurposeFromOvertimeMessage(message) {
+  const text = String(message ?? "");
+  const purposePrefix = "Purpose:";
+  const index = text.toLowerCase().indexOf(purposePrefix.toLowerCase());
+  if (index === -1) {
+    return text.trim();
+  }
+
+  return text.slice(index + purposePrefix.length).trim();
+}
+
 function mapAttendanceRecordRow(row) {
   const attendanceDate =
     row.attendance_date instanceof Date
@@ -400,6 +512,7 @@ function mapAttendanceRecordRow(row) {
 
   return {
     attendanceId: Number(row.attendance_id),
+    recordType: row.record_type ?? "actual",
     attendanceDate,
     status: row.status,
     clockIn: row.clock_in ? String(row.clock_in).slice(0, 5) : null,
@@ -551,6 +664,27 @@ function mapAdjustmentRequestRow(row) {
     approvedAt: row.approved_at,
     deniedReason: row.denied_reason,
     sourcePage: row.source_page,
+    attachments: Array.isArray(row.attachments) ? row.attachments : [],
+    logs: Array.isArray(row.logs) ? row.logs : [],
+  };
+}
+
+function mapOvertimeRequestRow(row) {
+  const message = String(row?.message ?? "");
+  const purposeMatch = message.match(/Purpose:\s*([\s\S]*)$/im);
+
+  return {
+    requestId: row.request_id,
+    employeeId: row.employee_id,
+    requestDate: row.request_date ? String(row.request_date).slice(0, 10) : null,
+    startTime: row.clock_in_time ?? null,
+    endTime: row.clock_out_time ?? null,
+    purpose: purposeMatch?.[1]?.trim() ?? message,
+    status: row.status,
+    submittedAt: row.submitted_at,
+    approvedBy: row.approved_by,
+    approvedAt: row.approved_at,
+    deniedReason: row.denied_reason,
     attachments: Array.isArray(row.attachments) ? row.attachments : [],
     logs: Array.isArray(row.logs) ? row.logs : [],
   };
@@ -839,6 +973,7 @@ async function seedCalendarSampleAttendanceIfEmpty(authContext) {
       SELECT 1
       FROM app.attendance_records
       WHERE employee_id = $1::text
+        AND record_type = 'actual'::app.attendance_record_type
       LIMIT 1
       `,
       [resolvedEmployeeId],
@@ -856,6 +991,7 @@ async function seedCalendarSampleAttendanceIfEmpty(authContext) {
         INSERT INTO app.attendance_records (
           employee_id,
           attendance_date,
+          record_type,
           status,
           clock_in,
           clock_out,
@@ -865,13 +1001,14 @@ async function seedCalendarSampleAttendanceIfEmpty(authContext) {
         VALUES (
           $1::text,
           $2::date,
+          'actual'::app.attendance_record_type,
           $3::app.attendance_status,
           $4::time,
           $5::time,
           $6::integer,
           $7::integer
         )
-        ON CONFLICT (employee_id, attendance_date) DO NOTHING
+        ON CONFLICT DO NOTHING
         `,
         [
           resolvedEmployeeId,
@@ -962,6 +1099,7 @@ async function syncAbsentAttendanceForRange(authContext, employeeId, startDate, 
       INSERT INTO app.attendance_records (
         employee_id,
         attendance_date,
+        record_type,
         status,
         clock_in,
         clock_out,
@@ -973,6 +1111,7 @@ async function syncAbsentAttendanceForRange(authContext, employeeId, startDate, 
       SELECT
         $1::text,
         dd.day_date,
+        'actual'::app.attendance_record_type,
         'absent'::app.attendance_status,
         NULL,
         NULL,
@@ -987,76 +1126,15 @@ async function syncAbsentAttendanceForRange(authContext, employeeId, startDate, 
           FROM app.attendance_records ar
           WHERE ar.employee_id = $1::text
             AND ar.attendance_date = dd.day_date
+            AND ar.record_type = 'actual'::app.attendance_record_type
         )
-      ON CONFLICT (employee_id, attendance_date) DO NOTHING
+      ON CONFLICT DO NOTHING
       `,
       [employeeId, startDate, endDate, attendanceTimeZone],
     );
 
-    await client.query(
-      `
-      WITH local_now AS (
-        SELECT
-          (NOW() AT TIME ZONE $4::text)::date AS local_today,
-          (NOW() AT TIME ZONE $4::text)::time AS local_time
-      ),
-      working_days AS (
-        SELECT
-          gs::date AS day_date,
-          c.start_time,
-          c.end_time
-        FROM generate_series($2::date, $3::date, INTERVAL '1 day') gs
-        JOIN app.company_settings_working_hours c
-          ON c.iso_day = EXTRACT(ISODOW FROM gs)::smallint
-        WHERE c.is_working_day = TRUE
-          AND c.start_time IS NOT NULL
-          AND c.end_time IS NOT NULL
-      ),
-      due_days AS (
-        SELECT
-          wd.day_date,
-          EXISTS (
-            SELECT 1
-            FROM app.attendance_activity_logs al
-            WHERE al.employee_id = $1::text
-              AND (al.logged_at AT TIME ZONE $4::text)::date = wd.day_date
-              AND (al.logged_at AT TIME ZONE $4::text)::time >= wd.start_time
-              AND (al.logged_at AT TIME ZONE $4::text)::time <= wd.end_time
-          ) AS has_in_hours_logs
-        FROM working_days wd
-        CROSS JOIN local_now ln
-        WHERE wd.day_date < ln.local_today
-           OR (wd.day_date = ln.local_today AND ln.local_time >= wd.end_time)
-      )
-      UPDATE app.attendance_records ar
-      SET
-        status = CASE
-          WHEN dd.has_in_hours_logs = FALSE THEN 'absent'::app.attendance_status
-          WHEN COALESCE(ar.late_minutes, 0) >= 15 THEN 'late'::app.attendance_status
-          ELSE 'present'::app.attendance_status
-        END,
-        clock_in = CASE WHEN dd.has_in_hours_logs = FALSE THEN NULL ELSE ar.clock_in END,
-        clock_out = CASE WHEN dd.has_in_hours_logs = FALSE THEN NULL ELSE ar.clock_out END,
-        work_duration_minutes = CASE
-          WHEN dd.has_in_hours_logs = FALSE THEN 0
-          ELSE ar.work_duration_minutes
-        END,
-        late_minutes = CASE WHEN dd.has_in_hours_logs = FALSE THEN 0 ELSE ar.late_minutes END,
-        total_break_duration_minutes = CASE
-          WHEN dd.has_in_hours_logs = FALSE THEN 0
-          ELSE ar.total_break_duration_minutes
-        END,
-        active_break_started_at = CASE
-          WHEN dd.has_in_hours_logs = FALSE THEN NULL
-          ELSE ar.active_break_started_at
-        END
-      FROM due_days dd
-      WHERE ar.employee_id = $1::text
-        AND ar.attendance_date = dd.day_date
-        AND ar.status IN ('present'::app.attendance_status, 'late'::app.attendance_status, 'absent'::app.attendance_status)
-      `,
-      [employeeId, startDate, endDate, attendanceTimeZone],
-    );
+    // Keep existing actual attendance rows stable; this sync only backfills missing
+    // due working days as absent and must not overwrite explicit/manual statuses.
   });
 }
 
@@ -1112,6 +1190,7 @@ async function getEmployeeRowForApi(client, employeeId) {
       FROM app.attendance_records ar
       WHERE ar.employee_id = e.employee_id
         AND ar.attendance_date = (NOW() AT TIME ZONE $2::text)::date
+        AND ar.record_type = 'actual'::app.attendance_record_type
       ORDER BY ar.attendance_id DESC
       LIMIT 1
     ) ta ON TRUE
@@ -2176,6 +2255,8 @@ app.get("/me/attendance", requireAuth, async (req, res) => {
     where.push(`attendance_date <= $${params.length}::date`);
   }
 
+  where.push(`record_type = 'actual'::app.attendance_record_type`);
+
   const filterSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   try {
@@ -2195,19 +2276,69 @@ app.get("/me/attendance", requireAuth, async (req, res) => {
     const rows = await withRlsContext(req.auth, async (client) => {
       const result = await client.query(
         `
+        WITH attendance_dates AS (
+          SELECT DISTINCT ar.attendance_date
+          FROM app.attendance_records ar
+          ${filterSql}
+        ),
+        actual_rows AS (
+          SELECT
+            ar.attendance_date,
+            ar.attendance_id,
+            ar.status,
+            ar.clock_in,
+            ar.clock_out,
+            ar.work_duration_minutes,
+            ar.late_minutes,
+            ar.total_break_duration_minutes,
+            ar.active_break_started_at
+          FROM app.attendance_records ar
+          WHERE ar.employee_id = $1::text
+            AND ar.record_type = 'actual'::app.attendance_record_type
+        ),
+        adjusted_rows AS (
+          SELECT
+            ar.attendance_date,
+            ar.attendance_id,
+            ar.status,
+            ar.clock_in,
+            ar.clock_out,
+            ar.work_duration_minutes,
+            ar.late_minutes,
+            ar.total_break_duration_minutes
+          FROM app.attendance_records ar
+          WHERE ar.employee_id = $1::text
+            AND ar.record_type = 'adjusted'::app.attendance_record_type
+            AND ar.approval_status = 'approved'::app.request_status
+        ),
+        overtime_rows AS (
+          SELECT
+            ar.attendance_date,
+            ar.attendance_id,
+            ar.work_duration_minutes
+          FROM app.attendance_records ar
+          WHERE ar.employee_id = $1::text
+            AND ar.record_type = 'overtime'::app.attendance_record_type
+            AND ar.approval_status = 'approved'::app.request_status
+        )
         SELECT
-          attendance_id,
-          attendance_date,
-          status,
-          clock_in,
-          clock_out,
-          work_duration_minutes,
-          late_minutes,
-          total_break_duration_minutes,
-          active_break_started_at
-        FROM app.attendance_records
-        ${filterSql}
-        ORDER BY attendance_date DESC
+          COALESCE(actual_rows.attendance_id, adjusted_rows.attendance_id, overtime_rows.attendance_id) AS attendance_id,
+          d.attendance_date,
+          'actual'::app.attendance_record_type AS record_type,
+          COALESCE(adjusted_rows.status, actual_rows.status, 'absent'::app.attendance_status) AS status,
+          COALESCE(adjusted_rows.clock_in, actual_rows.clock_in) AS clock_in,
+          COALESCE(adjusted_rows.clock_out, actual_rows.clock_out) AS clock_out,
+          (COALESCE(adjusted_rows.work_duration_minutes, actual_rows.work_duration_minutes, 0)
+            + COALESCE(overtime_rows.work_duration_minutes, 0))::integer AS work_duration_minutes,
+          COALESCE(adjusted_rows.late_minutes, actual_rows.late_minutes, 0) AS late_minutes,
+          COALESCE(adjusted_rows.total_break_duration_minutes, actual_rows.total_break_duration_minutes, 0)
+            AS total_break_duration_minutes,
+          actual_rows.active_break_started_at
+        FROM attendance_dates d
+        LEFT JOIN actual_rows ON actual_rows.attendance_date = d.attendance_date
+        LEFT JOIN adjusted_rows ON adjusted_rows.attendance_date = d.attendance_date
+        LEFT JOIN overtime_rows ON overtime_rows.attendance_date = d.attendance_date
+        ORDER BY d.attendance_date DESC
         LIMIT 90
         `,
         params,
@@ -2247,6 +2378,7 @@ app.get("/me/attendance/today", requireAuth, async (req, res) => {
         SELECT
           attendance_id,
           attendance_date,
+          record_type,
           status,
           clock_in,
           clock_out,
@@ -2257,6 +2389,7 @@ app.get("/me/attendance/today", requireAuth, async (req, res) => {
         FROM app.attendance_records
         WHERE employee_id = $1::text
           AND attendance_date = (NOW() AT TIME ZONE $2::text)::date
+          AND record_type = 'actual'::app.attendance_record_type
         LIMIT 1
         `,
         [resolvedEmployeeId, attendanceTimeZone],
@@ -2341,6 +2474,7 @@ app.post("/me/attendance/clock-in", requireAuth, async (req, res) => {
         SELECT
           attendance_id,
           attendance_date,
+          record_type,
           status,
           clock_in,
           clock_out,
@@ -2351,6 +2485,7 @@ app.post("/me/attendance/clock-in", requireAuth, async (req, res) => {
         FROM app.attendance_records
         WHERE employee_id = $1::text
           AND attendance_date = $2::date
+          AND record_type = 'actual'::app.attendance_record_type
         LIMIT 1
         FOR UPDATE
         `,
@@ -2398,6 +2533,7 @@ app.post("/me/attendance/clock-in", requireAuth, async (req, res) => {
           INSERT INTO app.attendance_records (
             employee_id,
             attendance_date,
+            record_type,
             status,
             clock_in,
             clock_out,
@@ -2409,6 +2545,7 @@ app.post("/me/attendance/clock-in", requireAuth, async (req, res) => {
           VALUES (
             $1::text,
             $2::date,
+            'actual'::app.attendance_record_type,
             $4::app.attendance_status,
             $3::time,
             NULL,
@@ -2420,6 +2557,7 @@ app.post("/me/attendance/clock-in", requireAuth, async (req, res) => {
           RETURNING
             attendance_id,
             attendance_date,
+            record_type,
             status,
             clock_in,
             clock_out,
@@ -2520,6 +2658,7 @@ app.post("/me/attendance/break/start", requireAuth, async (req, res) => {
         SELECT
           attendance_id,
           attendance_date,
+          record_type,
           status,
           clock_in,
           clock_out,
@@ -2530,6 +2669,7 @@ app.post("/me/attendance/break/start", requireAuth, async (req, res) => {
         FROM app.attendance_records
         WHERE employee_id = $1::text
           AND attendance_date = $2::date
+          AND record_type = 'actual'::app.attendance_record_type
         LIMIT 1
         FOR UPDATE
         `,
@@ -2653,6 +2793,7 @@ app.post("/me/attendance/break/end", requireAuth, async (req, res) => {
         SELECT
           attendance_id,
           attendance_date,
+          record_type,
           status,
           clock_in,
           clock_out,
@@ -2663,6 +2804,7 @@ app.post("/me/attendance/break/end", requireAuth, async (req, res) => {
         FROM app.attendance_records
         WHERE employee_id = $1::text
           AND attendance_date = $2::date
+          AND record_type = 'actual'::app.attendance_record_type
         LIMIT 1
         FOR UPDATE
         `,
@@ -2798,6 +2940,7 @@ app.post("/me/attendance/clock-out", requireAuth, async (req, res) => {
         SELECT
           attendance_id,
           attendance_date,
+          record_type,
           status,
           clock_in,
           clock_out,
@@ -2808,6 +2951,7 @@ app.post("/me/attendance/clock-out", requireAuth, async (req, res) => {
         FROM app.attendance_records
         WHERE employee_id = $1::text
           AND attendance_date = $2::date
+          AND record_type = 'actual'::app.attendance_record_type
         LIMIT 1
         FOR UPDATE
         `,
@@ -3505,6 +3649,596 @@ app.post("/me/attendance-adjustments/:requestId/revoke", requireAuth, async (req
   }
 });
 
+app.get("/me/overtime-requests", requireAuth, async (req, res) => {
+  const from = req.query.from;
+  const to = req.query.to;
+
+  if (typeof from === "string" && !isoDateRegex.test(from)) {
+    return res.status(400).json({ error: "Invalid from date. Use YYYY-MM-DD" });
+  }
+  if (typeof to === "string" && !isoDateRegex.test(to)) {
+    return res.status(400).json({ error: "Invalid to date. Use YYYY-MM-DD" });
+  }
+
+  try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({
+        error: "No employee profile is linked to this account yet.",
+      });
+    }
+
+    const requests = await withRlsContext(req.auth, async (client) => {
+      const params = [resolvedEmployeeId, "home-overtime"];
+      const where = [];
+
+      if (typeof from === "string") {
+        params.push(from);
+        where.push(`r.request_date >= $${params.length}::date`);
+      }
+
+      if (typeof to === "string") {
+        params.push(to);
+        where.push(`r.request_date <= $${params.length}::date`);
+      }
+
+      const dateFilterSql = where.length ? `AND ${where.join(" AND ")}` : "";
+
+      const result = await client.query(
+        `
+        SELECT
+          r.request_id,
+          r.employee_id,
+          r.employee_name,
+          r.position,
+          r.department,
+          r.request_date::text AS request_date,
+          r.shift_date_from::text AS shift_date_from,
+          r.shift_date_to::text AS shift_date_to,
+          r.clock_in_time,
+          r.clock_out_time,
+          r.reason,
+          r.break_duration_minutes,
+          r.total_work_duration_minutes,
+          r.message,
+          r.status,
+          r.submitted_at,
+          r.approved_by,
+          r.approved_at,
+          r.denied_reason,
+          r.source_page,
+          COALESCE(a.items, '[]'::jsonb) AS attachments,
+          COALESCE(l.items, '[]'::jsonb) AS logs
+        FROM app.attendance_adjustment_requests r
+        LEFT JOIN LATERAL (
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'attachmentId', att.attachment_id,
+              'fileName', att.file_name
+            )
+            ORDER BY att.attachment_id
+          ) AS items
+          FROM app.adjustment_request_attachments att
+          WHERE att.request_id = r.request_id
+        ) a ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'logId', lg.log_id,
+              'status', lg.status,
+              'loggedAt', lg.logged_at,
+              'approvedBy', lg.approved_by,
+              'reason', lg.reason
+            )
+            ORDER BY lg.logged_at ASC
+          ) AS items
+          FROM app.adjustment_request_logs lg
+          WHERE lg.request_id = r.request_id
+        ) l ON TRUE
+        WHERE r.employee_id = $1::text
+          AND r.source_page = $2::text
+          ${dateFilterSql}
+        ORDER BY r.request_date DESC, r.submitted_at DESC
+        LIMIT 300
+        `,
+        params,
+      );
+
+      return result.rows;
+    });
+
+    return res.json({
+      requests: requests.map(mapOvertimeRequestRow),
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/me/overtime-requests", requireAuth, async (req, res) => {
+  const parsed = overtimeRequestCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const payload = parsed.data;
+  const totalMinutes = computeTotalWorkDurationMinutes(payload.startTime, payload.endTime, 0);
+  if (totalMinutes == null) {
+    return res.status(400).json({
+      error: "Invalid OT duration. Ensure endTime is later than startTime.",
+    });
+  }
+
+  try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({
+        error: "No employee profile is linked to this account yet.",
+      });
+    }
+
+    const request = await withRlsContext(req.auth, async (client) => {
+      const schedule = await getWorkingScheduleForDate(client, resolvedEmployeeId, payload.date);
+      const overtimeValidationError = validateOvertimeOutsideWorkingHours({
+        startTime: payload.startTime,
+        endTime: payload.endTime,
+        schedule,
+      });
+      if (overtimeValidationError) {
+        throw new Error(overtimeValidationError);
+      }
+
+      const duplicateResult = await client.query(
+        `
+        SELECT request_id, status, submitted_at
+        FROM app.attendance_adjustment_requests
+        WHERE employee_id = $1::text
+          AND request_date = $2::date
+          AND source_page = 'home-overtime'
+          AND status <> 'cancelled'::app.request_status
+        LIMIT 1
+        `,
+        [resolvedEmployeeId, payload.date],
+      );
+
+      const normalizedPurpose = payload.purpose.trim();
+      const message = `Purpose: ${normalizedPurpose}`;
+      const submittedLogReason = buildOvertimeLogReason({
+        actionLabel: "Overtime request submitted",
+        startTime: payload.startTime,
+        endTime: payload.endTime,
+        totalMinutes,
+        purpose: normalizedPurpose,
+      });
+
+      if (duplicateResult.rowCount > 0) {
+        const existingRequest = duplicateResult.rows[0];
+        if (existingRequest.status === "approved") {
+          throw new Error("An approved overtime request already exists for this date. Revoke it first.");
+        }
+
+        const existingRequestId = existingRequest.request_id;
+
+        await client.query(
+          `
+          UPDATE app.attendance_adjustment_requests
+          SET
+            request_date = $1::date,
+            shift_date_from = $2::date,
+            shift_date_to = $3::date,
+            clock_in_time = $4::text,
+            clock_out_time = $5::text,
+            reason = 'Missing logs'::app.adjustment_reason,
+            break_duration_minutes = 0,
+            total_work_duration_minutes = $6::integer,
+            message = $7::text,
+            status = 'pending'::app.request_status,
+            approved_by = NULL,
+            approved_at = NULL,
+            denied_reason = NULL
+          WHERE request_id = $8::text
+          `,
+          [
+            payload.date,
+            payload.date,
+            payload.date,
+            payload.startTime,
+            payload.endTime,
+            totalMinutes,
+            message,
+            existingRequestId,
+          ],
+        );
+
+        await client.query(
+          `DELETE FROM app.adjustment_request_attachments WHERE request_id = $1::text`,
+          [existingRequestId],
+        );
+
+        const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+        for (const fileName of attachments) {
+          await client.query(
+            `INSERT INTO app.adjustment_request_attachments (request_id, file_name) VALUES ($1::text, $2::text)`,
+            [existingRequestId, fileName],
+          );
+        }
+
+        await client.query(`DELETE FROM app.adjustment_request_logs WHERE request_id = $1::text`, [
+          existingRequestId,
+        ]);
+
+        await client.query(
+          `
+          INSERT INTO app.adjustment_request_logs (request_id, status, logged_at, approved_by, reason)
+          VALUES ($1::text, 'pending'::app.request_status, COALESCE($2::timestamptz, NOW()), NULL, $3::text)
+          `,
+          [existingRequestId, existingRequest.submitted_at, submittedLogReason],
+        );
+
+        return getAdjustmentRequestByIdForApi(client, existingRequestId);
+      }
+
+      const employeeResult = await client.query(
+        `
+        SELECT
+          e.first_name,
+          e.last_name,
+          COALESCE(jp.name, e.position, 'Employee') AS position,
+          COALESCE(d.name, 'N/A') AS department
+        FROM app.employees e
+        LEFT JOIN app.job_positions jp ON jp.position_id = e.position_id
+        LEFT JOIN app.departments d ON d.department_id = e.department_id
+        WHERE e.employee_id = $1::text
+        LIMIT 1
+        `,
+        [resolvedEmployeeId],
+      );
+
+      const employeeRow = employeeResult.rows[0] ?? null;
+      const employeeName = employeeRow
+        ? `${employeeRow.first_name ?? ""} ${employeeRow.last_name ?? ""}`.trim() || "Employee"
+        : "Employee";
+
+      const requestId = `ot-home-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+      await client.query(
+        `
+        INSERT INTO app.attendance_adjustment_requests (
+          request_id,
+          employee_id,
+          employee_name,
+          position,
+          department,
+          request_date,
+          shift_date_from,
+          shift_date_to,
+          clock_in_time,
+          clock_out_time,
+          reason,
+          break_duration_minutes,
+          total_work_duration_minutes,
+          message,
+          status,
+          submitted_at,
+          source_page
+        )
+        VALUES (
+          $1::text,
+          $2::text,
+          $3::text,
+          $4::text,
+          $5::text,
+          $6::date,
+          $7::date,
+          $8::date,
+          $9::text,
+          $10::text,
+          'Missing logs'::app.adjustment_reason,
+          0,
+          $11::integer,
+          $12::text,
+          'pending'::app.request_status,
+          NOW(),
+          'home-overtime'
+        )
+        `,
+        [
+          requestId,
+          resolvedEmployeeId,
+          employeeName,
+          employeeRow?.position ?? "Employee",
+          employeeRow?.department ?? "N/A",
+          payload.date,
+          payload.date,
+          payload.date,
+          payload.startTime,
+          payload.endTime,
+          totalMinutes,
+          message,
+        ],
+      );
+
+      const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+      for (const fileName of attachments) {
+        await client.query(
+          `INSERT INTO app.adjustment_request_attachments (request_id, file_name) VALUES ($1::text, $2::text)`,
+          [requestId, fileName],
+        );
+      }
+
+      await client.query(
+        `
+        INSERT INTO app.adjustment_request_logs (request_id, status, logged_at, approved_by, reason)
+        VALUES ($1::text, 'pending'::app.request_status, NOW(), NULL, $2::text)
+        `,
+        [requestId, submittedLogReason],
+      );
+
+      return getAdjustmentRequestByIdForApi(client, requestId);
+    });
+
+    return res.status(201).json({ request: mapOvertimeRequestRow(request) });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.put("/me/overtime-requests/:requestId", requireAuth, async (req, res) => {
+  const requestId = String(req.params.requestId || "").trim();
+  if (!requestId) {
+    return res.status(400).json({ error: "Invalid requestId" });
+  }
+
+  const parsed = overtimeRequestUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const payload = parsed.data;
+  const totalMinutes = computeTotalWorkDurationMinutes(payload.startTime, payload.endTime, 0);
+  if (totalMinutes == null) {
+    return res.status(400).json({
+      error: "Invalid OT duration. Ensure endTime is later than startTime.",
+    });
+  }
+
+  try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({ error: "No employee profile is linked to this account yet." });
+    }
+
+    const request = await withRlsContext(req.auth, async (client) => {
+      const existingResult = await client.query(
+        `
+        SELECT request_id, status, submitted_at
+        FROM app.attendance_adjustment_requests
+        WHERE request_id = $1::text
+          AND employee_id = $2::text
+          AND source_page = 'home-overtime'
+        LIMIT 1
+        `,
+        [requestId, resolvedEmployeeId],
+      );
+
+      if (existingResult.rowCount === 0) {
+        throw new Error("Overtime request not found");
+      }
+
+      const existing = existingResult.rows[0];
+      if (existing.status === "approved") {
+        throw new Error("Approved overtime requests must be revoked before updating");
+      }
+
+      if (existing.status === "cancelled") {
+        throw new Error("Cancelled overtime requests cannot be updated");
+      }
+
+      const schedule = await getWorkingScheduleForDate(client, resolvedEmployeeId, payload.date);
+      const overtimeValidationError = validateOvertimeOutsideWorkingHours({
+        startTime: payload.startTime,
+        endTime: payload.endTime,
+        schedule,
+      });
+      if (overtimeValidationError) {
+        throw new Error(overtimeValidationError);
+      }
+
+      const normalizedPurpose = payload.purpose.trim();
+      const message = `Purpose: ${normalizedPurpose}`;
+      const updatedLogReason = buildOvertimeLogReason({
+        actionLabel: "Overtime request updated by employee",
+        startTime: payload.startTime,
+        endTime: payload.endTime,
+        totalMinutes,
+        purpose: normalizedPurpose,
+      });
+
+      await client.query(
+        `
+        UPDATE app.attendance_adjustment_requests
+        SET
+          request_date = $1::date,
+          shift_date_from = $2::date,
+          shift_date_to = $3::date,
+          clock_in_time = $4::text,
+          clock_out_time = $5::text,
+          reason = 'Missing logs'::app.adjustment_reason,
+          break_duration_minutes = 0,
+          total_work_duration_minutes = $6::integer,
+          message = $7::text,
+          status = 'pending'::app.request_status,
+          approved_by = NULL,
+          approved_at = NULL,
+          denied_reason = NULL
+        WHERE request_id = $8::text
+        `,
+        [
+          payload.date,
+          payload.date,
+          payload.date,
+          payload.startTime,
+          payload.endTime,
+          totalMinutes,
+          message,
+          requestId,
+        ],
+      );
+
+      await client.query(`DELETE FROM app.adjustment_request_attachments WHERE request_id = $1::text`, [
+        requestId,
+      ]);
+      const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+      for (const fileName of attachments) {
+        await client.query(
+          `INSERT INTO app.adjustment_request_attachments (request_id, file_name) VALUES ($1::text, $2::text)`,
+          [requestId, fileName],
+        );
+      }
+
+      await client.query(`DELETE FROM app.adjustment_request_logs WHERE request_id = $1::text`, [requestId]);
+      await client.query(
+        `
+        INSERT INTO app.adjustment_request_logs (request_id, status, logged_at, approved_by, reason)
+        VALUES ($1::text, 'pending'::app.request_status, COALESCE($2::timestamptz, NOW()), NULL, $3::text)
+        `,
+        [requestId, existing.submitted_at, updatedLogReason],
+      );
+
+      return getAdjustmentRequestByIdForApi(client, requestId);
+    });
+
+    return res.json({ request: mapOvertimeRequestRow(request) });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete("/me/overtime-requests/:requestId", requireAuth, async (req, res) => {
+  const requestId = String(req.params.requestId || "").trim();
+  if (!requestId) {
+    return res.status(400).json({ error: "Invalid requestId" });
+  }
+
+  try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({ error: "No employee profile is linked to this account yet." });
+    }
+
+    await withRlsContext(req.auth, async (client) => {
+      const existingResult = await client.query(
+        `
+        SELECT request_id, status
+        FROM app.attendance_adjustment_requests
+        WHERE request_id = $1::text
+          AND employee_id = $2::text
+          AND source_page = 'home-overtime'
+        LIMIT 1
+        `,
+        [requestId, resolvedEmployeeId],
+      );
+
+      if (existingResult.rowCount === 0) {
+        throw new Error("Overtime request not found");
+      }
+
+      const existing = existingResult.rows[0];
+      if (existing.status === "approved") {
+        throw new Error("Approved overtime requests cannot be deleted. Revoke first.");
+      }
+
+      await client.query(`DELETE FROM app.attendance_adjustment_requests WHERE request_id = $1::text`, [
+        requestId,
+      ]);
+    });
+
+    return res.json({ deleted: true, requestId });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/me/overtime-requests/:requestId/revoke", requireAuth, async (req, res) => {
+  const requestId = String(req.params.requestId || "").trim();
+  if (!requestId) {
+    return res.status(400).json({ error: "Invalid requestId" });
+  }
+
+  try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({ error: "No employee profile is linked to this account yet." });
+    }
+
+    const request = await withRlsContext(req.auth, async (client) => {
+      const existingResult = await client.query(
+        `
+        SELECT
+          request_id,
+          status,
+          submitted_at,
+          clock_in_time,
+          clock_out_time,
+          total_work_duration_minutes,
+          message
+        FROM app.attendance_adjustment_requests
+        WHERE request_id = $1::text
+          AND employee_id = $2::text
+          AND source_page = 'home-overtime'
+        LIMIT 1
+        `,
+        [requestId, resolvedEmployeeId],
+      );
+
+      if (existingResult.rowCount === 0) {
+        throw new Error("Overtime request not found");
+      }
+
+      const existing = existingResult.rows[0];
+      if (existing.status !== "approved") {
+        throw new Error("Only approved overtime requests can be revoked");
+      }
+
+      const revokedLogReason = buildOvertimeLogReason({
+        actionLabel: "Overtime approval revoked by employee",
+        startTime: String(existing.clock_in_time ?? ""),
+        endTime: String(existing.clock_out_time ?? ""),
+        totalMinutes: Number(existing.total_work_duration_minutes ?? 0),
+        purpose: parsePurposeFromOvertimeMessage(existing.message),
+      });
+
+      await client.query(
+        `
+        UPDATE app.attendance_adjustment_requests
+        SET
+          status = 'pending'::app.request_status,
+          approved_by = NULL,
+          approved_at = NULL,
+          denied_reason = NULL
+        WHERE request_id = $1::text
+        `,
+        [requestId],
+      );
+
+      await client.query(`DELETE FROM app.adjustment_request_logs WHERE request_id = $1::text`, [requestId]);
+      await client.query(
+        `
+        INSERT INTO app.adjustment_request_logs (request_id, status, logged_at, approved_by, reason)
+        VALUES ($1::text, 'pending'::app.request_status, COALESCE($2::timestamptz, NOW()), NULL, $3::text)
+        `,
+        [requestId, existing.submitted_at, revokedLogReason],
+      );
+
+      return getAdjustmentRequestByIdForApi(client, requestId);
+    });
+
+    return res.json({ request: mapOvertimeRequestRow(request), revoked: true });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
 app.get("/me/calendar", requireAuth, async (req, res) => {
   const from = req.query.from;
   const to = req.query.to;
@@ -3533,7 +4267,10 @@ app.get("/me/calendar", requireAuth, async (req, res) => {
     await syncAbsentAttendanceForRange(req.auth, resolvedEmployeeId, startDate, endDate);
 
     const attendanceWhere = [];
-    const attendanceParams = [];
+    const attendanceParams = [resolvedEmployeeId];
+
+    attendanceWhere.push(`ar.employee_id = $1::text`);
+    attendanceWhere.push(`ar.record_type = 'actual'::app.attendance_record_type`);
 
     if (typeof from === "string") {
       attendanceParams.push(from);
@@ -3566,6 +4303,91 @@ app.get("/me/calendar", requireAuth, async (req, res) => {
     const { attendanceRows, holidayRows } = await withRlsContext(req.auth, async (client) => {
       const attendanceResult = await client.query(
         `
+        WITH attendance_dates AS (
+          SELECT DISTINCT ar.attendance_date
+          FROM app.attendance_records ar
+          ${attendanceFilterSql}
+        ),
+        actual_rows AS (
+          SELECT
+            ar.attendance_date,
+            ar.status,
+            ar.clock_in,
+            ar.clock_out,
+            ar.work_duration_minutes,
+            ar.late_minutes,
+            ar.total_break_duration_minutes,
+            ar.active_break_started_at
+          FROM app.attendance_records ar
+          WHERE ar.employee_id = $1::text
+            AND ar.record_type = 'actual'::app.attendance_record_type
+        ),
+        adjusted_rows AS (
+          SELECT
+            ar.attendance_date,
+            ar.status,
+            ar.clock_in,
+            ar.clock_out,
+            ar.work_duration_minutes,
+            ar.late_minutes,
+            ar.total_break_duration_minutes
+          FROM app.attendance_records ar
+          WHERE ar.employee_id = $1::text
+            AND ar.record_type = 'adjusted'::app.attendance_record_type
+            AND ar.approval_status = 'approved'::app.request_status
+        ),
+        overtime_rows AS (
+          SELECT
+            ar.attendance_date,
+            ar.work_duration_minutes
+          FROM app.attendance_records ar
+          WHERE ar.employee_id = $1::text
+            AND ar.record_type = 'overtime'::app.attendance_record_type
+            AND ar.approval_status = 'approved'::app.request_status
+        ),
+        latest_adjustment_requests AS (
+          SELECT DISTINCT ON (r.request_date)
+            r.request_date,
+            r.status
+          FROM app.attendance_adjustment_requests r
+          WHERE r.employee_id = $1::text
+            AND r.source_page = 'home'
+          ORDER BY r.request_date, r.submitted_at DESC, r.request_id DESC
+        ),
+        latest_overtime_requests AS (
+          SELECT DISTINCT ON (r.request_date)
+            r.request_date,
+            r.status
+          FROM app.attendance_adjustment_requests r
+          WHERE r.employee_id = $1::text
+            AND r.source_page = 'home-overtime'
+          ORDER BY r.request_date, r.submitted_at DESC, r.request_id DESC
+        ),
+        effective_rows AS (
+          SELECT
+            d.attendance_date,
+            COALESCE(adjusted_rows.status, actual_rows.status, 'absent'::app.attendance_status) AS status,
+            COALESCE(adjusted_rows.clock_in, actual_rows.clock_in) AS clock_in,
+            COALESCE(adjusted_rows.clock_out, actual_rows.clock_out) AS clock_out,
+            (COALESCE(adjusted_rows.work_duration_minutes, actual_rows.work_duration_minutes, 0)
+              + COALESCE(overtime_rows.work_duration_minutes, 0))::integer AS work_duration_minutes,
+            COALESCE(adjusted_rows.late_minutes, actual_rows.late_minutes, 0) AS late_minutes,
+            COALESCE(adjusted_rows.total_break_duration_minutes, actual_rows.total_break_duration_minutes, 0)
+              AS total_break_duration_minutes,
+            actual_rows.active_break_started_at,
+            CASE
+              WHEN adjusted_rows.attendance_date IS NOT NULL THEN 'adjusted'
+              ELSE 'actual'
+            END AS effective_record_type,
+            lar.status AS adjustment_approval_status,
+            lor.status AS overtime_approval_status
+          FROM attendance_dates d
+          LEFT JOIN actual_rows ON actual_rows.attendance_date = d.attendance_date
+          LEFT JOIN adjusted_rows ON adjusted_rows.attendance_date = d.attendance_date
+          LEFT JOIN overtime_rows ON overtime_rows.attendance_date = d.attendance_date
+          LEFT JOIN latest_adjustment_requests lar ON lar.request_date = d.attendance_date
+          LEFT JOIN latest_overtime_requests lor ON lor.request_date = d.attendance_date
+        )
         SELECT
           ar.attendance_date::text AS attendance_date,
           ar.status,
@@ -3573,9 +4395,12 @@ app.get("/me/calendar", requireAuth, async (req, res) => {
           ar.clock_out,
           ar.work_duration_minutes,
           ar.late_minutes,
+          ar.effective_record_type,
+          ar.adjustment_approval_status,
+          ar.overtime_approval_status,
           h.name AS holiday_name,
           h.holiday_type
-        FROM app.attendance_records ar
+        FROM effective_rows ar
         LEFT JOIN LATERAL (
           SELECT
             string_agg(
@@ -3591,7 +4416,6 @@ app.get("/me/calendar", requireAuth, async (req, res) => {
           FROM app.holidays h1
           WHERE h1.holiday_date = ar.attendance_date
         ) h ON TRUE
-        ${attendanceFilterSql}
         ORDER BY ar.attendance_date DESC
         LIMIT 365
         `,
@@ -3628,6 +4452,9 @@ app.get("/me/calendar", requireAuth, async (req, res) => {
       clockOut: row.clock_out ? String(row.clock_out).slice(0, 5) : null,
       workDurationMinutes: row.work_duration_minutes,
       lateMinutes: row.late_minutes,
+      effectiveRecordType: row.effective_record_type ?? "actual",
+      adjustmentApprovalStatus: row.adjustment_approval_status ?? null,
+      overtimeApprovalStatus: row.overtime_approval_status ?? null,
       holidayName: row.holiday_name ?? null,
       holidayType: row.holiday_type ?? null,
     }));
@@ -4139,6 +4966,7 @@ app.get(
             FROM app.attendance_records ar
             WHERE ar.employee_id = e.employee_id
               AND ar.attendance_date = (NOW() AT TIME ZONE $1::text)::date
+              AND ar.record_type = 'actual'::app.attendance_record_type
             ORDER BY ar.attendance_id DESC
             LIMIT 1
           ) ta ON TRUE

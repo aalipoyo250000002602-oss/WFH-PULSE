@@ -1,0 +1,4 @@
+-- Intentionally no-op.
+-- The unique index on (employee_id, attendance_date, record_type) is part of
+-- the typed attendance model and should remain in place even if this repair
+-- migration is rolled back.
