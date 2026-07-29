@@ -1,6 +1,5 @@
-import { Calendar, Cake, Award } from "lucide-react";
+import { Calendar, Cake } from "lucide-react";
 import { Badge } from "./ui/badge";
-import { getEmployees } from "./employee-data";
 import { motion } from "motion/react";
 
 interface Holiday {
@@ -8,42 +7,38 @@ interface Holiday {
   name: string;
   date: string;
   type: 'public' | 'personal';
+  countryCode?: string;
+  countryName?: string;
   daysUntil: number;
 }
 
 interface UpcomingHolidaysProps {
   holidays: Holiday[];
+  celebrations: Array<{
+    id: string;
+    type: "birthday";
+    employeeId: string;
+    name: string;
+    date: string;
+    daysUntil: number;
+  }>;
 }
 
-export function UpcomingHolidays({ holidays }: UpcomingHolidaysProps) {
+export function UpcomingHolidays({ holidays, celebrations }: UpcomingHolidaysProps) {
   const upcomingHolidays = holidays
     .filter(holiday => holiday.daysUntil >= 0)
     .sort((a, b) => a.daysUntil - b.daysUntil)
-    .slice(0, 3);
+    .slice(0, 8);
 
-  const employees = getEmployees();
-  const today = new Date(2025, 9, 19); // Oct 19, 2025
-
-  // Find employees with birthday today
-  const birthdaysToday = employees.filter(emp => {
-    if (!emp.birthday) return false;
-    const bday = new Date(emp.birthday);
-    return bday.getMonth() === today.getMonth() && bday.getDate() === today.getDate();
-  }).slice(0, 2); // Limit to 2
-
-  // Find employees with work anniversary today
-  const anniversariesToday = employees.filter(emp => {
-    if (!emp.joinDate || emp.employmentStatus !== "active") return false;
-    const joinDate = new Date(emp.joinDate);
-    return joinDate.getMonth() === today.getMonth() && 
-           joinDate.getDate() === today.getDate() &&
-           joinDate.getFullYear() !== today.getFullYear(); // Not their first day
-  }).slice(0, 2); // Limit to 2
+  const upcomingBirthdays = celebrations
+    .filter((item) => item.daysUntil >= 0)
+    .sort((a, b) => a.daysUntil - b.daysUntil)
+    .slice(0, 8);
 
   return (
     <div className="space-y-4">
-          {/* Birthdays Today */}
-          {birthdaysToday.length > 0 && (
+          {/* Upcoming Birthdays (Current Year) */}
+          {upcomingBirthdays.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -51,58 +46,32 @@ export function UpcomingHolidays({ holidays }: UpcomingHolidaysProps) {
             >
               <p className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-1">
                 <Cake className="h-3 w-3" />
-                Birthdays Today
+                Upcoming Birthdays
               </p>
               <div className="space-y-2">
-                {birthdaysToday.map((emp, index) => (
+                {upcomingBirthdays.map((item, index) => (
                   <motion.div 
-                    key={emp.id} 
+                    key={item.id}
                     className="flex items-center gap-2 p-2 rounded-lg bg-vibrant-pink/10"
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.3, delay: 0.15 + index * 0.05 }}
                   >
                     <Cake className="h-4 w-4 text-vibrant-pink flex-shrink-0" />
-                    <p className="text-sm">
-                      {emp.firstName} {emp.lastName} 🎂
-                    </p>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{item.name} 🎂</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(item.date).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric'
+                        })}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="border-vibrant-pink text-vibrant-pink">
+                      {item.daysUntil === 0 ? 'Today' : item.daysUntil === 1 ? 'Tomorrow' : `${item.daysUntil} days`}
+                    </Badge>
                   </motion.div>
                 ))}
-              </div>
-            </motion.div>
-          )}
-
-          {/* Work Anniversaries Today */}
-          {anniversariesToday.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: birthdaysToday.length > 0 ? 0.2 : 0.1 }}
-            >
-              <p className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-1">
-                <Award className="h-3 w-3" />
-                Work Anniversaries Today
-              </p>
-              <div className="space-y-2">
-                {anniversariesToday.map((emp, index) => {
-                  const joinDate = new Date(emp.joinDate!);
-                  const years = today.getFullYear() - joinDate.getFullYear();
-                  
-                  return (
-                    <motion.div 
-                      key={emp.id} 
-                      className="flex items-center gap-2 p-2 rounded-lg bg-vibrant-blue/10"
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.3, delay: (birthdaysToday.length > 0 ? 0.25 : 0.15) + index * 0.05 }}
-                    >
-                      <Award className="h-4 w-4 text-vibrant-blue flex-shrink-0" />
-                      <p className="text-sm">
-                        {emp.firstName} {emp.lastName} - {years} {years === 1 ? "year" : "years"} 🎉
-                      </p>
-                    </motion.div>
-                  );
-                })}
               </div>
             </motion.div>
           )}
@@ -114,7 +83,7 @@ export function UpcomingHolidays({ holidays }: UpcomingHolidaysProps) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ 
                 duration: 0.3, 
-                delay: (birthdaysToday.length > 0 ? 0.1 : 0) + (anniversariesToday.length > 0 ? 0.1 : 0) + 0.1
+                delay: (upcomingBirthdays.length > 0 ? 0.1 : 0) + 0.1
               }}
             >
               <p className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-1">
@@ -130,7 +99,7 @@ export function UpcomingHolidays({ holidays }: UpcomingHolidaysProps) {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ 
                       duration: 0.3, 
-                      delay: (birthdaysToday.length > 0 ? 0.15 : 0) + (anniversariesToday.length > 0 ? 0.15 : 0) + 0.15 + index * 0.05
+                      delay: (upcomingBirthdays.length > 0 ? 0.15 : 0) + 0.15 + index * 0.05
                     }}
                   >
                     <div className="flex items-center gap-3">
@@ -142,6 +111,7 @@ export function UpcomingHolidays({ holidays }: UpcomingHolidaysProps) {
                             month: 'short',
                             day: 'numeric'
                           })}
+                          {holiday.countryName ? ` • ${holiday.countryName}` : ""}
                         </p>
                       </div>
                     </div>
@@ -165,7 +135,7 @@ export function UpcomingHolidays({ holidays }: UpcomingHolidaysProps) {
             </motion.div>
           )}
 
-          {upcomingHolidays.length === 0 && birthdaysToday.length === 0 && anniversariesToday.length === 0 && (
+          {upcomingHolidays.length === 0 && upcomingBirthdays.length === 0 && (
             <motion.p 
               className="text-muted-foreground text-sm text-center py-4"
               initial={{ opacity: 0 }}

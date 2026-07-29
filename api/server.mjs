@@ -3576,7 +3576,21 @@ app.get("/me/calendar", requireAuth, async (req, res) => {
           h.name AS holiday_name,
           h.holiday_type
         FROM app.attendance_records ar
-        LEFT JOIN app.holidays h ON h.holiday_date = ar.attendance_date
+        LEFT JOIN LATERAL (
+          SELECT
+            string_agg(
+              concat(h1.name, ' (', h1.country_code, ')'),
+              ', '
+              ORDER BY h1.country_code, h1.name
+            ) AS name,
+            CASE
+              WHEN bool_or(h1.holiday_type = 'public'::app.holiday_type)
+                THEN 'public'::app.holiday_type
+              ELSE 'personal'::app.holiday_type
+            END AS holiday_type
+          FROM app.holidays h1
+          WHERE h1.holiday_date = ar.attendance_date
+        ) h ON TRUE
         ${attendanceFilterSql}
         ORDER BY ar.attendance_date DESC
         LIMIT 365
@@ -3590,10 +3604,12 @@ app.get("/me/calendar", requireAuth, async (req, res) => {
           h.holiday_id,
           h.name,
           h.holiday_date::text AS holiday_date,
-          h.holiday_type
+          h.holiday_type,
+          h.country_code,
+          h.country_name
         FROM app.holidays h
         ${holidaysFilterSql}
-        ORDER BY h.holiday_date ASC
+        ORDER BY h.holiday_date ASC, h.country_code ASC
         LIMIT 365
         `,
         holidaysParams,
@@ -3633,14 +3649,82 @@ app.get("/me/calendar", requireAuth, async (req, res) => {
         name: row.name,
         date: String(row.holiday_date).slice(0, 10),
         type: row.holiday_type,
+        countryCode: row.country_code,
+        countryName: row.country_name,
         daysUntil,
       };
+    });
+
+    const celebrations = await withRlsContext(req.auth, async (client) => {
+      const celebrationRowsResult = await client.query(
+        `
+        SELECT employee_id, first_name, last_name, birthday
+        FROM app.employees
+        WHERE birthday IS NOT NULL
+          AND employment_status = 'active'::app.employment_status
+        ORDER BY first_name, last_name
+        `,
+      );
+
+      const rows = celebrationRowsResult.rows;
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999);
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
+
+      const birthdayItems = rows
+        .map((row) => {
+          if (!row.birthday) {
+            return null;
+          }
+
+          const rawBirthday = new Date(String(row.birthday));
+          if (Number.isNaN(rawBirthday.getTime())) {
+            return null;
+          }
+
+          let month = rawBirthday.getMonth();
+          let day = rawBirthday.getDate();
+
+          if (month === 1 && day === 29) {
+            const isLeapYear =
+              currentYear % 4 === 0 && (currentYear % 100 !== 0 || currentYear % 400 === 0);
+            if (!isLeapYear) {
+              day = 28;
+            }
+          }
+
+          const celebrationDate = new Date(currentYear, month, day, 0, 0, 0, 0);
+          if (celebrationDate < todayStart || celebrationDate > endOfYear) {
+            return null;
+          }
+
+          const daysUntil = Math.ceil(
+            (celebrationDate.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24),
+          );
+
+          return {
+            id: `birthday-${row.employee_id}-${currentYear}`,
+            type: "birthday",
+            employeeId: row.employee_id,
+            name: `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim() || "Employee",
+            date: celebrationDate.toISOString().slice(0, 10),
+            daysUntil,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.daysUntil - b.daysUntil)
+        .slice(0, 30);
+
+      return birthdayItems;
     });
 
     return res.json({
       attendance,
       attendanceByDate,
       holidays,
+      celebrations,
       seeded: seedResult.seeded,
       insertedRecords: seedResult.inserted,
     });

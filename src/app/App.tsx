@@ -83,6 +83,17 @@ interface HolidayState {
   name: string;
   date: string;
   type: "public" | "personal";
+  countryCode?: string;
+  countryName?: string;
+  daysUntil: number;
+}
+
+interface CelebrationState {
+  id: string;
+  type: "birthday";
+  employeeId: string;
+  name: string;
+  date: string;
   daysUntil: number;
 }
 
@@ -823,6 +834,8 @@ export default function App() {
               name: String(holiday?.name ?? "Holiday"),
               date,
               type,
+              countryCode: holiday?.countryCode ? String(holiday.countryCode) : undefined,
+              countryName: holiday?.countryName ? String(holiday.countryName) : undefined,
               daysUntil:
                 typeof holiday?.daysUntil === "number"
                   ? holiday.daysUntil
@@ -834,6 +847,28 @@ export default function App() {
         if (nextHolidays.length > 0) {
           setHolidays(nextHolidays);
         }
+      }
+
+      if (Array.isArray(payload?.celebrations)) {
+        const nextCelebrations: CelebrationState[] = payload.celebrations
+          .map((celebration: any) => {
+            const date = typeof celebration?.date === "string" ? celebration.date.slice(0, 10) : "";
+            if (!date || !isoDateRegex.test(date)) {
+              return null;
+            }
+
+            return {
+              id: String(celebration?.id ?? `birthday-${celebration?.employeeId ?? "emp"}-${date}`),
+              type: "birthday" as const,
+              employeeId: String(celebration?.employeeId ?? ""),
+              name: String(celebration?.name ?? "Employee"),
+              date,
+              daysUntil: Number(celebration?.daysUntil ?? 0),
+            };
+          })
+          .filter(Boolean) as CelebrationState[];
+
+        setCelebrations(nextCelebrations);
       }
     } catch {
       // Keep static fallback calendar data when endpoint is unavailable.
@@ -1181,6 +1216,7 @@ export default function App() {
       daysUntil: 164,
     },
   ]);
+  const [celebrations, setCelebrations] = useState<CelebrationState[]>([]);
 
   // Apply theme to document
   useEffect(() => {
@@ -1598,6 +1634,7 @@ export default function App() {
             attendanceData={attendanceData}
             calendarAttendanceDetails={calendarAttendanceDetails}
             holidays={holidays}
+            celebrations={celebrations}
             workingHours={formatWorkingHours()}
             scheduledStartTime={workingHours.start}
             location="Tech Hub Office, Floor 5"

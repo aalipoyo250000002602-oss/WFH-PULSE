@@ -231,9 +231,12 @@ CREATE TABLE IF NOT EXISTS app.leave_request_logs (
 CREATE TABLE IF NOT EXISTS app.holidays (
   holiday_id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  holiday_date DATE NOT NULL UNIQUE,
+  holiday_date DATE NOT NULL,
+  country_code TEXT NOT NULL DEFAULT 'PH',
+  country_name TEXT NOT NULL DEFAULT 'Philippines',
   holiday_type app.holiday_type NOT NULL,
-  days_until INTEGER
+  days_until INTEGER,
+  UNIQUE (country_code, holiday_date)
 );
 
 CREATE TABLE IF NOT EXISTS app_auth.roles (

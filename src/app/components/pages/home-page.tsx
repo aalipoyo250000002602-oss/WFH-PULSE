@@ -50,6 +50,14 @@ interface HomePageProps {
     }
   >;
   holidays: any[];
+  celebrations: Array<{
+    id: string;
+    type: "birthday";
+    employeeId: string;
+    name: string;
+    date: string;
+    daysUntil: number;
+  }>;
   workingHours: string;
   scheduledStartTime: string;
   location: string;
@@ -78,6 +86,7 @@ export function HomePage({
   attendanceData,
   calendarAttendanceDetails,
   holidays,
+  celebrations,
   workingHours,
   scheduledStartTime,
   apiBaseUrl,
@@ -731,7 +740,7 @@ export function HomePage({
                     }}
                     exit={{ y: -10 }}
                   >
-                    <UpcomingHolidays holidays={holidays} />
+                    <UpcomingHolidays holidays={holidays} celebrations={celebrations} />
                   </motion.div>
                 </CardContent>
               </motion.div>
