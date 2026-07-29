@@ -43,12 +43,22 @@ function runCommand(label, command, args, env, dryRun) {
     return;
   }
 
-  const result = spawnSync(command, args, {
-    cwd: rootDir,
-    env,
-    stdio: "inherit",
-    shell: process.platform === "win32",
-  });
+  const isWindows = process.platform === "win32";
+  const useCmdShim = isWindows && command.toLowerCase() === "corepack";
+
+  const result = useCmdShim
+    ? spawnSync("cmd.exe", ["/d", "/s", "/c", `${command} ${args.join(" ")}`], {
+        cwd: rootDir,
+        env,
+        stdio: "inherit",
+        shell: false,
+      })
+    : spawnSync(command, args, {
+        cwd: rootDir,
+        env,
+        stdio: "inherit",
+        shell: false,
+      });
 
   if (result.status !== 0) {
     throw new Error(`[${label}] failed with exit code ${result.status ?? "unknown"}`);
