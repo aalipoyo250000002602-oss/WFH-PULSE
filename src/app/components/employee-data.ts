@@ -27,6 +27,7 @@ export interface Employee {
   employmentType: string;
   clockInTime?: string;
   clockOutTime?: string;
+  isOnBreak?: boolean;
   workDuration?: string;
   lateMinutes?: number;
   department: string;

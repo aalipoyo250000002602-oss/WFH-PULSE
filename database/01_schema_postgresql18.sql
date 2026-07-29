@@ -93,9 +93,43 @@ CREATE TABLE IF NOT EXISTS app.attendance_records (
   clock_in TIME,
   clock_out TIME,
   work_duration_minutes INTEGER,
+  total_break_duration_minutes INTEGER NOT NULL DEFAULT 0,
+  active_break_started_at TIMESTAMPTZ,
   late_minutes INTEGER DEFAULT 0,
   UNIQUE (employee_id, attendance_date)
 );
+
+CREATE TABLE IF NOT EXISTS app.attendance_break_logs (
+  break_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  attendance_id BIGINT NOT NULL REFERENCES app.attendance_records(attendance_id) ON DELETE CASCADE,
+  break_started_at TIMESTAMPTZ NOT NULL,
+  break_ended_at TIMESTAMPTZ,
+  break_duration_minutes INTEGER,
+  CHECK (break_ended_at IS NULL OR break_ended_at >= break_started_at),
+  CHECK (break_duration_minutes IS NULL OR break_duration_minutes >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_attendance_break_logs_attendance_started
+  ON app.attendance_break_logs (attendance_id, break_started_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_attendance_break_logs_single_open_break
+  ON app.attendance_break_logs (attendance_id)
+  WHERE break_ended_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS app.attendance_activity_logs (
+  activity_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  attendance_id BIGINT NOT NULL REFERENCES app.attendance_records(attendance_id) ON DELETE CASCADE,
+  employee_id TEXT NOT NULL REFERENCES app.employees(employee_id) ON DELETE CASCADE,
+  action TEXT NOT NULL CHECK (action IN ('clock_in', 'clock_out', 'break_start', 'break_end')),
+  logged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS idx_attendance_activity_logs_attendance
+  ON app.attendance_activity_logs (attendance_id, logged_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_attendance_activity_logs_employee
+  ON app.attendance_activity_logs (employee_id, logged_at DESC);
 
 CREATE TABLE IF NOT EXISTS app.attendance_leave_details (
   attendance_id BIGINT PRIMARY KEY REFERENCES app.attendance_records(attendance_id) ON DELETE CASCADE,

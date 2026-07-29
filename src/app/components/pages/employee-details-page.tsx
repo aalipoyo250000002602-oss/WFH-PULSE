@@ -121,6 +121,9 @@ function mapApiEmployeeToState(row: Record<string, any>): Employee {
     status: (row.attendance_status ?? "present") as Employee["status"],
     employmentStatus: (row.employment_status ?? "active") as Employee["employmentStatus"],
     employmentType: String(row.employment_type ?? "full-time"),
+    clockInTime: row.clock_in ? String(row.clock_in).slice(0, 5) : undefined,
+    clockOutTime: row.clock_out ? String(row.clock_out).slice(0, 5) : undefined,
+    isOnBreak: Boolean(row.active_break_started_at),
     department: String(row.department ?? ""),
     position: row.position ? String(row.position) : "",
     email: row.email ? String(row.email) : "",
@@ -880,46 +883,43 @@ export function EmployeeDetailsPage({
         </Card>
 
         {/* Today's Attendance */}
-        {employee.status === "present" && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5 text-vibrant-green" />
-                Today's Attendance
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-3 rounded-lg bg-muted/30">
-                  <p className="text-sm text-muted-foreground mb-1">
-                    Clock-In
-                  </p>
-                  <p className="font-medium">{employee.clockInTime}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-muted/30">
-                  <p className="text-sm text-muted-foreground mb-1">
-                    Clock-Out
-                  </p>
-                  <p className="font-medium">
-                    {employee.clockOutTime || (
-                      <span className="text-vibrant-green">Active</span>
-                    )}
-                  </p>
-                </div>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-vibrant-green" />
+              Today's Attendance
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-3 rounded-lg bg-muted/30">
+                <p className="text-sm text-muted-foreground mb-1">
+                  Clock-In
+                </p>
+                <p className="font-medium">{employee.clockInTime || "No log yet"}</p>
               </div>
-              {employee.workDuration && (
-                <div className="p-3 rounded-lg bg-vibrant-blue/10">
-                  <p className="text-sm text-muted-foreground mb-1">
-                    Work Duration
-                  </p>
-                  <p className="font-medium text-vibrant-blue">
-                    {employee.workDuration}
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
+              <div className="p-3 rounded-lg bg-muted/30">
+                <p className="text-sm text-muted-foreground mb-1">
+                  Clock-Out
+                </p>
+                <p className="font-medium">
+                  {employee.clockOutTime || (employee.clockInTime ? "Not clocked out" : "No log yet")}
+                </p>
+              </div>
+            </div>
+
+            {employee.workDuration && (
+              <div className="p-3 rounded-lg bg-vibrant-blue/10">
+                <p className="text-sm text-muted-foreground mb-1">
+                  Work Duration
+                </p>
+                <p className="font-medium text-vibrant-blue">
+                  {employee.workDuration}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Leave Status */}
         {employee.status === "on-leave" && (

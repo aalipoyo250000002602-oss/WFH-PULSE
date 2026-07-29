@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { AttendanceStatus } from "../attendance-status";
-import { AttendanceActions } from "../attendance-actions";
 import { MiniCalendar } from "../mini-calendar";
 import { UpcomingHolidays } from "../upcoming-holidays";
 import { EmployeesCard } from "../employees-card";
@@ -25,6 +24,13 @@ interface HomePageProps {
   isOnBreak: boolean;
   clockInTime: string;
   clockInTimestamp?: Date;
+  currentWorkDurationMinutes: number;
+  lateMinutesToday: number;
+  attendanceActivityLogs: Array<{
+    activityId: number;
+    action: string;
+    loggedAt: string;
+  }>;
   onClockIn: () => void;
   onClockOut: () => void;
   onBreak: () => void;
@@ -63,6 +69,9 @@ export function HomePage({
   isOnBreak,
   clockInTime,
   clockInTimestamp,
+  currentWorkDurationMinutes,
+  lateMinutesToday,
+  attendanceActivityLogs,
   onClockIn,
   onClockOut,
   onBreak,
@@ -417,16 +426,12 @@ export function HomePage({
         isOnBreak={isOnBreak}
         clockInTime={clockInTime}
         workingHours={workingHours}
-        clockInTimestamp={clockInTimestamp}
-        scheduledStartTime={scheduledStartTime}
-      />
-
-      <AttendanceActions
-        isClockedIn={isClockedIn}
+        currentWorkDurationMinutes={currentWorkDurationMinutes}
+        lateMinutes={lateMinutesToday}
+        activityLogs={attendanceActivityLogs}
         onClockIn={onClockIn}
         onClockOut={onClockOut}
         onBreak={onBreak}
-        isOnBreak={isOnBreak}
       />
 
       <div className="px-4 space-y-4">

@@ -95,6 +95,12 @@ interface CalendarAttendanceDetailState {
   lateMinutes: number | null;
 }
 
+interface AttendanceActivityLogState {
+  activityId: number;
+  action: string;
+  loggedAt: string;
+}
+
 interface LoginResponsePayload {
   accessToken: string;
   refreshToken: string;
@@ -157,6 +163,9 @@ export default function App() {
   const [isOnBreak, setIsOnBreak] = useState(false);
   const [clockInTime, setClockInTime] = useState<string>("");
   const [clockInTimestamp, setClockInTimestamp] = useState<Date | undefined>(undefined);
+  const [todayWorkDurationMinutes, setTodayWorkDurationMinutes] = useState(0);
+  const [todayLateMinutes, setTodayLateMinutes] = useState(0);
+  const [attendanceActivityLogs, setAttendanceActivityLogs] = useState<AttendanceActivityLogState[]>([]);
 
   // Settings state
   const [workingHours, setWorkingHours] = useState({
@@ -831,6 +840,113 @@ export default function App() {
     }
   };
 
+  const formatTimeForDisplay = (time24: string) => {
+    const match = String(time24 || "").match(/^(\d{2}):(\d{2})/);
+    if (!match) {
+      return time24;
+    }
+
+    const hour24 = Number(match[1]);
+    const minute = Number(match[2]);
+    const hour12 = hour24 % 12 || 12;
+    const meridiem = hour24 >= 12 ? "PM" : "AM";
+    return `${hour12}:${String(minute).padStart(2, "0")} ${meridiem}`;
+  };
+
+  const buildClockInTimestampFromTime = (time24: string | null | undefined) => {
+    if (!time24) {
+      return undefined;
+    }
+
+    const match = String(time24).match(/^(\d{2}):(\d{2})/);
+    if (!match) {
+      return undefined;
+    }
+
+    const now = new Date();
+    const timestamp = new Date(now);
+    timestamp.setHours(Number(match[1]), Number(match[2]), 0, 0);
+    return timestamp;
+  };
+
+  const syncAttendanceStateFromApi = (attendance: any) => {
+    if (!attendance) {
+      setIsClockedIn(false);
+      setIsOnBreak(false);
+      setClockInTime("");
+      setClockInTimestamp(undefined);
+      setTodayLateMinutes(0);
+      return;
+    }
+
+    const isClockedInNow = Boolean(attendance.clockIn) && !Boolean(attendance.clockOut);
+    setIsClockedIn(isClockedInNow);
+    setIsOnBreak(Boolean(attendance.isBreakActive));
+
+    if (attendance.clockIn) {
+      setClockInTime(formatTimeForDisplay(String(attendance.clockIn)));
+      setClockInTimestamp(buildClockInTimestampFromTime(String(attendance.clockIn)));
+    } else {
+      setClockInTime("");
+      setClockInTimestamp(undefined);
+    }
+
+    setTodayLateMinutes(Number(attendance.lateMinutes ?? 0));
+  };
+
+  const loadTodayAttendance = async (accessToken: string) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/me/attendance/today`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = await response.json().catch(() => ({}));
+      syncAttendanceStateFromApi(payload?.attendance ?? null);
+      setTodayWorkDurationMinutes(Number(payload?.currentWorkDurationMinutes ?? 0));
+      const logs = Array.isArray(payload?.logs)
+        ? payload.logs
+            .map((row: any) => {
+              const activityId = Number(row?.activityId);
+              const action = String(row?.action ?? "");
+              const loggedAt = String(row?.loggedAt ?? "");
+              if (!Number.isFinite(activityId) || !action || !loggedAt) {
+                return null;
+              }
+              return {
+                activityId,
+                action,
+                loggedAt,
+              } as AttendanceActivityLogState;
+            })
+            .filter(Boolean)
+        : [];
+      setAttendanceActivityLogs(logs as AttendanceActivityLogState[]);
+    } catch {
+      // Keep existing local state when the endpoint is unavailable.
+    }
+  };
+
+  useEffect(() => {
+    if (!isLoggedIn || !authSession?.accessToken) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void loadTodayAttendance(authSession.accessToken);
+    }, 5000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isLoggedIn, authSession?.accessToken]);
+
   // Mock attendance data for the calendar - October 2025 (Weekdays only, no Saturdays/Sundays)
   const [calendarAttendanceDetails, setCalendarAttendanceDetails] = useState<
     Record<string, CalendarAttendanceDetailState>
@@ -1150,6 +1266,7 @@ export default function App() {
     await loadCompanyWorkingHours(payload.accessToken);
     await loadSecurityPreferences(payload.accessToken);
     await loadCalendarData(payload.accessToken);
+    await loadTodayAttendance(payload.accessToken);
 
     setIsLoggedIn(true);
     return true;
@@ -1242,55 +1359,154 @@ export default function App() {
     setIsOnBreak(false);
     setClockInTime("");
     setClockInTimestamp(undefined);
+    setTodayWorkDurationMinutes(0);
+    setTodayLateMinutes(0);
+    setAttendanceActivityLogs([]);
     setCurrentPage("home");
     toast.success("Logged out successfully", {
       description: "See you next time!",
     });
   };
 
-  const handleClockIn = () => {
-    const now = new Date();
-    const timeString = now.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-
-    setIsClockedIn(true);
-    setClockInTime(timeString);
-    setClockInTimestamp(now);
-    toast.success(`Successfully clocked in at ${timeString}`, {
-      description: "Have a productive day!",
-    });
-  };
-
-  const handleClockOut = () => {
-    const now = new Date();
-    const timeString = now.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-
-    setIsClockedIn(false);
-    setIsOnBreak(false);
-    setClockInTime("");
-    setClockInTimestamp(undefined);
-    toast.success(`Successfully clocked out at ${timeString}`, {
-      description: "Great work today!",
-    });
-  };
-
-  const handleBreak = () => {
-    if (isOnBreak) {
-      setIsOnBreak(false);
-      toast.success("Break ended", {
-        description: "Welcome back! Ready to continue?",
+  const handleClockIn = async () => {
+    if (!authSession?.accessToken) {
+      toast.error("Clock in failed", {
+        description: "Please sign in first.",
       });
-    } else {
-      setIsOnBreak(true);
-      toast.success("Break started", {
-        description: "Take your time and recharge!",
+      return;
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/me/attendance/clock-in`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${authSession.accessToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error("Clock in failed", {
+          description: payload?.error || "Unable to clock in right now.",
+        });
+        return;
+      }
+
+      syncAttendanceStateFromApi(payload?.attendance ?? null);
+      await loadTodayAttendance(authSession.accessToken);
+      await loadCalendarData(authSession.accessToken);
+
+      const displayTime = payload?.attendance?.clockIn
+        ? formatTimeForDisplay(String(payload.attendance.clockIn))
+        : "";
+      toast.success(
+        displayTime ? `Successfully clocked in at ${displayTime}` : "Successfully clocked in",
+        {
+          description: "Have a productive day!",
+        },
+      );
+    } catch {
+      toast.error("Clock in failed", {
+        description: "Unable to reach the API server.",
+      });
+    }
+  };
+
+  const handleClockOut = async () => {
+    if (!authSession?.accessToken) {
+      toast.error("Clock out failed", {
+        description: "Please sign in first.",
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/me/attendance/clock-out`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${authSession.accessToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error("Clock out failed", {
+          description: payload?.error || "Unable to clock out right now.",
+        });
+        return;
+      }
+
+      syncAttendanceStateFromApi(payload?.attendance ?? null);
+      await loadTodayAttendance(authSession.accessToken);
+      await loadCalendarData(authSession.accessToken);
+
+      const displayTime = payload?.attendance?.clockOut
+        ? formatTimeForDisplay(String(payload.attendance.clockOut))
+        : "";
+      toast.success(
+        displayTime ? `Successfully clocked out at ${displayTime}` : "Successfully clocked out",
+        {
+          description: "Great work today!",
+        },
+      );
+    } catch {
+      toast.error("Clock out failed", {
+        description: "Unable to reach the API server.",
+      });
+    }
+  };
+
+  const handleBreak = async () => {
+    if (!authSession?.accessToken) {
+      toast.error("Break action failed", {
+        description: "Please sign in first.",
+      });
+      return;
+    }
+
+    try {
+      const endpoint = isOnBreak
+        ? `${apiBaseUrl}/me/attendance/break/end`
+        : `${apiBaseUrl}/me/attendance/break/start`;
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${authSession.accessToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error("Break action failed", {
+          description: payload?.error || "Unable to update break status right now.",
+        });
+        return;
+      }
+
+      syncAttendanceStateFromApi(payload?.attendance ?? null);
+      await loadTodayAttendance(authSession.accessToken);
+      await loadCalendarData(authSession.accessToken);
+
+      if (isOnBreak) {
+        const breakMinutes = Number(payload?.breakLog?.breakDurationMinutes ?? 0);
+        toast.success("Break ended", {
+          description:
+            breakMinutes > 0
+              ? `Break duration logged: ${breakMinutes} minute${breakMinutes === 1 ? "" : "s"}.`
+              : "Welcome back! Ready to continue?",
+        });
+      } else {
+        toast.success("Break started", {
+          description: "Take your time and recharge!",
+        });
+      }
+    } catch {
+      toast.error("Break action failed", {
+        description: "Unable to reach the API server.",
       });
     }
   };
@@ -1373,6 +1589,9 @@ export default function App() {
             isOnBreak={isOnBreak}
             clockInTime={clockInTime}
             clockInTimestamp={clockInTimestamp}
+            currentWorkDurationMinutes={todayWorkDurationMinutes}
+            lateMinutesToday={todayLateMinutes}
+            attendanceActivityLogs={attendanceActivityLogs}
             onClockIn={handleClockIn}
             onClockOut={handleClockOut}
             onBreak={handleBreak}

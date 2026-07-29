@@ -60,6 +60,8 @@ ALTER TABLE app.employees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.payroll_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.payroll_deductions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.attendance_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.attendance_break_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.attendance_activity_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.attendance_leave_details ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.attendance_leave_attachments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.attendance_adjustment_requests ENABLE ROW LEVEL SECURITY;
@@ -126,6 +128,51 @@ CREATE POLICY attendance_records_select ON app.attendance_records
 
 DROP POLICY IF EXISTS attendance_records_write ON app.attendance_records;
 CREATE POLICY attendance_records_write ON app.attendance_records
+  FOR ALL USING (
+    app.is_hr_or_admin() OR employee_id = app.current_employee_id()
+  )
+  WITH CHECK (
+    app.is_hr_or_admin() OR employee_id = app.current_employee_id()
+  );
+
+DROP POLICY IF EXISTS attendance_break_logs_select ON app.attendance_break_logs;
+CREATE POLICY attendance_break_logs_select ON app.attendance_break_logs
+  FOR SELECT USING (
+    app.is_hr_or_admin() OR EXISTS (
+      SELECT 1
+      FROM app.attendance_records ar
+      WHERE ar.attendance_id = attendance_break_logs.attendance_id
+        AND ar.employee_id = app.current_employee_id()
+    )
+  );
+
+DROP POLICY IF EXISTS attendance_break_logs_write ON app.attendance_break_logs;
+CREATE POLICY attendance_break_logs_write ON app.attendance_break_logs
+  FOR ALL USING (
+    app.is_hr_or_admin() OR EXISTS (
+      SELECT 1
+      FROM app.attendance_records ar
+      WHERE ar.attendance_id = attendance_break_logs.attendance_id
+        AND ar.employee_id = app.current_employee_id()
+    )
+  )
+  WITH CHECK (
+    app.is_hr_or_admin() OR EXISTS (
+      SELECT 1
+      FROM app.attendance_records ar
+      WHERE ar.attendance_id = attendance_break_logs.attendance_id
+        AND ar.employee_id = app.current_employee_id()
+    )
+  );
+
+DROP POLICY IF EXISTS attendance_activity_logs_select ON app.attendance_activity_logs;
+CREATE POLICY attendance_activity_logs_select ON app.attendance_activity_logs
+  FOR SELECT USING (
+    app.is_hr_or_admin() OR employee_id = app.current_employee_id()
+  );
+
+DROP POLICY IF EXISTS attendance_activity_logs_write ON app.attendance_activity_logs;
+CREATE POLICY attendance_activity_logs_write ON app.attendance_activity_logs
   FOR ALL USING (
     app.is_hr_or_admin() OR employee_id = app.current_employee_id()
   )

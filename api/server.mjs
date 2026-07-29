@@ -219,6 +219,7 @@ const isoDayByName = {
   saturday: 6,
   sunday: 7,
 };
+const attendanceTimeZone = process.env.ATTENDANCE_TIMEZONE ?? process.env.APP_TIMEZONE ?? "Asia/Manila";
 
 function normalizeTimeValue(value) {
   if (value == null) {
@@ -387,6 +388,145 @@ function computeTotalWorkDurationMinutes(clockInTime, clockOutTime, breakDuratio
   }
 
   return total;
+}
+
+function mapAttendanceRecordRow(row) {
+  const attendanceDate =
+    row.attendance_date instanceof Date
+      ? row.attendance_date.toISOString().slice(0, 10)
+      : row.attendance_date
+        ? String(row.attendance_date).slice(0, 10)
+        : null;
+
+  return {
+    attendanceId: Number(row.attendance_id),
+    attendanceDate,
+    status: row.status,
+    clockIn: row.clock_in ? String(row.clock_in).slice(0, 5) : null,
+    clockOut: row.clock_out ? String(row.clock_out).slice(0, 5) : null,
+    workDurationMinutes: row.work_duration_minutes,
+    lateMinutes: row.late_minutes,
+    totalBreakDurationMinutes: row.total_break_duration_minutes ?? 0,
+    isBreakActive: Boolean(row.active_break_started_at),
+    activeBreakStartedAt: row.active_break_started_at ?? null,
+  };
+}
+
+function mapAttendanceActivityLogRow(row) {
+  return {
+    activityId: Number(row.activity_id),
+    action: String(row.action),
+    loggedAt: row.logged_at,
+    metadata: row.metadata && typeof row.metadata === "object" ? row.metadata : {},
+  };
+}
+
+async function insertAttendanceActivityLog(client, {
+  attendanceId,
+  employeeId,
+  action,
+  metadata = {},
+}) {
+  await client.query(
+    `
+    INSERT INTO app.attendance_activity_logs (
+      attendance_id,
+      employee_id,
+      action,
+      metadata
+    )
+    VALUES (
+      $1::bigint,
+      $2::text,
+      $3::text,
+      $4::jsonb
+    )
+    `,
+    [attendanceId, employeeId, action, metadata],
+  );
+}
+
+async function computeActiveSessionNetMinutes(client, {
+  nowLocal,
+  nowAt,
+  attendanceDate,
+  clockIn,
+  attendanceId,
+  attendanceTimeZoneValue,
+}) {
+  const durationResult = await client.query(
+    `
+    WITH schedule AS (
+      SELECT is_working_day, start_time, end_time
+      FROM app.company_settings_working_hours
+      WHERE iso_day = EXTRACT(ISODOW FROM $2::date)::smallint
+      LIMIT 1
+    ),
+    effective_window AS (
+      SELECT
+        CASE
+          WHEN COALESCE((SELECT is_working_day FROM schedule), false)
+            AND (SELECT start_time FROM schedule) IS NOT NULL
+            AND (SELECT end_time FROM schedule) IS NOT NULL
+          THEN GREATEST(
+            ($2::date + $3::time),
+            ($2::date + (SELECT start_time FROM schedule))
+          )
+          ELSE NULL
+        END AS effective_start,
+        CASE
+          WHEN COALESCE((SELECT is_working_day FROM schedule), false)
+            AND (SELECT start_time FROM schedule) IS NOT NULL
+            AND (SELECT end_time FROM schedule) IS NOT NULL
+          THEN LEAST(
+            $1::timestamp,
+            ($2::date + (SELECT end_time FROM schedule))
+          )
+          ELSE NULL
+        END AS effective_end
+    ),
+    session_minutes AS (
+      SELECT
+        CASE
+          WHEN effective_start IS NULL OR effective_end IS NULL OR effective_end <= effective_start
+            THEN 0
+          ELSE FLOOR(EXTRACT(EPOCH FROM (effective_end - effective_start)) / 60)::integer
+        END AS gross_session_minutes,
+        effective_start,
+        effective_end
+      FROM effective_window
+    ),
+    break_minutes AS (
+      SELECT COALESCE(SUM(
+        GREATEST(
+          0,
+          FLOOR(
+            EXTRACT(EPOCH FROM (
+              LEAST((COALESCE(bl.break_ended_at, $6::timestamptz) AT TIME ZONE $5::text), sm.effective_end)
+              -
+              GREATEST((bl.break_started_at AT TIME ZONE $5::text), sm.effective_start)
+            )) / 60
+          )::integer
+        )
+      ), 0)::integer AS session_break_minutes
+      FROM app.attendance_break_logs bl
+      CROSS JOIN session_minutes sm
+      WHERE bl.attendance_id = $4::bigint
+        AND sm.effective_start IS NOT NULL
+        AND sm.effective_end IS NOT NULL
+        AND (bl.break_started_at AT TIME ZONE $5::text) < sm.effective_end
+        AND (COALESCE(bl.break_ended_at, $6::timestamptz) AT TIME ZONE $5::text) > sm.effective_start
+    )
+    SELECT sm.gross_session_minutes, bm.session_break_minutes
+    FROM session_minutes sm
+    CROSS JOIN break_minutes bm
+    `,
+    [nowLocal, attendanceDate, clockIn, attendanceId, attendanceTimeZoneValue, nowAt],
+  );
+
+  const grossSessionMinutes = durationResult.rows[0]?.gross_session_minutes ?? 0;
+  const sessionBreakMinutes = durationResult.rows[0]?.session_break_minutes ?? 0;
+  return Math.max(0, Number(grossSessionMinutes) - Number(sessionBreakMinutes));
 }
 
 function mapAdjustmentRequestRow(row) {
@@ -750,6 +890,176 @@ async function seedCalendarSampleAttendanceIfEmpty(authContext) {
   });
 }
 
+function toIsoDateString(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+function buildAttendanceSyncRange(from, to, fallbackDays = 120) {
+  const today = new Date();
+  const fallbackFrom = new Date(today);
+  fallbackFrom.setDate(fallbackFrom.getDate() - fallbackDays);
+
+  let start = typeof from === "string" && isoDateRegex.test(from) ? from : toIsoDateString(fallbackFrom);
+  let end = typeof to === "string" && isoDateRegex.test(to) ? to : toIsoDateString(today);
+
+  if (!start || !end) {
+    const nowIso = toIsoDateString(new Date()) ?? "1970-01-01";
+    return { startDate: nowIso, endDate: nowIso };
+  }
+
+  if (start > end) {
+    const temp = start;
+    start = end;
+    end = temp;
+  }
+
+  return { startDate: start, endDate: end };
+}
+
+async function syncAbsentAttendanceForRange(authContext, employeeId, startDate, endDate) {
+  return withRlsContext(authContext, async (client) => {
+    await client.query(
+      `
+      WITH local_now AS (
+        SELECT
+          (NOW() AT TIME ZONE $4::text)::date AS local_today,
+          (NOW() AT TIME ZONE $4::text)::time AS local_time
+      ),
+      working_days AS (
+        SELECT
+          gs::date AS day_date,
+          c.start_time,
+          c.end_time
+        FROM generate_series($2::date, $3::date, INTERVAL '1 day') gs
+        JOIN app.company_settings_working_hours c
+          ON c.iso_day = EXTRACT(ISODOW FROM gs)::smallint
+        WHERE c.is_working_day = TRUE
+          AND c.start_time IS NOT NULL
+          AND c.end_time IS NOT NULL
+      ),
+      due_days AS (
+        SELECT
+          wd.day_date,
+          wd.start_time,
+          wd.end_time,
+          EXISTS (
+            SELECT 1
+            FROM app.attendance_activity_logs al
+            WHERE al.employee_id = $1::text
+              AND (al.logged_at AT TIME ZONE $4::text)::date = wd.day_date
+              AND (al.logged_at AT TIME ZONE $4::text)::time >= wd.start_time
+              AND (al.logged_at AT TIME ZONE $4::text)::time <= wd.end_time
+          ) AS has_in_hours_logs
+        FROM working_days wd
+        CROSS JOIN local_now ln
+        WHERE wd.day_date < ln.local_today
+           OR (wd.day_date = ln.local_today AND ln.local_time >= wd.end_time)
+      )
+      INSERT INTO app.attendance_records (
+        employee_id,
+        attendance_date,
+        status,
+        clock_in,
+        clock_out,
+        work_duration_minutes,
+        late_minutes,
+        total_break_duration_minutes,
+        active_break_started_at
+      )
+      SELECT
+        $1::text,
+        dd.day_date,
+        'absent'::app.attendance_status,
+        NULL,
+        NULL,
+        0,
+        0,
+        0,
+        NULL
+      FROM due_days dd
+      WHERE dd.has_in_hours_logs = FALSE
+        AND NOT EXISTS (
+          SELECT 1
+          FROM app.attendance_records ar
+          WHERE ar.employee_id = $1::text
+            AND ar.attendance_date = dd.day_date
+        )
+      ON CONFLICT (employee_id, attendance_date) DO NOTHING
+      `,
+      [employeeId, startDate, endDate, attendanceTimeZone],
+    );
+
+    await client.query(
+      `
+      WITH local_now AS (
+        SELECT
+          (NOW() AT TIME ZONE $4::text)::date AS local_today,
+          (NOW() AT TIME ZONE $4::text)::time AS local_time
+      ),
+      working_days AS (
+        SELECT
+          gs::date AS day_date,
+          c.start_time,
+          c.end_time
+        FROM generate_series($2::date, $3::date, INTERVAL '1 day') gs
+        JOIN app.company_settings_working_hours c
+          ON c.iso_day = EXTRACT(ISODOW FROM gs)::smallint
+        WHERE c.is_working_day = TRUE
+          AND c.start_time IS NOT NULL
+          AND c.end_time IS NOT NULL
+      ),
+      due_days AS (
+        SELECT
+          wd.day_date,
+          EXISTS (
+            SELECT 1
+            FROM app.attendance_activity_logs al
+            WHERE al.employee_id = $1::text
+              AND (al.logged_at AT TIME ZONE $4::text)::date = wd.day_date
+              AND (al.logged_at AT TIME ZONE $4::text)::time >= wd.start_time
+              AND (al.logged_at AT TIME ZONE $4::text)::time <= wd.end_time
+          ) AS has_in_hours_logs
+        FROM working_days wd
+        CROSS JOIN local_now ln
+        WHERE wd.day_date < ln.local_today
+           OR (wd.day_date = ln.local_today AND ln.local_time >= wd.end_time)
+      )
+      UPDATE app.attendance_records ar
+      SET
+        status = CASE
+          WHEN dd.has_in_hours_logs = FALSE THEN 'absent'::app.attendance_status
+          WHEN COALESCE(ar.late_minutes, 0) >= 15 THEN 'late'::app.attendance_status
+          ELSE 'present'::app.attendance_status
+        END,
+        clock_in = CASE WHEN dd.has_in_hours_logs = FALSE THEN NULL ELSE ar.clock_in END,
+        clock_out = CASE WHEN dd.has_in_hours_logs = FALSE THEN NULL ELSE ar.clock_out END,
+        work_duration_minutes = CASE
+          WHEN dd.has_in_hours_logs = FALSE THEN 0
+          ELSE ar.work_duration_minutes
+        END,
+        late_minutes = CASE WHEN dd.has_in_hours_logs = FALSE THEN 0 ELSE ar.late_minutes END,
+        total_break_duration_minutes = CASE
+          WHEN dd.has_in_hours_logs = FALSE THEN 0
+          ELSE ar.total_break_duration_minutes
+        END,
+        active_break_started_at = CASE
+          WHEN dd.has_in_hours_logs = FALSE THEN NULL
+          ELSE ar.active_break_started_at
+        END
+      FROM due_days dd
+      WHERE ar.employee_id = $1::text
+        AND ar.attendance_date = dd.day_date
+        AND ar.status IN ('present'::app.attendance_status, 'late'::app.attendance_status, 'absent'::app.attendance_status)
+      `,
+      [employeeId, startDate, endDate, attendanceTimeZone],
+    );
+  });
+}
+
 async function getEmployeeRowForApi(client, employeeId) {
   const result = await client.query(
     `
@@ -763,9 +1073,18 @@ async function getEmployeeRowForApi(client, employeeId) {
       d.name AS department,
       e.position_id,
       COALESCE(jp.name, e.position) AS position,
-      e.attendance_status,
+      CASE
+        WHEN ta.status = 'absent'::app.attendance_status THEN 'absent'::app.attendance_status
+        WHEN ta.status = 'on-leave'::app.attendance_status THEN 'on-leave'::app.attendance_status
+        WHEN ta.status IN ('present'::app.attendance_status, 'late'::app.attendance_status)
+          THEN 'present'::app.attendance_status
+        ELSE e.attendance_status
+      END AS attendance_status,
       e.employment_status,
       e.employment_type,
+      ta.clock_in,
+      ta.clock_out,
+      ta.active_break_started_at,
       e.join_date,
       e.birthday,
       e.gender,
@@ -784,6 +1103,18 @@ async function getEmployeeRowForApi(client, employeeId) {
     FROM app.employees e
     LEFT JOIN app.departments d ON d.department_id = e.department_id
     LEFT JOIN app.job_positions jp ON jp.position_id = e.position_id
+    LEFT JOIN LATERAL (
+      SELECT
+        ar.status,
+        ar.clock_in,
+        ar.clock_out,
+        ar.active_break_started_at
+      FROM app.attendance_records ar
+      WHERE ar.employee_id = e.employee_id
+        AND ar.attendance_date = (NOW() AT TIME ZONE $2::text)::date
+      ORDER BY ar.attendance_id DESC
+      LIMIT 1
+    ) ta ON TRUE
     LEFT JOIN app.payroll_profiles pp ON pp.employee_id = e.employee_id
     LEFT JOIN LATERAL (
       SELECT jsonb_agg(
@@ -799,7 +1130,7 @@ async function getEmployeeRowForApi(client, employeeId) {
     ) pd ON TRUE
     WHERE e.employee_id = $1::text
     `,
-    [employeeId],
+    [employeeId, attendanceTimeZone],
   );
 
   return result.rows[0] ?? null;
@@ -1848,10 +2179,32 @@ app.get("/me/attendance", requireAuth, async (req, res) => {
   const filterSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({
+        error: "No employee profile is linked to this account yet.",
+      });
+    }
+
+    const { startDate, endDate } = buildAttendanceSyncRange(
+      typeof from === "string" ? from : null,
+      typeof to === "string" ? to : null,
+    );
+    await syncAbsentAttendanceForRange(req.auth, resolvedEmployeeId, startDate, endDate);
+
     const rows = await withRlsContext(req.auth, async (client) => {
       const result = await client.query(
         `
-        SELECT attendance_date, status, clock_in, clock_out, work_duration_minutes, late_minutes
+        SELECT
+          attendance_id,
+          attendance_date,
+          status,
+          clock_in,
+          clock_out,
+          work_duration_minutes,
+          late_minutes,
+          total_break_duration_minutes,
+          active_break_started_at
         FROM app.attendance_records
         ${filterSql}
         ORDER BY attendance_date DESC
@@ -1862,7 +2215,671 @@ app.get("/me/attendance", requireAuth, async (req, res) => {
       return result.rows;
     });
 
-    return res.json({ attendance: rows });
+    return res.json({ attendance: rows.map(mapAttendanceRecordRow) });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.get("/me/attendance/today", requireAuth, async (req, res) => {
+  try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({
+        error: "No employee profile is linked to this account yet.",
+      });
+    }
+
+    const payload = await withRlsContext(req.auth, async (client) => {
+      const nowResult = await client.query(
+        `
+        SELECT
+          NOW() AS now_at,
+          (NOW() AT TIME ZONE $1::text) AS now_local
+        `,
+        [attendanceTimeZone],
+      );
+      const nowAt = nowResult.rows[0].now_at;
+      const nowLocal = nowResult.rows[0].now_local;
+
+      const result = await client.query(
+        `
+        SELECT
+          attendance_id,
+          attendance_date,
+          status,
+          clock_in,
+          clock_out,
+          work_duration_minutes,
+          late_minutes,
+          total_break_duration_minutes,
+          active_break_started_at
+        FROM app.attendance_records
+        WHERE employee_id = $1::text
+          AND attendance_date = (NOW() AT TIME ZONE $2::text)::date
+        LIMIT 1
+        `,
+        [resolvedEmployeeId, attendanceTimeZone],
+      );
+
+      const attendance = result.rows[0] ?? null;
+      if (!attendance) {
+        return {
+          attendance: null,
+          currentWorkDurationMinutes: 0,
+          logs: [],
+        };
+      }
+
+      let currentWorkDurationMinutes = Number(attendance.work_duration_minutes ?? 0);
+      if (attendance.clock_in && !attendance.clock_out) {
+        const sessionNetMinutes = await computeActiveSessionNetMinutes(client, {
+          nowLocal,
+          nowAt,
+          attendanceDate: attendance.attendance_date,
+          clockIn: attendance.clock_in,
+          attendanceId: attendance.attendance_id,
+          attendanceTimeZoneValue: attendanceTimeZone,
+        });
+        currentWorkDurationMinutes += sessionNetMinutes;
+      }
+
+      const logsResult = await client.query(
+        `
+        SELECT activity_id, action, logged_at, metadata
+        FROM app.attendance_activity_logs
+        WHERE attendance_id = $1::bigint
+        ORDER BY logged_at DESC
+        LIMIT 50
+        `,
+        [attendance.attendance_id],
+      );
+
+      return {
+        attendance,
+        currentWorkDurationMinutes,
+        logs: logsResult.rows.map(mapAttendanceActivityLogRow),
+      };
+    });
+
+    return res.json({
+      attendance: payload.attendance ? mapAttendanceRecordRow(payload.attendance) : null,
+      currentWorkDurationMinutes: payload.currentWorkDurationMinutes,
+      logs: payload.logs,
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/me/attendance/clock-in", requireAuth, async (req, res) => {
+  try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({
+        error: "No employee profile is linked to this account yet.",
+      });
+    }
+
+    const attendance = await withRlsContext(req.auth, async (client) => {
+      const nowResult = await client.query(
+        `
+        SELECT
+          NOW() AS now_at,
+          (NOW() AT TIME ZONE $1::text) AS now_local,
+          (NOW() AT TIME ZONE $1::text)::time AS now_time,
+          (NOW() AT TIME ZONE $1::text)::date AS today_date
+        `,
+        [attendanceTimeZone],
+      );
+      const nowAt = nowResult.rows[0].now_at;
+      const nowTime = nowResult.rows[0].now_time;
+      const todayDate = nowResult.rows[0].today_date;
+
+      const existingResult = await client.query(
+        `
+        SELECT
+          attendance_id,
+          attendance_date,
+          status,
+          clock_in,
+          clock_out,
+          work_duration_minutes,
+          late_minutes,
+          total_break_duration_minutes,
+          active_break_started_at
+        FROM app.attendance_records
+        WHERE employee_id = $1::text
+          AND attendance_date = $2::date
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [resolvedEmployeeId, todayDate],
+      );
+
+      if (existingResult.rowCount === 0) {
+        const lateComputationResult = await client.query(
+          `
+          WITH schedule AS (
+            SELECT is_working_day, start_time
+            FROM app.company_settings_working_hours
+            WHERE iso_day = EXTRACT(ISODOW FROM $1::date)::smallint
+            LIMIT 1
+          )
+          SELECT
+            CASE
+              WHEN COALESCE((SELECT is_working_day FROM schedule), false)
+                AND (SELECT start_time FROM schedule) IS NOT NULL
+                AND $2::time >= ((SELECT start_time FROM schedule) + INTERVAL '15 minutes')::time
+              THEN GREATEST(
+                0,
+                FLOOR(EXTRACT(EPOCH FROM ($2::time - (SELECT start_time FROM schedule))) / 60)::integer
+              )
+              ELSE 0
+            END AS late_minutes,
+            CASE
+              WHEN COALESCE((SELECT is_working_day FROM schedule), false)
+                AND (SELECT start_time FROM schedule) IS NOT NULL
+                AND $2::time >= ((SELECT start_time FROM schedule) + INTERVAL '15 minutes')::time
+              THEN 'late'
+              ELSE 'present'
+            END AS attendance_status
+          `,
+          [todayDate, nowTime],
+        );
+
+        const lateMinutes = Number(lateComputationResult.rows[0]?.late_minutes ?? 0);
+        const attendanceStatus = String(
+          lateComputationResult.rows[0]?.attendance_status ?? "present",
+        );
+
+        const insertedResult = await client.query(
+          `
+          INSERT INTO app.attendance_records (
+            employee_id,
+            attendance_date,
+            status,
+            clock_in,
+            clock_out,
+            work_duration_minutes,
+            late_minutes,
+            total_break_duration_minutes,
+            active_break_started_at
+          )
+          VALUES (
+            $1::text,
+            $2::date,
+            $4::app.attendance_status,
+            $3::time,
+            NULL,
+            0,
+            $5::integer,
+            0,
+            NULL
+          )
+          RETURNING
+            attendance_id,
+            attendance_date,
+            status,
+            clock_in,
+            clock_out,
+            work_duration_minutes,
+            late_minutes,
+            total_break_duration_minutes,
+            active_break_started_at
+          `,
+          [resolvedEmployeeId, todayDate, nowTime, attendanceStatus, lateMinutes],
+        );
+
+        await insertAttendanceActivityLog(client, {
+          attendanceId: insertedResult.rows[0].attendance_id,
+          employeeId: resolvedEmployeeId,
+          action: "clock_in",
+          metadata: {
+            clockInTime: String(insertedResult.rows[0].clock_in ?? ""),
+            source: "home",
+          },
+        });
+
+        return insertedResult.rows[0];
+      }
+
+      const existing = existingResult.rows[0];
+      if (existing.clock_in && !existing.clock_out) {
+        throw new Error("You are already clocked in for today.");
+      }
+
+      const updatedResult = await client.query(
+        `
+        UPDATE app.attendance_records
+        SET
+          status = CASE
+            WHEN COALESCE(late_minutes, 0) >= 15 THEN 'late'::app.attendance_status
+            ELSE 'present'::app.attendance_status
+          END,
+          clock_in = $1::time,
+          clock_out = NULL,
+          active_break_started_at = NULL
+        WHERE attendance_id = $2::bigint
+        RETURNING
+          attendance_id,
+          attendance_date,
+          status,
+          clock_in,
+          clock_out,
+          work_duration_minutes,
+          late_minutes,
+          total_break_duration_minutes,
+          active_break_started_at
+        `,
+        [nowTime, existing.attendance_id],
+      );
+
+      await insertAttendanceActivityLog(client, {
+        attendanceId: existing.attendance_id,
+        employeeId: resolvedEmployeeId,
+        action: "clock_in",
+        metadata: {
+          clockInTime: String(updatedResult.rows[0].clock_in ?? ""),
+          source: "home",
+        },
+      });
+
+      return updatedResult.rows[0];
+    });
+
+    return res.status(201).json({ attendance: mapAttendanceRecordRow(attendance) });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/me/attendance/break/start", requireAuth, async (req, res) => {
+  try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({
+        error: "No employee profile is linked to this account yet.",
+      });
+    }
+
+    const responsePayload = await withRlsContext(req.auth, async (client) => {
+      const nowResult = await client.query(
+        `
+        SELECT
+          NOW() AS now_at,
+          (NOW() AT TIME ZONE $1::text)::date AS today_date
+        `,
+        [attendanceTimeZone],
+      );
+      const nowAt = nowResult.rows[0].now_at;
+      const todayDate = nowResult.rows[0].today_date;
+
+      const attendanceResult = await client.query(
+        `
+        SELECT
+          attendance_id,
+          attendance_date,
+          status,
+          clock_in,
+          clock_out,
+          work_duration_minutes,
+          late_minutes,
+          total_break_duration_minutes,
+          active_break_started_at
+        FROM app.attendance_records
+        WHERE employee_id = $1::text
+          AND attendance_date = $2::date
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [resolvedEmployeeId, todayDate],
+      );
+
+      if (attendanceResult.rowCount === 0) {
+        throw new Error("No attendance record found for today. Please clock in first.");
+      }
+
+      const attendance = attendanceResult.rows[0];
+
+      if (!attendance.clock_in || attendance.clock_out) {
+        throw new Error("Break can only be started while clocked in.");
+      }
+
+      if (attendance.active_break_started_at) {
+        throw new Error("A break is already in progress.");
+      }
+
+      const openBreakResult = await client.query(
+        `
+        SELECT break_id
+        FROM app.attendance_break_logs
+        WHERE attendance_id = $1::bigint
+          AND break_ended_at IS NULL
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [attendance.attendance_id],
+      );
+
+      if (openBreakResult.rowCount > 0) {
+        throw new Error("A break is already in progress.");
+      }
+
+      const breakResult = await client.query(
+        `
+        INSERT INTO app.attendance_break_logs (
+          attendance_id,
+          break_started_at,
+          break_ended_at,
+          break_duration_minutes
+        )
+        VALUES ($1::bigint, $2::timestamptz, NULL, NULL)
+        RETURNING break_id, break_started_at
+        `,
+        [attendance.attendance_id, nowAt],
+      );
+
+      const updatedAttendanceResult = await client.query(
+        `
+        UPDATE app.attendance_records
+        SET active_break_started_at = $1::timestamptz
+        WHERE attendance_id = $2::bigint
+        RETURNING
+          attendance_id,
+          attendance_date,
+          status,
+          clock_in,
+          clock_out,
+          work_duration_minutes,
+          late_minutes,
+          total_break_duration_minutes,
+          active_break_started_at
+        `,
+        [nowAt, attendance.attendance_id],
+      );
+
+      await insertAttendanceActivityLog(client, {
+        attendanceId: attendance.attendance_id,
+        employeeId: resolvedEmployeeId,
+        action: "break_start",
+        metadata: {
+          breakId: Number(breakResult.rows[0].break_id),
+          source: "home",
+        },
+      });
+
+      return {
+        attendance: updatedAttendanceResult.rows[0],
+        breakLog: breakResult.rows[0],
+      };
+    });
+
+    return res.status(201).json({
+      attendance: mapAttendanceRecordRow(responsePayload.attendance),
+      breakLog: {
+        breakId: Number(responsePayload.breakLog.break_id),
+        breakStartedAt: responsePayload.breakLog.break_started_at,
+      },
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/me/attendance/break/end", requireAuth, async (req, res) => {
+  try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({
+        error: "No employee profile is linked to this account yet.",
+      });
+    }
+
+    const responsePayload = await withRlsContext(req.auth, async (client) => {
+      const nowResult = await client.query(
+        `
+        SELECT
+          NOW() AS now_at,
+          (NOW() AT TIME ZONE $1::text)::date AS today_date
+        `,
+        [attendanceTimeZone],
+      );
+      const nowAt = nowResult.rows[0].now_at;
+      const todayDate = nowResult.rows[0].today_date;
+
+      const attendanceResult = await client.query(
+        `
+        SELECT
+          attendance_id,
+          attendance_date,
+          status,
+          clock_in,
+          clock_out,
+          work_duration_minutes,
+          late_minutes,
+          total_break_duration_minutes,
+          active_break_started_at
+        FROM app.attendance_records
+        WHERE employee_id = $1::text
+          AND attendance_date = $2::date
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [resolvedEmployeeId, todayDate],
+      );
+
+      if (attendanceResult.rowCount === 0) {
+        throw new Error("No attendance record found for today.");
+      }
+
+      const attendance = attendanceResult.rows[0];
+
+      if (!attendance.clock_in || attendance.clock_out) {
+        throw new Error("No active shift found to end a break.");
+      }
+
+      if (!attendance.active_break_started_at) {
+        throw new Error("No active break found.");
+      }
+
+      const openBreakResult = await client.query(
+        `
+        SELECT break_id, break_started_at
+        FROM app.attendance_break_logs
+        WHERE attendance_id = $1::bigint
+          AND break_ended_at IS NULL
+        ORDER BY break_started_at DESC
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [attendance.attendance_id],
+      );
+
+      if (openBreakResult.rowCount === 0) {
+        throw new Error("No active break found.");
+      }
+
+      const openBreak = openBreakResult.rows[0];
+      const startedAtMs = new Date(openBreak.break_started_at).getTime();
+      const endedAtMs = new Date(nowAt).getTime();
+      const durationMinutes = Math.max(0, Math.floor((endedAtMs - startedAtMs) / (1000 * 60)));
+
+      await client.query(
+        `
+        UPDATE app.attendance_break_logs
+        SET
+          break_ended_at = $1::timestamptz,
+          break_duration_minutes = $2::integer
+        WHERE break_id = $3::bigint
+        `,
+        [nowAt, durationMinutes, openBreak.break_id],
+      );
+
+      const updatedAttendanceResult = await client.query(
+        `
+        UPDATE app.attendance_records
+        SET
+          total_break_duration_minutes = COALESCE(total_break_duration_minutes, 0) + $1::integer,
+          active_break_started_at = NULL
+        WHERE attendance_id = $2::bigint
+        RETURNING
+          attendance_id,
+          attendance_date,
+          status,
+          clock_in,
+          clock_out,
+          work_duration_minutes,
+          late_minutes,
+          total_break_duration_minutes,
+          active_break_started_at
+        `,
+        [durationMinutes, attendance.attendance_id],
+      );
+
+      await insertAttendanceActivityLog(client, {
+        attendanceId: attendance.attendance_id,
+        employeeId: resolvedEmployeeId,
+        action: "break_end",
+        metadata: {
+          breakId: Number(openBreak.break_id),
+          breakDurationMinutes: durationMinutes,
+          source: "home",
+        },
+      });
+
+      return {
+        attendance: updatedAttendanceResult.rows[0],
+        breakLog: {
+          breakId: Number(openBreak.break_id),
+          breakStartedAt: openBreak.break_started_at,
+          breakEndedAt: nowAt,
+          breakDurationMinutes: durationMinutes,
+        },
+      };
+    });
+
+    return res.json({
+      attendance: mapAttendanceRecordRow(responsePayload.attendance),
+      breakLog: responsePayload.breakLog,
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/me/attendance/clock-out", requireAuth, async (req, res) => {
+  try {
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({
+        error: "No employee profile is linked to this account yet.",
+      });
+    }
+
+    const attendance = await withRlsContext(req.auth, async (client) => {
+      const nowResult = await client.query(
+        `
+        SELECT
+          NOW() AS now_at,
+          (NOW() AT TIME ZONE $1::text) AS now_local,
+          (NOW() AT TIME ZONE $1::text)::time AS now_time,
+          (NOW() AT TIME ZONE $1::text)::date AS today_date
+        `,
+        [attendanceTimeZone],
+      );
+      const nowAt = nowResult.rows[0].now_at;
+      const nowLocal = nowResult.rows[0].now_local;
+      const nowTime = nowResult.rows[0].now_time;
+      const todayDate = nowResult.rows[0].today_date;
+
+      const attendanceResult = await client.query(
+        `
+        SELECT
+          attendance_id,
+          attendance_date,
+          status,
+          clock_in,
+          clock_out,
+          work_duration_minutes,
+          late_minutes,
+          total_break_duration_minutes,
+          active_break_started_at
+        FROM app.attendance_records
+        WHERE employee_id = $1::text
+          AND attendance_date = $2::date
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [resolvedEmployeeId, todayDate],
+      );
+
+      if (attendanceResult.rowCount === 0) {
+        throw new Error("No attendance record found for today. Please clock in first.");
+      }
+
+      const attendance = attendanceResult.rows[0];
+      if (!attendance.clock_in) {
+        throw new Error("You are not clocked in yet.");
+      }
+      if (attendance.clock_out) {
+        throw new Error("You are already clocked out for today.");
+      }
+      if (attendance.active_break_started_at) {
+        throw new Error("Please end your break before clocking out.");
+      }
+
+      const sessionNetMinutes = await computeActiveSessionNetMinutes(client, {
+        nowLocal,
+        nowAt,
+        attendanceDate: attendance.attendance_date,
+        clockIn: attendance.clock_in,
+        attendanceId: attendance.attendance_id,
+        attendanceTimeZoneValue: attendanceTimeZone,
+      });
+      const computedDurationMinutes =
+        Number(attendance.work_duration_minutes ?? 0) + Number(sessionNetMinutes);
+
+      const updatedResult = await client.query(
+        `
+        UPDATE app.attendance_records
+        SET
+          clock_out = $1::time,
+          work_duration_minutes = $2::integer,
+          status = CASE
+            WHEN COALESCE(late_minutes, 0) >= 15 THEN 'late'::app.attendance_status
+            ELSE 'present'::app.attendance_status
+          END
+        WHERE attendance_id = $3::bigint
+        RETURNING
+          attendance_id,
+          attendance_date,
+          status,
+          clock_in,
+          clock_out,
+          work_duration_minutes,
+          late_minutes,
+          total_break_duration_minutes,
+          active_break_started_at
+        `,
+        [nowTime, computedDurationMinutes, attendance.attendance_id],
+      );
+
+      await insertAttendanceActivityLog(client, {
+        attendanceId: attendance.attendance_id,
+        employeeId: resolvedEmployeeId,
+        action: "clock_out",
+        metadata: {
+          clockOutTime: String(updatedResult.rows[0].clock_out ?? ""),
+          sessionNetMinutes,
+          source: "home",
+        },
+      });
+
+      return updatedResult.rows[0];
+    });
+
+    return res.json({ attendance: mapAttendanceRecordRow(attendance) });
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
@@ -2501,6 +3518,19 @@ app.get("/me/calendar", requireAuth, async (req, res) => {
 
   try {
     const seedResult = await seedCalendarSampleAttendanceIfEmpty(req.auth);
+    const resolvedEmployeeId = await ensureEmployeeLinkForUser(req.auth.userId);
+    if (!resolvedEmployeeId) {
+      return res.status(404).json({
+        error: "No employee profile is linked to this account yet.",
+      });
+    }
+
+    const { startDate, endDate } = buildAttendanceSyncRange(
+      typeof from === "string" ? from : null,
+      typeof to === "string" ? to : null,
+      365,
+    );
+    await syncAbsentAttendanceForRange(req.auth, resolvedEmployeeId, startDate, endDate);
 
     const attendanceWhere = [];
     const attendanceParams = [];
@@ -2986,9 +4016,18 @@ app.get(
             d.name AS department,
             e.position_id,
             COALESCE(jp.name, e.position) AS position,
-            e.attendance_status,
+            CASE
+              WHEN ta.status = 'absent'::app.attendance_status THEN 'absent'::app.attendance_status
+              WHEN ta.status = 'on-leave'::app.attendance_status THEN 'on-leave'::app.attendance_status
+              WHEN ta.status IN ('present'::app.attendance_status, 'late'::app.attendance_status)
+                THEN 'present'::app.attendance_status
+              ELSE e.attendance_status
+            END AS attendance_status,
             e.employment_status,
             e.employment_type,
+            ta.clock_in,
+            ta.clock_out,
+            ta.active_break_started_at,
             e.join_date,
             e.birthday,
             e.gender,
@@ -3007,6 +4046,18 @@ app.get(
           FROM app.employees e
           LEFT JOIN app.departments d ON d.department_id = e.department_id
           LEFT JOIN app.job_positions jp ON jp.position_id = e.position_id
+          LEFT JOIN LATERAL (
+            SELECT
+              ar.status,
+              ar.clock_in,
+              ar.clock_out,
+              ar.active_break_started_at
+            FROM app.attendance_records ar
+            WHERE ar.employee_id = e.employee_id
+              AND ar.attendance_date = (NOW() AT TIME ZONE $1::text)::date
+            ORDER BY ar.attendance_id DESC
+            LIMIT 1
+          ) ta ON TRUE
           LEFT JOIN app.payroll_profiles pp ON pp.employee_id = e.employee_id
           LEFT JOIN LATERAL (
             SELECT jsonb_agg(
@@ -3023,6 +4074,7 @@ app.get(
           ORDER BY e.employee_code
           LIMIT 500
           `,
+          [attendanceTimeZone],
         );
         return result.rows;
       });
