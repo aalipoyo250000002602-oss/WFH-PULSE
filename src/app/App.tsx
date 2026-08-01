@@ -1534,7 +1534,7 @@ export default function App() {
             if (!response.ok) {
                 toast.error('Sign in failed', {
                     description:
-                        payload?.error ||
+                        (payload as any)?.error ||
                         (payload as any)?.error_description ||
                         'User does not exist or password is incorrect',
                 })

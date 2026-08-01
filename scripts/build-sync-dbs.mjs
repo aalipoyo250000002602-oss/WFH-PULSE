@@ -77,20 +77,24 @@ function runCommand(label, command, args, env, dryRun) {
 function buildDbEnv(targetEnvPath) {
     const fileEnv = parseEnvFile(targetEnvPath)
 
-    // Avoid cross-target contamination by clearing connection-string vars first.
-    const env = {
-        ...process.env,
-        SUPABASE_DB_URL: '',
-        DATABASE_URL: '',
-        POSTGRES_URL: '',
-        PGHOST: '',
-        PGPORT: '',
-        PGDATABASE: '',
-        PGUSER: '',
-        PGPASSWORD: '',
-        PGSSL: '',
-        ...fileEnv,
+    // Avoid cross-target contamination by unsetting known DB env vars first.
+    // Empty-string vars can still be treated as explicit overrides by DB clients.
+    const env = { ...process.env }
+    for (const key of [
+        'SUPABASE_DB_URL',
+        'DATABASE_URL',
+        'POSTGRES_URL',
+        'PGHOST',
+        'PGPORT',
+        'PGDATABASE',
+        'PGUSER',
+        'PGPASSWORD',
+        'PGSSL',
+    ]) {
+        delete env[key]
     }
+
+    Object.assign(env, fileEnv)
 
     return env
 }

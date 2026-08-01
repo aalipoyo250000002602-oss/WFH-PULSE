@@ -136,7 +136,7 @@ ON CONFLICT (employee_id) DO NOTHING;
 
 INSERT INTO app.payroll_deductions (deduction_id, employee_id, deduction_name, amount)
 SELECT
-  'ded-' || (SUBSTRING(e.employee_id FROM 5)::INT - 1) || '-1',
+  'ded-' || (ROW_NUMBER() OVER (ORDER BY e.employee_id) - 1) || '-1',
   e.employee_id,
   'Withholding Tax',
   ROUND(pp.salary * 0.10, 2)
@@ -146,7 +146,7 @@ ON CONFLICT (deduction_id) DO NOTHING;
 
 INSERT INTO app.payroll_deductions (deduction_id, employee_id, deduction_name, amount)
 SELECT
-  'ded-' || (SUBSTRING(e.employee_id FROM 5)::INT - 1) || '-2',
+  'ded-' || (ROW_NUMBER() OVER (ORDER BY e.employee_id) - 1) || '-2',
   e.employee_id,
   'Employee HDMF',
   (100 + (abs(('x' || substr(md5('hdmf-' || e.employee_id), 1, 8))::bit(32)::int) % 101))::NUMERIC
@@ -155,7 +155,7 @@ ON CONFLICT (deduction_id) DO NOTHING;
 
 INSERT INTO app.payroll_deductions (deduction_id, employee_id, deduction_name, amount)
 SELECT
-  'ded-' || (SUBSTRING(e.employee_id FROM 5)::INT - 1) || '-3',
+  'ded-' || (ROW_NUMBER() OVER (ORDER BY e.employee_id) - 1) || '-3',
   e.employee_id,
   'Employee PhilHealth',
   (2100 + (abs(('x' || substr(md5('philhealth-' || e.employee_id), 1, 8))::bit(32)::int) % 901))::NUMERIC
@@ -164,7 +164,7 @@ ON CONFLICT (deduction_id) DO NOTHING;
 
 INSERT INTO app.payroll_deductions (deduction_id, employee_id, deduction_name, amount)
 SELECT
-  'ded-' || (SUBSTRING(e.employee_id FROM 5)::INT - 1) || '-4',
+  'ded-' || (ROW_NUMBER() OVER (ORDER BY e.employee_id) - 1) || '-4',
   e.employee_id,
   'Employee Social Security',
   (2000 + (abs(('x' || substr(md5('sss-' || e.employee_id), 1, 8))::bit(32)::int) % 501))::NUMERIC
@@ -187,7 +187,7 @@ VALUES
   ('h12', 'Rizal Day (Philippines)', DATE '2026-12-30', 'public', 162),
   ('h13', 'New Year''s Eve', DATE '2026-12-31', 'public', 163),
   ('h14', 'New Year''s Day', DATE '2027-01-01', 'public', 164)
-ON CONFLICT (holiday_id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- Attendance history for employee emp-1 (Home + Attendance Details datasets)
 INSERT INTO app.attendance_records (employee_id, attendance_date, status, clock_in, clock_out, work_duration_minutes, late_minutes)
@@ -301,7 +301,7 @@ VALUES
   ('emp-1', DATE '2026-07-17', 'present', TIME '08:58', TIME '17:05', 487, 0),
   ('emp-1', DATE '2026-07-20', 'late', TIME '09:25', TIME '17:40', 495, 25),
   ('emp-1', DATE '2026-07-21', 'present', TIME '08:50', TIME '17:00', 490, 0)
-ON CONFLICT (employee_id, attendance_date) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 INSERT INTO app.attendance_leave_details (attendance_id, request_date, from_date, to_date, reason, approved_by, approved_at)
 SELECT attendance_id, DATE '2025-10-10', DATE '2025-10-16', DATE '2025-10-16', 'Personal emergency - family matter', 'Sarah Johnson (HR)', TIMESTAMPTZ '2025-10-11 10:30:00'
