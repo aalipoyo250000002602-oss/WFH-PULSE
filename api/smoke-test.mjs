@@ -1,6 +1,10 @@
 import process from 'node:process'
+import '../config/env-config.mjs'
 
-const baseUrl = process.env.API_BASE_URL ?? 'http://localhost:8787'
+const baseUrl =
+    process.env.API_BASE_URL ??
+    process.env.VITE_API_BASE_URL_LOCAL ??
+    'http://localhost:8787'
 
 async function run() {
     const response = await fetch(`${baseUrl}/health`)

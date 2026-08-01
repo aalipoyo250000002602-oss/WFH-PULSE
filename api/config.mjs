@@ -1,6 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
+import {
+    getDatabaseConfig,
+    getSupabaseApiConfig,
+} from '../config/env-config.mjs'
 
 const envPath = path.resolve(process.cwd(), 'api', '.env.local')
 
@@ -34,5 +38,7 @@ export function getApiConfig() {
         port: Number(process.env.API_PORT ?? '8787'),
         jwtSecret: process.env.API_JWT_SECRET ?? 'dev-only-change-me',
         envPath,
+        supabase: getSupabaseApiConfig(),
+        database: getDatabaseConfig(),
     }
 }

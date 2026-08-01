@@ -9,7 +9,7 @@ import { signAccessToken } from './auth.mjs'
 import { requireAuth, requireRole } from './middleware.mjs'
 
 const app = express()
-const { port, envPath } = getApiConfig()
+const { port, envPath, supabase, database } = getApiConfig()
 
 app.use(cors())
 app.use(express.json())
@@ -2072,11 +2072,9 @@ app.post('/me/security-preferences', requireAuth, async (req, res) => {
         )
 
         if (result.rowCount === 0) {
-            return res
-                .status(409)
-                .json({
-                    error: 'Security preferences already exist for this user',
-                })
+            return res.status(409).json({
+                error: 'Security preferences already exist for this user',
+            })
         }
 
         if (Object.prototype.hasOwnProperty.call(payload, 'darkModeEnabled')) {
@@ -2106,11 +2104,9 @@ app.post('/me/security-preferences', requireAuth, async (req, res) => {
             [req.auth.userId]
         )
 
-        return res
-            .status(201)
-            .json({
-                preferences: mapSecurityPreferenceRow(mergedResult.rows[0]),
-            })
+        return res.status(201).json({
+            preferences: mapSecurityPreferenceRow(mergedResult.rows[0]),
+        })
     } catch (error) {
         return res.status(400).json({ error: error.message })
     }
@@ -3576,11 +3572,9 @@ app.put(
 
         const payload = parsed.data
         if (payload.shiftDateFrom > payload.shiftDateTo) {
-            return res
-                .status(400)
-                .json({
-                    error: 'shiftDateFrom must be on or before shiftDateTo',
-                })
+            return res.status(400).json({
+                error: 'shiftDateFrom must be on or before shiftDateTo',
+            })
         }
 
         if (
@@ -4269,11 +4263,9 @@ app.put('/me/overtime-requests/:requestId', requireAuth, async (req, res) => {
             req.auth.userId
         )
         if (!resolvedEmployeeId) {
-            return res
-                .status(404)
-                .json({
-                    error: 'No employee profile is linked to this account yet.',
-                })
+            return res.status(404).json({
+                error: 'No employee profile is linked to this account yet.',
+            })
         }
 
         const request = await withRlsContext(req.auth, async client => {
@@ -4410,11 +4402,9 @@ app.delete(
                 req.auth.userId
             )
             if (!resolvedEmployeeId) {
-                return res
-                    .status(404)
-                    .json({
-                        error: 'No employee profile is linked to this account yet.',
-                    })
+                return res.status(404).json({
+                    error: 'No employee profile is linked to this account yet.',
+                })
             }
 
             await withRlsContext(req.auth, async client => {
@@ -4468,11 +4458,9 @@ app.post(
                 req.auth.userId
             )
             if (!resolvedEmployeeId) {
-                return res
-                    .status(404)
-                    .json({
-                        error: 'No employee profile is linked to this account yet.',
-                    })
+                return res.status(404).json({
+                    error: 'No employee profile is linked to this account yet.',
+                })
             }
 
             const request = await withRlsContext(req.auth, async client => {
@@ -5010,11 +4998,9 @@ app.post(
             })
         } catch (error) {
             if (error?.code === '23505') {
-                return res
-                    .status(409)
-                    .json({
-                        error: 'Working-hour row for this day already exists',
-                    })
+                return res.status(409).json({
+                    error: 'Working-hour row for this day already exists',
+                })
             }
             return res.status(400).json({ error: error.message })
         }
@@ -5239,11 +5225,9 @@ app.put(
             })
         } catch (error) {
             if (error?.code === '23505') {
-                return res
-                    .status(409)
-                    .json({
-                        error: 'Working-hour row for this day already exists',
-                    })
+                return res.status(409).json({
+                    error: 'Working-hour row for this day already exists',
+                })
             }
             return res.status(400).json({ error: error.message })
         }
@@ -5800,13 +5784,39 @@ app.get(
 )
 
 if (process.argv.includes('--check')) {
+    const hasSupabaseConfig =
+        Boolean(supabase.url) &&
+        Boolean(supabase.publishableKey) &&
+        Boolean(supabase.secretKey) &&
+        Boolean(supabase.jwksUrl)
+    const hasDatabaseConfig =
+        Boolean(database.host) &&
+        Number.isFinite(database.port) &&
+        Boolean(database.database) &&
+        Boolean(database.user)
+
     console.log('API configuration check passed.')
     console.log(`Port: ${port}`)
+    console.log(`Supabase config loaded: ${hasSupabaseConfig}`)
+    console.log(`Database config loaded: ${hasDatabaseConfig}`)
     process.exit(0)
 }
 
 const server = app.listen(port, () => {
+    const hasSupabaseConfig =
+        Boolean(supabase.url) &&
+        Boolean(supabase.publishableKey) &&
+        Boolean(supabase.secretKey) &&
+        Boolean(supabase.jwksUrl)
+    const hasDatabaseConfig =
+        Boolean(database.host) &&
+        Number.isFinite(database.port) &&
+        Boolean(database.database) &&
+        Boolean(database.user)
+
     console.log(`WFH-PULSE API listening on http://localhost:${port}`)
+    console.log(`Supabase config loaded: ${hasSupabaseConfig}`)
+    console.log(`Database config loaded: ${hasDatabaseConfig}`)
 })
 
 process.on('SIGINT', async () => {
