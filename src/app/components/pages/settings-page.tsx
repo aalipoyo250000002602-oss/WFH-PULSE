@@ -605,7 +605,7 @@ export function SettingsPage({
 	const handleWorkingDayToggle = (day: string) => {
 		setLocalWorkingDays(prev => ({
 			...prev,
-			[day]: !prev[day],
+			[day as keyof typeof prev]: !prev[day as keyof typeof prev],
 		}))
 	}
 
@@ -1343,7 +1343,7 @@ export function SettingsPage({
 															{day.label}
 														</span>
 														{localWorkingDays[
-															day.key
+															day.key as keyof typeof localWorkingDays
 														] ? (
 															<Badge className="bg-vibrant-green/20 text-vibrant-green hover:bg-vibrant-green/30">
 																Working Day
@@ -1357,7 +1357,7 @@ export function SettingsPage({
 													<Switch
 														checked={
 															localWorkingDays[
-																day.key
+																day.key as keyof typeof localWorkingDays
 															]
 														}
 														onCheckedChange={() =>

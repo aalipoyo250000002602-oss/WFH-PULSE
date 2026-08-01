@@ -188,7 +188,7 @@ export function AnalyticsPage({
 				: 'Month,Present,Late,Absent',
 			...chartData.map(
 				row =>
-					`${row.week || row.month},${row.present},${row.late},${row.absent}`
+					`${'week' in row ? row.week : row.month},${row.present},${row.late},${row.absent}`
 			),
 			``,
 			`Status Distribution:`,
@@ -393,7 +393,7 @@ export function AnalyticsPage({
 					.map(
 						row => `
                 <tr>
-                  <td><strong>${row.week || row.month}</strong></td>
+                  <td><strong>${'week' in row ? row.week : row.month}</strong></td>
                   <td style="color: #22c55e;">${row.present}</td>
                   <td style="color: #f59e0b;">${row.late}</td>
                   <td style="color: #ef4444;">${row.absent}</td>

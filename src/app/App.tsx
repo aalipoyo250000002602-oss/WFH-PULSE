@@ -157,8 +157,8 @@ type WorkingDayKey = (typeof orderedWorkingDayKeys)[number]
 type WorkingDaysState = Record<WorkingDayKey, boolean>
 
 function resolveApiBaseUrl() {
-	if (import.meta.env.VITE_API_BASE_URL) {
-		return import.meta.env.VITE_API_BASE_URL
+	if ((import.meta as any).env?.VITE_API_BASE_URL) {
+		return (import.meta as any).env.VITE_API_BASE_URL
 	}
 
 	// Android emulators access host machine services through 10.0.2.2, not localhost.
@@ -235,7 +235,7 @@ export default function App() {
 	const [passwordActivities, setPasswordActivities] = useState<
 		PasswordActivityState[]
 	>([])
-	const [userProfile, setUserProfile] = useState({
+	const [userProfile, setUserProfile] = useState<UserProfileState>({
 		name: 'Alex Ali',
 		email: 'Alex.Ali@uic.co',
 		department: 'Engineering',
@@ -1504,6 +1504,10 @@ export default function App() {
 				return
 			}
 
+			if (!payload) {
+				return
+			}
+
 			const didSignIn = await completeSignIn(payload)
 			if (!didSignIn) {
 				return
@@ -1845,7 +1849,11 @@ export default function App() {
 			case 'calendar':
 				return (
 					<CalendarPage
-						attendanceData={attendanceData}
+						attendanceData={Object.fromEntries(
+							Object.entries(attendanceData).filter(
+								([, status]) => status !== 'on-leave'
+							) as Array<[string, 'absent' | 'holiday' | 'late' | 'present']>
+						)}
 						holidays={holidays}
 						onAddHoliday={handleAddHoliday}
 						onEditHoliday={handleEditHoliday}
@@ -1855,7 +1863,11 @@ export default function App() {
 			case 'analytics':
 				return (
 					<AnalyticsPage
-						attendanceData={attendanceData}
+						attendanceData={Object.fromEntries(
+							Object.entries(attendanceData).filter(
+								([, status]) => status !== 'on-leave'
+							) as Array<[string, 'absent' | 'holiday' | 'late' | 'present']>
+						)}
 						employmentOptions={employmentOptions}
 					/>
 				)
