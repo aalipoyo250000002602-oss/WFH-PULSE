@@ -3,7 +3,8 @@ import '../config/env-config.mjs'
 
 const baseUrl =
     process.env.API_BASE_URL ??
-    process.env.VITE_API_BASE_URL_LOCAL ??
+    process.env.VITE_API_BASE_URL ??
+    process.env.VITE_API_BASE_URL_ANDROID ??
     'http://localhost:8787'
 
 async function run() {
