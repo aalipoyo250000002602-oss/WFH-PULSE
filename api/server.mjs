@@ -37,9 +37,58 @@ const refreshSchema = z.object({
     refreshToken: z.string().min(1),
 })
 
+const supabaseTokenExchangeSchema = z.object({
+    accessToken: z.string().min(1),
+})
+
 const biometricLoginSchema = z.object({
     email: z.string().email().optional(),
 })
+
+const allowedRoleNames = new Set(['admin', 'hr_manager', 'employee'])
+
+function normalizeRoleName(value) {
+    if (typeof value !== 'string') {
+        return 'employee'
+    }
+
+    const normalized = value.trim().toLowerCase()
+    return allowedRoleNames.has(normalized) ? normalized : 'employee'
+}
+
+async function fetchSupabaseUserFromAccessToken(accessToken) {
+    const supabaseUrl = (supabase.url ?? '').trim().replace(/\/+$/, '')
+    const supabaseApiKey =
+        (supabase.publishableKey ?? '').trim() ||
+        (process.env.SUPABASE_ANON_KEY ?? '').trim()
+
+    if (!supabaseUrl || !supabaseApiKey) {
+        throw new Error('Supabase auth exchange is not configured')
+    }
+
+    const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+        method: 'GET',
+        headers: {
+            apikey: supabaseApiKey,
+            Authorization: `Bearer ${accessToken}`,
+        },
+    })
+
+    if (!response.ok) {
+        return null
+    }
+
+    const body = await response.json().catch(() => null)
+    if (
+        !body ||
+        typeof body.id !== 'string' ||
+        typeof body.email !== 'string'
+    ) {
+        return null
+    }
+
+    return body
+}
 
 const isoDateRegex = /^\d{4}-\d{2}-\d{2}$/
 const base64ImageDataUrlRegex =
@@ -1450,6 +1499,122 @@ app.post('/auth/login', async (req, res) => {
                 userId: row.user_id,
                 employeeId: profile?.employee_id ?? null,
                 email: profile?.email ?? email,
+                fullName: profile?.first_name
+                    ? `${profile.first_name} ${profile.last_name}`
+                    : null,
+            },
+        })
+    } catch (error) {
+        return res.status(401).json({ error: error.message })
+    }
+})
+
+app.post('/auth/supabase/exchange', async (req, res) => {
+    const parsed = supabaseTokenExchangeSchema.safeParse(req.body)
+    if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.flatten() })
+    }
+
+    try {
+        const supabaseUser = await fetchSupabaseUserFromAccessToken(
+            parsed.data.accessToken
+        )
+
+        if (!supabaseUser) {
+            return res.status(401).json({ error: 'Invalid Supabase token' })
+        }
+
+        const roleFromMetadata = normalizeRoleName(
+            supabaseUser?.app_metadata?.role
+        )
+        const employeeIdHint =
+            typeof supabaseUser?.user_metadata?.employee_id === 'string'
+                ? supabaseUser.user_metadata.employee_id
+                : null
+
+        const linkResult = await query(
+            `SELECT * FROM app_auth.link_supabase_user($1::uuid, $2::citext, $3::text, $4::text)`,
+            [
+                supabaseUser.id,
+                supabaseUser.email,
+                employeeIdHint,
+                roleFromMetadata,
+            ]
+        )
+
+        if (linkResult.rowCount === 0) {
+            return res
+                .status(401)
+                .json({ error: 'Unable to map Supabase user' })
+        }
+
+        const linkedUser = linkResult.rows[0]
+        const refreshToken = randomBytes(48).toString('base64url')
+
+        const sessionResult = await query(
+            `
+      INSERT INTO app_auth.sessions (
+        user_id,
+        refresh_token_hash,
+        ip_address,
+        user_agent,
+        expires_at
+      )
+      VALUES (
+        $1::uuid,
+        crypt($2::text, gen_salt('bf', 8)),
+        $3::inet,
+        $4::text,
+        NOW() + INTERVAL '30 days'
+      )
+      RETURNING session_id
+      `,
+            [
+                linkedUser.user_id,
+                refreshToken,
+                null,
+                req.headers['user-agent'] ?? 'supabase-client',
+            ]
+        )
+
+        await query(
+            `
+      UPDATE app_auth.users
+      SET last_login_at = NOW(), updated_at = NOW()
+      WHERE user_id = $1::uuid
+      `,
+            [linkedUser.user_id]
+        )
+
+        const resolvedEmployeeId = await ensureEmployeeLinkForUser(
+            linkedUser.user_id
+        )
+        const profile = await getUserProfileByUserId(linkedUser.user_id)
+
+        const customAccessToken = signAccessToken({
+            userId: linkedUser.user_id,
+            role: linkedUser.role_name,
+            sessionId: sessionResult.rows[0].session_id,
+            employeeId:
+                resolvedEmployeeId ??
+                profile?.employee_id ??
+                linkedUser.employee_id ??
+                null,
+        })
+
+        return res.json({
+            accessToken: customAccessToken,
+            refreshToken,
+            sessionId: sessionResult.rows[0].session_id,
+            role: linkedUser.role_name,
+            user: {
+                userId: linkedUser.user_id,
+                employeeId:
+                    resolvedEmployeeId ??
+                    profile?.employee_id ??
+                    linkedUser.employee_id ??
+                    null,
+                email: profile?.email ?? linkedUser.email ?? supabaseUser.email,
                 fullName: profile?.first_name
                     ? `${profile.first_name} ${profile.last_name}`
                     : null,

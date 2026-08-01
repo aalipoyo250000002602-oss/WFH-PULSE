@@ -5,6 +5,7 @@ This API wires the PostgreSQL schema to a Node.js backend with auth endpoints an
 ## Features
 
 - `POST /auth/login`
+- `POST /auth/supabase/exchange`
 - `POST /auth/refresh`
 - `POST /auth/register` (admin/hr only)
 - `POST /auth/logout`
@@ -88,6 +89,7 @@ It will:
 ## Auth notes
 
 - Login uses `app_auth.login_user(...)` DB function.
+- Supabase Auth migration path uses `POST /auth/supabase/exchange` to validate a Supabase access token and map/link `auth.users` identities into `app_auth.users`.
 - Refresh uses `app_auth.refresh_session(...)` and rotates refresh tokens.
 - API issues a short-lived JWT access token.
 - Logout revokes DB session via `app_auth.revoke_session(...)`.

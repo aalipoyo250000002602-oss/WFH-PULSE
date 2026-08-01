@@ -129,6 +129,21 @@ interface LoginResponsePayload {
     }
 }
 
+interface SupabaseLoginResponsePayload {
+    access_token: string
+    refresh_token: string
+    expires_in?: number
+    expires_at?: number
+    token_type?: string
+    user?: {
+        id?: string
+        email?: string | null
+        user_metadata?: {
+            full_name?: string | null
+        }
+    }
+}
+
 const orderedWorkingDayKeys = [
     'monday',
     'tuesday',
@@ -145,24 +160,30 @@ type WorkingDayKey = (typeof orderedWorkingDayKeys)[number]
 type WorkingDaysState = Record<WorkingDayKey, boolean>
 
 function resolveApiBaseUrl() {
-    // Android emulators access host machine services through 10.0.2.2, not localhost.
     if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
         return (
             (import.meta as any).env?.VITE_API_BASE_URL_ANDROID ??
             (import.meta as any).env?.VITE_API_BASE_URL ??
-            'http://10.0.2.2:8787'
+            ''
         )
     }
 
-    return (
-        (import.meta as any).env?.VITE_API_BASE_URL_LOCAL ??
-        (import.meta as any).env?.VITE_API_BASE_URL ??
-        'http://localhost:8787'
-    )
+    return (import.meta as any).env?.VITE_API_BASE_URL ?? ''
 }
 
 export default function App() {
     const apiBaseUrl = resolveApiBaseUrl()
+    const supabasePublishableKey =
+        (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY ??
+        (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ??
+        ''
+    const isSupabaseBaseUrl = (() => {
+        try {
+            return new URL(apiBaseUrl).hostname.endsWith('.supabase.co')
+        } catch {
+            return false
+        }
+    })()
     const [isBiometricLoginAvailable, setIsBiometricLoginAvailable] = useState(
         () => {
             if (typeof window === 'undefined') {
@@ -1399,6 +1420,11 @@ export default function App() {
 
     useEffect(() => {
         const loadBiometricAvailability = async () => {
+            if (isSupabaseBaseUrl) {
+                setIsBiometricLoginAvailable(false)
+                return
+            }
+
             try {
                 const response = await fetch(
                     `${apiBaseUrl}/auth/biometric-login/available`,
@@ -1420,9 +1446,12 @@ export default function App() {
         }
 
         void loadBiometricAvailability()
-    }, [apiBaseUrl])
+    }, [apiBaseUrl, isSupabaseBaseUrl])
 
-    const completeSignIn = async (payload: Partial<LoginResponsePayload>) => {
+    const completeSignIn = async (
+        payload: Partial<LoginResponsePayload>,
+        options: { skipBootstrap?: boolean } = {}
+    ) => {
         if (
             !payload?.accessToken ||
             !payload?.refreshToken ||
@@ -1454,15 +1483,17 @@ export default function App() {
             email: payload.user?.email || prev.email,
         }))
 
-        await loadSelfProfile(payload.accessToken, {
-            fullName: payload.user?.fullName,
-            email: payload.user?.email,
-        })
-        await loadEmploymentOptions(payload.accessToken)
-        await loadCompanyWorkingHours(payload.accessToken)
-        await loadSecurityPreferences(payload.accessToken)
-        await loadCalendarData(payload.accessToken)
-        await loadTodayAttendance(payload.accessToken)
+        if (!options.skipBootstrap) {
+            await loadSelfProfile(payload.accessToken, {
+                fullName: payload.user?.fullName,
+                email: payload.user?.email,
+            })
+            await loadEmploymentOptions(payload.accessToken)
+            await loadCompanyWorkingHours(payload.accessToken)
+            await loadSecurityPreferences(payload.accessToken)
+            await loadCalendarData(payload.accessToken)
+            await loadTodayAttendance(payload.accessToken)
+        }
 
         setIsLoggedIn(true)
         return true
@@ -1470,17 +1501,30 @@ export default function App() {
 
     const handleLogin = async (email: string, password: string) => {
         try {
-            const response = await fetch(`${apiBaseUrl}/auth/login`, {
+            const loginUrl = isSupabaseBaseUrl
+                ? `${apiBaseUrl}/auth/v1/token?grant_type=password`
+                : `${apiBaseUrl}/auth/login`
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+            }
+
+            if (isSupabaseBaseUrl && supabasePublishableKey) {
+                headers.apikey = supabasePublishableKey
+                headers.Authorization = `Bearer ${supabasePublishableKey}`
+            }
+
+            const response = await fetch(loginUrl, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers,
                 body: JSON.stringify({ email, password }),
             })
 
             let payload:
-                ({ error?: string } & Partial<LoginResponsePayload>) | null =
-                null
+                | ({ error?: string } & Partial<LoginResponsePayload>)
+                | ({
+                      error_description?: string
+                  } & Partial<SupabaseLoginResponsePayload>)
+                | null = null
             try {
                 payload = await response.json()
             } catch {
@@ -1490,13 +1534,44 @@ export default function App() {
             if (!response.ok) {
                 toast.error('Sign in failed', {
                     description:
-                        payload?.error ||
+                        (payload as any)?.error ||
+                        (payload as any)?.error_description ||
                         'User does not exist or password is incorrect',
                 })
                 return
             }
 
             if (!payload) {
+                return
+            }
+
+            if (isSupabaseBaseUrl) {
+                const supabasePayload =
+                    payload as Partial<SupabaseLoginResponsePayload>
+                const mappedPayload: Partial<LoginResponsePayload> = {
+                    accessToken: supabasePayload.access_token ?? '',
+                    refreshToken: supabasePayload.refresh_token ?? '',
+                    sessionId:
+                        supabasePayload.user?.id ??
+                        `${Date.now()}-${Math.random()}`,
+                    user: {
+                        email: supabasePayload.user?.email ?? email,
+                        fullName:
+                            supabasePayload.user?.user_metadata?.full_name ??
+                            null,
+                    },
+                }
+
+                const didSignIn = await completeSignIn(mappedPayload, {
+                    skipBootstrap: true,
+                })
+                if (!didSignIn) {
+                    return
+                }
+
+                toast.success('Welcome back!', {
+                    description: 'Signed in with Supabase Auth.',
+                })
                 return
             }
 
@@ -1517,6 +1592,14 @@ export default function App() {
     }
 
     const handleBiometricLogin = async () => {
+        if (isSupabaseBaseUrl) {
+            toast.error('Face ID sign in unavailable', {
+                description:
+                    'Biometric sign-in requires your custom API auth route. Use email and password for Supabase Auth mode.',
+            })
+            return
+        }
+
         try {
             const rememberedEmail =
                 window.localStorage.getItem('wfh:lastBiometricEmail') ||

@@ -1,127 +1,169 @@
-import fs from "node:fs";
-import path from "node:path";
-import process from "node:process";
-import { spawnSync } from "node:child_process";
+import fs from 'node:fs'
+import path from 'node:path'
+import process from 'node:process'
+import { spawnSync } from 'node:child_process'
 
-const rootDir = process.cwd();
-const dbDir = path.resolve(rootDir, "database");
-const localEnvPath = path.resolve(dbDir, ".env.local.postgres");
-const supabaseEnvPath = path.resolve(dbDir, ".env.local.supabase");
+const rootDir = process.cwd()
+const dbDir = path.resolve(rootDir, 'database')
+const localEnvPath = path.resolve(dbDir, '.env.local.postgres')
+const supabaseEnvPath = path.resolve(dbDir, '.env.local.supabase')
 
 function parseEnvFile(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Missing env file: ${filePath}`);
-  }
-
-  const env = {};
-  const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
+    if (!fs.existsSync(filePath)) {
+        throw new Error(`Missing env file: ${filePath}`)
     }
 
-    const idx = trimmed.indexOf("=");
-    if (idx < 0) {
-      continue;
+    const env = {}
+    const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/)
+    for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            continue
+        }
+
+        const idx = trimmed.indexOf('=')
+        if (idx < 0) {
+            continue
+        }
+
+        const key = trimmed.slice(0, idx).trim()
+        const value = trimmed
+            .slice(idx + 1)
+            .trim()
+            .replace(/^['\"]|['\"]$/g, '')
+        env[key] = value
     }
 
-    const key = trimmed.slice(0, idx).trim();
-    const value = trimmed.slice(idx + 1).trim().replace(/^['\"]|['\"]$/g, "");
-    env[key] = value;
-  }
-
-  return env;
+    return env
 }
 
 function runCommand(label, command, args, env, dryRun) {
-  const pretty = `${command} ${args.join(" ")}`.trim();
-  console.log(`\n[${label}] ${pretty}`);
+    const pretty = `${command} ${args.join(' ')}`.trim()
+    console.log(`\n[${label}] ${pretty}`)
 
-  if (dryRun) {
-    console.log(`[${label}] dry-run: skipped`);
-    return;
-  }
+    if (dryRun) {
+        console.log(`[${label}] dry-run: skipped`)
+        return
+    }
 
-  const isWindows = process.platform === "win32";
-  const useCmdShim = isWindows && command.toLowerCase() === "corepack";
+    const isWindows = process.platform === 'win32'
+    const useCmdShim = isWindows && command.toLowerCase() === 'corepack'
 
-  const result = useCmdShim
-    ? spawnSync("cmd.exe", ["/d", "/s", "/c", `${command} ${args.join(" ")}`], {
-        cwd: rootDir,
-        env,
-        stdio: "inherit",
-        shell: false,
-      })
-    : spawnSync(command, args, {
-        cwd: rootDir,
-        env,
-        stdio: "inherit",
-        shell: false,
-      });
+    const result = useCmdShim
+        ? spawnSync(
+              'cmd.exe',
+              ['/d', '/s', '/c', `${command} ${args.join(' ')}`],
+              {
+                  cwd: rootDir,
+                  env,
+                  stdio: 'inherit',
+                  shell: false,
+              }
+          )
+        : spawnSync(command, args, {
+              cwd: rootDir,
+              env,
+              stdio: 'inherit',
+              shell: false,
+          })
 
-  if (result.status !== 0) {
-    throw new Error(`[${label}] failed with exit code ${result.status ?? "unknown"}`);
-  }
+    if (result.status !== 0) {
+        throw new Error(
+            `[${label}] failed with exit code ${result.status ?? 'unknown'}`
+        )
+    }
 }
 
 function buildDbEnv(targetEnvPath) {
-  const fileEnv = parseEnvFile(targetEnvPath);
+    const fileEnv = parseEnvFile(targetEnvPath)
 
-  // Avoid cross-target contamination by clearing connection-string vars first.
-  const env = {
-    ...process.env,
-    SUPABASE_DB_URL: "",
-    DATABASE_URL: "",
-    POSTGRES_URL: "",
-    PGHOST: "",
-    PGPORT: "",
-    PGDATABASE: "",
-    PGUSER: "",
-    PGPASSWORD: "",
-    PGSSL: "",
-    ...fileEnv,
-  };
+    // Avoid cross-target contamination by unsetting known DB env vars first.
+    // Empty-string vars can still be treated as explicit overrides by DB clients.
+    const env = { ...process.env }
+    for (const key of [
+        'SUPABASE_DB_URL',
+        'DATABASE_URL',
+        'POSTGRES_URL',
+        'PGHOST',
+        'PGPORT',
+        'PGDATABASE',
+        'PGUSER',
+        'PGPASSWORD',
+        'PGSSL',
+    ]) {
+        delete env[key]
+    }
 
-  return env;
+    Object.assign(env, fileEnv)
+
+    return env
 }
 
 function runMigrations(label, targetEnvPath, dryRun) {
-  const env = buildDbEnv(targetEnvPath);
-  runCommand(label, "node", ["./database/migrate.mjs", "up"], env, dryRun);
+    const env = buildDbEnv(targetEnvPath)
+    runCommand(label, 'node', ['./database/migrate.mjs', 'up'], env, dryRun)
+}
+
+function runSeed(label, targetEnvPath, dryRun) {
+    const env = buildDbEnv(targetEnvPath)
+    runCommand(
+        `${label}:seed`,
+        'node',
+        ['./database/apply-sql.mjs', '--seed-only'],
+        env,
+        dryRun
+    )
 }
 
 function printUsage() {
-  console.log("Usage: node ./scripts/build-sync-dbs.mjs [--dry-run] [--skip-build]");
+    console.log(
+        'Usage: node ./scripts/build-sync-dbs.mjs [--dry-run] [--skip-build] [--with-seed]'
+    )
 }
 
 function main() {
-  const args = new Set(process.argv.slice(2));
-  if (args.has("--help") || args.has("-h")) {
-    printUsage();
-    return;
-  }
+    const args = new Set(process.argv.slice(2))
+    if (args.has('--help') || args.has('-h')) {
+        printUsage()
+        return
+    }
 
-  const dryRun = args.has("--dry-run");
-  const skipBuild = args.has("--skip-build");
+    const dryRun = args.has('--dry-run')
+    const skipBuild = args.has('--skip-build')
+    const withSeed = args.has('--with-seed')
 
-  console.log("WFH-PULSE smooth build + DB sync starting...");
-  console.log(`dryRun=${dryRun} skipBuild=${skipBuild}`);
+    console.log('WFH-PULSE smooth build + DB sync starting...')
+    console.log(`dryRun=${dryRun} skipBuild=${skipBuild} withSeed=${withSeed}`)
 
-  if (!skipBuild) {
-    runCommand("build", "corepack", ["pnpm", "run", "build"], process.env, dryRun);
-  }
+    if (!skipBuild) {
+        runCommand(
+            'build',
+            'corepack',
+            ['pnpm', 'run', 'build'],
+            process.env,
+            dryRun
+        )
+    }
 
-  runMigrations("db:local", localEnvPath, dryRun);
-  runMigrations("db:supabase", supabaseEnvPath, dryRun);
+    runMigrations('db:local', localEnvPath, dryRun)
+    runMigrations('db:supabase', supabaseEnvPath, dryRun)
 
-  console.log("\nDone. Local and Supabase migrations are in sync.");
+    if (withSeed) {
+        runSeed('db:local', localEnvPath, dryRun)
+        runSeed('db:supabase', supabaseEnvPath, dryRun)
+    }
+
+    console.log(
+        withSeed
+            ? '\nDone. Local and Supabase migrations and seed data are in sync.'
+            : '\nDone. Local and Supabase migrations are in sync.'
+    )
 }
 
 try {
-  main();
+    main()
 } catch (error) {
-  console.error("\nSync failed.");
-  console.error(error.message);
-  process.exitCode = 1;
+    console.error('\nSync failed.')
+    console.error(error.message)
+    process.exitCode = 1
 }
