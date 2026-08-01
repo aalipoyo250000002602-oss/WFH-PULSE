@@ -9,13 +9,27 @@
       <meta name="description" content="Efficiently generate and manage attendance data for employees, including tracking late arrivals, absences, and leave days, ensuring accurate reporting." />
       <meta name="robots" content="noindex, nofollow" />
       <style>html, body { height: 100%; margin: 0; } #root { height: 100%; }</style>
+      <script>
+        // When this repository is served directly by GitHub Pages branch mode,
+        // redirect root requests to the built app under /dist/.
+        (function () {
+          var isGithubPages = window.location.hostname.endsWith('github.io');
+          var isDistPage = /\/dist\//.test(window.location.pathname);
+          if (isGithubPages && !isDistPage) {
+            var basePath = window.location.pathname.endsWith('/')
+              ? window.location.pathname
+              : window.location.pathname + '/';
+            window.location.replace(basePath + 'dist/index.html');
+          }
+        })();
+      </script>
       
     </head>
 
     <body>
       
       <div id="root"></div>
-      <script type="module" src="/src/main.tsx"></script>
+      <noscript>This application requires JavaScript to run.</noscript>
       
     </body>
   </html>
