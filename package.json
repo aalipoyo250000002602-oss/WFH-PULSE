@@ -32,6 +32,8 @@
         "db:sync:all": "node ./scripts/build-sync-dbs.mjs",
         "db:sync:all:dry": "node ./scripts/build-sync-dbs.mjs --dry-run",
         "db:sync:all:no-build": "node ./scripts/build-sync-dbs.mjs --skip-build",
+        "db:sync:all:with-seed": "node ./scripts/build-sync-dbs.mjs --with-seed",
+        "db:sync:all:no-build:with-seed": "node ./scripts/build-sync-dbs.mjs --skip-build --with-seed",
         "api:dev": "node ./api/server.mjs",
         "api:check": "node ./api/server.mjs --check",
         "api:smoke": "node ./api/smoke-test.mjs",
