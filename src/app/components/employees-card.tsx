@@ -1,842 +1,1047 @@
-﻿import { useEffect, useMemo, useState } from "react";
-import { Input } from "./ui/input";
+﻿import { useEffect, useMemo, useState } from 'react'
+import { Input } from './ui/input'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./ui/select";
-import { motion } from "motion/react";
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from './ui/select'
+import { motion } from 'motion/react'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "./ui/dialog";
-import { Label } from "./ui/label";
-import { Button } from "./ui/button";
-import { Users, Search, ArrowUpDown, Filter, Plus, Calendar, Award, Database } from "lucide-react";
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from './ui/dialog'
+import { Label } from './ui/label'
+import { Button } from './ui/button'
 import {
-  getEmployees,
-  replaceEmployees,
-  Employee,
-  getDepartmentNamesFromOptions,
-  syncEmployeesWithEmploymentOptions,
-} from "./employee-data";
-import { toast } from "sonner";
+	Users,
+	Search,
+	ArrowUpDown,
+	Filter,
+	Plus,
+	Calendar,
+	Award,
+	Database,
+} from 'lucide-react'
+import {
+	getEmployees,
+	replaceEmployees,
+	Employee,
+	getDepartmentNamesFromOptions,
+	syncEmployeesWithEmploymentOptions,
+} from './employee-data'
+import { toast } from 'sonner'
 
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 interface EmployeesCardProps {
-  onEmployeeClick: (employeeId: string) => void;
-  apiBaseUrl: string;
-  accessToken: string;
-  employmentOptions: {
-    employmentTypes: string[];
-    departments: Array<{ departmentId: number; name: string }>;
-    positions: Array<{ positionId: number; departmentId: number; name: string }>;
-  };
+	onEmployeeClick: (employeeId: string) => void
+	apiBaseUrl: string
+	accessToken: string
+	employmentOptions: {
+		employmentTypes: string[]
+		departments: Array<{ departmentId: number; name: string }>
+		positions: Array<{
+			positionId: number
+			departmentId: number
+			name: string
+		}>
+	}
 }
 
 export function EmployeesCard({
-  onEmployeeClick,
-  apiBaseUrl,
-  accessToken,
-  employmentOptions,
+	onEmployeeClick,
+	apiBaseUrl,
+	accessToken,
+	employmentOptions,
 }: EmployeesCardProps) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState<"name" | "department">("name");
-  const [filterDepartment, setFilterDepartment] = useState<string>("all");
-  const [filterEmploymentStatus, setFilterEmploymentStatus] = useState<"all" | "onboarding" | "active" | "inactive">("active");
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
-  
-  // Form state for adding employee
-  const [formData, setFormData] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    department: "",
-    position: "",
-    joinDate: "",
-    birthday: "",
-    gender: "Male" as const,
-    nationality: "",
-    maritalStatus: "Single" as const,
-    employmentType: "full-time" as const,
-  });
+	const [searchQuery, setSearchQuery] = useState('')
+	const [sortBy, setSortBy] = useState<'name' | 'department'>('name')
+	const [filterDepartment, setFilterDepartment] = useState<string>('all')
+	const [filterEmploymentStatus, setFilterEmploymentStatus] = useState<
+		'all' | 'onboarding' | 'active' | 'inactive'
+	>('active')
+	const [showAddDialog, setShowAddDialog] = useState(false)
+	const [isLoadingEmployees, setIsLoadingEmployees] = useState(false)
 
-  const [employees, setEmployees] = useState<Employee[]>(() => getEmployees());
+	// Form state for adding employee
+	const [formData, setFormData] = useState({
+		firstName: '',
+		lastName: '',
+		email: '',
+		phone: '',
+		department: '',
+		position: '',
+		joinDate: '',
+		birthday: '',
+		gender: 'Male' as const,
+		nationality: '',
+		maritalStatus: 'Single' as const,
+		employmentType: 'full-time' as const,
+	})
 
-  const mapApiEmployeeToLocal = (row: Record<string, any>): Employee => ({
-    ...(function buildPayroll() {
-      const deductions = Array.isArray(row.payroll_deductions)
-        ? row.payroll_deductions.map((item: any, idx: number) => ({
-            id: String(item?.deduction_id ?? `ded-${row.employee_id}-${idx + 1}`),
-            name: String(item?.deduction_name ?? "Deduction"),
-            amount: Number(item?.amount ?? 0),
-          }))
-        : [];
+	const [employees, setEmployees] = useState<Employee[]>(() => getEmployees())
 
-      if (row.salary == null && deductions.length === 0) {
-        return {};
-      }
+	const mapApiEmployeeToLocal = (row: Record<string, any>): Employee => ({
+		...(function buildPayroll() {
+			const deductions = Array.isArray(row.payroll_deductions)
+				? row.payroll_deductions.map((item: any, idx: number) => ({
+						id: String(
+							item?.deduction_id ??
+								`ded-${row.employee_id}-${idx + 1}`
+						),
+						name: String(item?.deduction_name ?? 'Deduction'),
+						amount: Number(item?.amount ?? 0),
+					}))
+				: []
 
-      return {
-        payroll: {
-          salary: Number(row.salary ?? 0),
-          governmentIds: {
-            pagIbig: String(row.pag_ibig ?? ""),
-            philHealth: String(row.phil_health ?? ""),
-            sss: String(row.sss ?? ""),
-            tin: String(row.tin ?? ""),
-          },
-          deductions,
-        },
-      };
-    })(),
-    id: String(row.employee_id),
-    employeeId: String(row.employee_code ?? row.employee_id),
-    firstName: String(row.first_name ?? ""),
-    lastName: String(row.last_name ?? ""),
-    status: (row.attendance_status ?? "present") as Employee["status"],
-    employmentStatus: (row.employment_status ?? "active") as Employee["employmentStatus"],
-    employmentType: String(row.employment_type ?? "full-time"),
-    clockInTime: row.clock_in ? String(row.clock_in).slice(0, 5) : undefined,
-    clockOutTime: row.clock_out ? String(row.clock_out).slice(0, 5) : undefined,
-    isOnBreak: Boolean(row.active_break_started_at),
-    department: String(row.department ?? ""),
-    position: row.position ? String(row.position) : "",
-    email: row.email ? String(row.email) : "",
-    phone: row.phone ? String(row.phone) : "",
-    joinDate: row.join_date ? String(row.join_date).slice(0, 10) : "",
-    birthday: row.birthday ? String(row.birthday).slice(0, 10) : "",
-    gender: row.gender ? String(row.gender) as Employee["gender"] : undefined,
-    nationality: row.nationality ? String(row.nationality) : "",
-    maritalStatus: row.marital_status
-      ? String(row.marital_status) as Employee["maritalStatus"]
-      : undefined,
-    address: row.address ? String(row.address) : "",
-    invitationSentDate: row.invitation_sent_date
-      ? String(row.invitation_sent_date).slice(0, 10)
-      : undefined,
-    passwordChanged:
-      row.password_changed == null
-        ? undefined
-        : Boolean(row.password_changed),
-    profilePicture: row.profile_picture_url ? String(row.profile_picture_url) : undefined,
-  });
+			if (row.salary == null && deductions.length === 0) {
+				return {}
+			}
 
-  useEffect(() => {
-    const loadEmployees = async () => {
-      if (!accessToken) {
-        return;
-      }
+			return {
+				payroll: {
+					salary: Number(row.salary ?? 0),
+					governmentIds: {
+						pagIbig: String(row.pag_ibig ?? ''),
+						philHealth: String(row.phil_health ?? ''),
+						sss: String(row.sss ?? ''),
+						tin: String(row.tin ?? ''),
+					},
+					deductions,
+				},
+			}
+		})(),
+		id: String(row.employee_id),
+		employeeId: String(row.employee_code ?? row.employee_id),
+		firstName: String(row.first_name ?? ''),
+		lastName: String(row.last_name ?? ''),
+		status: (row.attendance_status ?? 'present') as Employee['status'],
+		employmentStatus: (row.employment_status ??
+			'active') as Employee['employmentStatus'],
+		employmentType: String(row.employment_type ?? 'full-time'),
+		clockInTime: row.clock_in
+			? String(row.clock_in).slice(0, 5)
+			: undefined,
+		clockOutTime: row.clock_out
+			? String(row.clock_out).slice(0, 5)
+			: undefined,
+		isOnBreak: Boolean(row.active_break_started_at),
+		department: String(row.department ?? ''),
+		position: row.position ? String(row.position) : '',
+		email: row.email ? String(row.email) : '',
+		phone: row.phone ? String(row.phone) : '',
+		joinDate: row.join_date ? String(row.join_date).slice(0, 10) : '',
+		birthday: row.birthday ? String(row.birthday).slice(0, 10) : '',
+		gender: row.gender
+			? (String(row.gender) as Employee['gender'])
+			: undefined,
+		nationality: row.nationality ? String(row.nationality) : '',
+		maritalStatus: row.marital_status
+			? (String(row.marital_status) as Employee['maritalStatus'])
+			: undefined,
+		address: row.address ? String(row.address) : '',
+		invitationSentDate: row.invitation_sent_date
+			? String(row.invitation_sent_date).slice(0, 10)
+			: undefined,
+		passwordChanged:
+			row.password_changed == null
+				? undefined
+				: Boolean(row.password_changed),
+		profilePicture: row.profile_picture_url
+			? String(row.profile_picture_url)
+			: undefined,
+	})
 
-      try {
-        setIsLoadingEmployees(true);
-        const response = await fetch(`${apiBaseUrl}/employees`, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
+	useEffect(() => {
+		const loadEmployees = async () => {
+			if (!accessToken) {
+				return
+			}
 
-        if (!response.ok) {
-          return;
-        }
+			try {
+				setIsLoadingEmployees(true)
+				const response = await fetch(`${apiBaseUrl}/employees`, {
+					method: 'GET',
+					headers: {
+						Authorization: `Bearer ${accessToken}`,
+					},
+				})
 
-        const payload = await response.json().catch(() => ({}));
-        const rows = Array.isArray(payload?.employees) ? payload.employees : [];
-        const mappedEmployees = rows.map(mapApiEmployeeToLocal);
-        setEmployees(mappedEmployees);
-        replaceEmployees(mappedEmployees);
-      } catch {
-        // Keep local cache values when API is unavailable.
-      } finally {
-        setIsLoadingEmployees(false);
-      }
-    };
+				if (!response.ok) {
+					return
+				}
 
-    void loadEmployees();
-  }, [accessToken, apiBaseUrl]);
+				const payload = await response.json().catch(() => ({}))
+				const rows = Array.isArray(payload?.employees)
+					? payload.employees
+					: []
+				const mappedEmployees = rows.map(mapApiEmployeeToLocal)
+				setEmployees(mappedEmployees)
+				replaceEmployees(mappedEmployees)
+			} catch {
+				// Keep local cache values when API is unavailable.
+			} finally {
+				setIsLoadingEmployees(false)
+			}
+		}
 
-  const normalizedDepartmentOptions = useMemo(
-    () => getDepartmentNamesFromOptions(employmentOptions.departments),
-    [employmentOptions.departments],
-  );
+		void loadEmployees()
+	}, [accessToken, apiBaseUrl])
 
-  const employmentTypeOptions = useMemo(() => {
-    const seen = new Set<string>();
-    const options: string[] = [];
-    for (const employmentType of employmentOptions.employmentTypes) {
-      const value = employmentType.trim();
-      if (!value) {
-        continue;
-      }
+	const normalizedDepartmentOptions = useMemo(
+		() => getDepartmentNamesFromOptions(employmentOptions.departments),
+		[employmentOptions.departments]
+	)
 
-      const key = value.toLowerCase();
-      if (seen.has(key)) {
-        continue;
-      }
+	const employmentTypeOptions = useMemo(() => {
+		const seen = new Set<string>()
+		const options: string[] = []
+		for (const employmentType of employmentOptions.employmentTypes) {
+			const value = employmentType.trim()
+			if (!value) {
+				continue
+			}
 
-      seen.add(key);
-      options.push(value);
-    }
+			const key = value.toLowerCase()
+			if (seen.has(key)) {
+				continue
+			}
 
-    return options;
-  }, [employmentOptions.employmentTypes]);
+			seen.add(key)
+			options.push(value)
+		}
 
-  const employeesWithSyncedDepartments = useMemo(() => {
-    return syncEmployeesWithEmploymentOptions(employees, employmentOptions);
-  }, [employees, employmentOptions]);
+		return options
+	}, [employmentOptions.employmentTypes])
 
-  const positionsByDepartment = useMemo(() => {
-    const departmentNameById = new Map<number, string>();
-    for (const department of employmentOptions.departments) {
-      const name = department.name.trim();
-      if (name) {
-        departmentNameById.set(department.departmentId, name);
-      }
-    }
+	const employeesWithSyncedDepartments = useMemo(() => {
+		return syncEmployeesWithEmploymentOptions(employees, employmentOptions)
+	}, [employees, employmentOptions])
 
-    const map = new Map<string, string[]>();
-    for (const position of employmentOptions.positions) {
-      const positionName = position.name.trim();
-      if (!positionName) {
-        continue;
-      }
+	const positionsByDepartment = useMemo(() => {
+		const departmentNameById = new Map<number, string>()
+		for (const department of employmentOptions.departments) {
+			const name = department.name.trim()
+			if (name) {
+				departmentNameById.set(department.departmentId, name)
+			}
+		}
 
-      const departmentName = departmentNameById.get(position.departmentId);
-      if (!departmentName) {
-        continue;
-      }
+		const map = new Map<string, string[]>()
+		for (const position of employmentOptions.positions) {
+			const positionName = position.name.trim()
+			if (!positionName) {
+				continue
+			}
 
-      const key = departmentName.toLowerCase();
-      const current = map.get(key) ?? [];
-      if (!current.some((name) => name.toLowerCase() === positionName.toLowerCase())) {
-        current.push(positionName);
-      }
-      map.set(key, current);
-    }
+			const departmentName = departmentNameById.get(position.departmentId)
+			if (!departmentName) {
+				continue
+			}
 
-    return map;
-  }, [employmentOptions.departments, employmentOptions.positions]);
+			const key = departmentName.toLowerCase()
+			const current = map.get(key) ?? []
+			if (
+				!current.some(
+					name => name.toLowerCase() === positionName.toLowerCase()
+				)
+			) {
+				current.push(positionName)
+			}
+			map.set(key, current)
+		}
 
-  const allPositionOptions = useMemo(() => {
-    const seen = new Set<string>();
-    const options: string[] = [];
-    for (const position of employmentOptions.positions) {
-      const name = position.name.trim();
-      if (!name) {
-        continue;
-      }
+		return map
+	}, [employmentOptions.departments, employmentOptions.positions])
 
-      const key = name.toLowerCase();
-      if (seen.has(key)) {
-        continue;
-      }
+	const allPositionOptions = useMemo(() => {
+		const seen = new Set<string>()
+		const options: string[] = []
+		for (const position of employmentOptions.positions) {
+			const name = position.name.trim()
+			if (!name) {
+				continue
+			}
 
-      seen.add(key);
-      options.push(name);
-    }
-    return options;
-  }, [employmentOptions.positions]);
+			const key = name.toLowerCase()
+			if (seen.has(key)) {
+				continue
+			}
 
-  const departmentPositionOptions = useMemo(() => {
-    if (!formData.department) {
-      return allPositionOptions;
-    }
+			seen.add(key)
+			options.push(name)
+		}
+		return options
+	}, [employmentOptions.positions])
 
-    const byDepartment = positionsByDepartment.get(formData.department.toLowerCase());
-    return byDepartment && byDepartment.length > 0 ? byDepartment : allPositionOptions;
-  }, [allPositionOptions, formData.department, positionsByDepartment]);
+	const departmentPositionOptions = useMemo(() => {
+		if (!formData.department) {
+			return allPositionOptions
+		}
 
-  useEffect(() => {
-    if (
-      formData.position &&
-      departmentPositionOptions.length > 0 &&
-      !departmentPositionOptions.includes(formData.position)
-    ) {
-      setFormData((prev) => ({ ...prev, position: "" }));
-    }
-  }, [departmentPositionOptions, formData.position]);
+		const byDepartment = positionsByDepartment.get(
+			formData.department.toLowerCase()
+		)
+		return byDepartment && byDepartment.length > 0
+			? byDepartment
+			: allPositionOptions
+	}, [allPositionOptions, formData.department, positionsByDepartment])
 
-  useEffect(() => {
-    if (
-      formData.employmentType &&
-      employmentTypeOptions.length > 0 &&
-      !employmentTypeOptions.includes(formData.employmentType)
-    ) {
-      setFormData((prev) => ({
-        ...prev,
-        employmentType: employmentTypeOptions[0],
-      }));
-    }
-  }, [employmentTypeOptions, formData.employmentType]);
+	useEffect(() => {
+		if (
+			formData.position &&
+			departmentPositionOptions.length > 0 &&
+			!departmentPositionOptions.includes(formData.position)
+		) {
+			setFormData(prev => ({ ...prev, position: '' }))
+		}
+	}, [departmentPositionOptions, formData.position])
 
-  const departments = useMemo(() => {
-    if (normalizedDepartmentOptions.length > 0) {
-      return normalizedDepartmentOptions;
-    }
+	useEffect(() => {
+		if (
+			formData.employmentType &&
+			employmentTypeOptions.length > 0 &&
+			!employmentTypeOptions.includes(formData.employmentType)
+		) {
+			setFormData(prev => ({
+				...prev,
+				employmentType: employmentTypeOptions[0],
+			}))
+		}
+	}, [employmentTypeOptions, formData.employmentType])
 
-    return Array.from(
-      new Set(employeesWithSyncedDepartments.map((emp) => emp.department)),
-    ).sort();
-  }, [employeesWithSyncedDepartments, normalizedDepartmentOptions]);
+	const departments = useMemo(() => {
+		if (normalizedDepartmentOptions.length > 0) {
+			return normalizedDepartmentOptions
+		}
 
-  useEffect(() => {
-    if (filterDepartment !== "all" && !departments.includes(filterDepartment)) {
-      setFilterDepartment("all");
-    }
-  }, [departments, filterDepartment]);
+		return Array.from(
+			new Set(employeesWithSyncedDepartments.map(emp => emp.department))
+		).sort()
+	}, [employeesWithSyncedDepartments, normalizedDepartmentOptions])
 
-  // Filter employees by search query, department, and employment status
-  const filteredEmployees = employeesWithSyncedDepartments.filter((emp) => {
-    const matchesSearch =
-      searchQuery === "" ||
-      emp.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.employeeId.toLowerCase().includes(searchQuery.toLowerCase());
+	useEffect(() => {
+		if (
+			filterDepartment !== 'all' &&
+			!departments.includes(filterDepartment)
+		) {
+			setFilterDepartment('all')
+		}
+	}, [departments, filterDepartment])
 
-    const matchesDepartment =
-      filterDepartment === "all" || emp.department === filterDepartment;
-      
-    const matchesEmploymentStatus =
-      filterEmploymentStatus === "all" || emp.employmentStatus === filterEmploymentStatus;
+	// Filter employees by search query, department, and employment status
+	const filteredEmployees = employeesWithSyncedDepartments.filter(emp => {
+		const matchesSearch =
+			searchQuery === '' ||
+			emp.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+			emp.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+			emp.employeeId.toLowerCase().includes(searchQuery.toLowerCase())
 
-    return matchesSearch && matchesDepartment && matchesEmploymentStatus;
-  });
+		const matchesDepartment =
+			filterDepartment === 'all' || emp.department === filterDepartment
 
-  // Sort employees
-  const sortedEmployees = [...filteredEmployees].sort((a, b) => {
-    if (sortBy === "name") {
-      return `${a.lastName}, ${a.firstName}`.localeCompare(
-        `${b.lastName}, ${b.firstName}`
-      );
-    } else {
-      return a.department.localeCompare(b.department);
-    }
-  });
+		const matchesEmploymentStatus =
+			filterEmploymentStatus === 'all' ||
+			emp.employmentStatus === filterEmploymentStatus
 
-  // Limit to first 5 employees for the home page card
-  const displayedEmployees = sortedEmployees.slice(0, 5);
-  
-  // Calculate years of service
-  const calculateYearsOfService = (joinDate: string): number => {
-    const today = new Date(2025, 9, 19); // Oct 19, 2025
-    const join = new Date(joinDate);
-    const years = today.getFullYear() - join.getFullYear();
-    const monthDiff = today.getMonth() - join.getMonth();
-    const dayDiff = today.getDate() - join.getDate();
-    
-    if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
-      return years - 1;
-    }
-    return years;
-  };
-  
-  // Check if today is work anniversary
-  const isWorkAnniversary = (joinDate: string): boolean => {
-    const today = new Date(2025, 9, 19); // Oct 19, 2025
-    const join = new Date(joinDate);
-    return join.getMonth() === today.getMonth() && join.getDate() === today.getDate();
-  };
+		return matchesSearch && matchesDepartment && matchesEmploymentStatus
+	})
 
-  const handleAddEmployee = () => {
-    // Validate required fields
-    if (!formData.firstName || !formData.lastName || !formData.email || 
-        !formData.phone || !formData.department || !formData.position || 
-        !formData.joinDate || !formData.birthday || !formData.nationality || !formData.employmentType) {
-      toast.error("Please fill in all required fields");
-      return;
-    }
+	// Sort employees
+	const sortedEmployees = [...filteredEmployees].sort((a, b) => {
+		if (sortBy === 'name') {
+			return `${a.lastName}, ${a.firstName}`.localeCompare(
+				`${b.lastName}, ${b.firstName}`
+			)
+		} else {
+			return a.department.localeCompare(b.department)
+		}
+	})
 
-    if (
-      departments.length > 0 &&
-      !departments.some((department) => department === formData.department)
-    ) {
-      toast.error("Please select a valid department from employment details");
-      return;
-    }
+	// Limit to first 5 employees for the home page card
+	const displayedEmployees = sortedEmployees.slice(0, 5)
 
-    if (
-      employmentTypeOptions.length > 0 &&
-      !employmentTypeOptions.includes(formData.employmentType)
-    ) {
-      toast.error("Please select a valid employment type from employment details");
-      return;
-    }
+	// Calculate years of service
+	const calculateYearsOfService = (joinDate: string): number => {
+		const today = new Date(2025, 9, 19) // Oct 19, 2025
+		const join = new Date(joinDate)
+		const years = today.getFullYear() - join.getFullYear()
+		const monthDiff = today.getMonth() - join.getMonth()
+		const dayDiff = today.getDate() - join.getDate()
 
-    if (
-      departmentPositionOptions.length > 0 &&
-      !departmentPositionOptions.includes(formData.position)
-    ) {
-      toast.error("Please select a valid position from employment details");
-      return;
-    }
+		if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+			return years - 1
+		}
+		return years
+	}
 
-    if (!emailRegex.test(formData.email.trim())) {
-      toast.error("Please enter a valid email address");
-      return;
-    }
+	// Check if today is work anniversary
+	const isWorkAnniversary = (joinDate: string): boolean => {
+		const today = new Date(2025, 9, 19) // Oct 19, 2025
+		const join = new Date(joinDate)
+		return (
+			join.getMonth() === today.getMonth() &&
+			join.getDate() === today.getDate()
+		)
+	}
 
-    if (!accessToken) {
-      toast.error("Unable to add employee", {
-        description: "Missing access token. Please sign in again.",
-      });
-      return;
-    }
+	const handleAddEmployee = () => {
+		// Validate required fields
+		if (
+			!formData.firstName ||
+			!formData.lastName ||
+			!formData.email ||
+			!formData.phone ||
+			!formData.department ||
+			!formData.position ||
+			!formData.joinDate ||
+			!formData.birthday ||
+			!formData.nationality ||
+			!formData.employmentType
+		) {
+			toast.error('Please fill in all required fields')
+			return
+		}
 
-    const selectedDepartment = employmentOptions.departments.find(
-      (department) => department.name === formData.department,
-    );
-    const selectedPosition = employmentOptions.positions.find(
-      (position) =>
-        position.name === formData.position
-        && (!selectedDepartment || position.departmentId === selectedDepartment.departmentId),
-    );
+		if (
+			departments.length > 0 &&
+			!departments.some(department => department === formData.department)
+		) {
+			toast.error(
+				'Please select a valid department from employment details'
+			)
+			return
+		}
 
-    if (!selectedDepartment || !selectedPosition) {
-      toast.error("Please select valid department and position options");
-      return;
-    }
+		if (
+			employmentTypeOptions.length > 0 &&
+			!employmentTypeOptions.includes(formData.employmentType)
+		) {
+			toast.error(
+				'Please select a valid employment type from employment details'
+			)
+			return
+		}
 
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBaseUrl}/employees`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({
-            firstName: formData.firstName,
-            lastName: formData.lastName,
-            email: formData.email.trim(),
-            phone: formData.phone,
-            birthday: formData.birthday,
-            gender: formData.gender,
-            nationality: formData.nationality,
-            maritalStatus: formData.maritalStatus,
-            departmentId: selectedDepartment.departmentId,
-            positionId: selectedPosition.positionId,
-            employmentType: formData.employmentType,
-            employmentStatus: "onboarding",
-            joinDate: formData.joinDate,
-            passwordChanged: false,
-          }),
-        });
+		if (
+			departmentPositionOptions.length > 0 &&
+			!departmentPositionOptions.includes(formData.position)
+		) {
+			toast.error(
+				'Please select a valid position from employment details'
+			)
+			return
+		}
 
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload?.employee) {
-          toast.error("Employee add failed", {
-            description: payload?.error || "Unable to create employee in the database.",
-          });
-          return;
-        }
+		if (!emailRegex.test(formData.email.trim())) {
+			toast.error('Please enter a valid email address')
+			return
+		}
 
-        const createdEmployee = mapApiEmployeeToLocal(payload.employee);
-        const nextEmployees = [...employees, createdEmployee];
-        setEmployees(nextEmployees);
-        replaceEmployees(nextEmployees);
+		if (!accessToken) {
+			toast.error('Unable to add employee', {
+				description: 'Missing access token. Please sign in again.',
+			})
+			return
+		}
 
-        toast.success("Employee added successfully", {
-          description: `${createdEmployee.firstName} ${createdEmployee.lastName} has been onboarded`,
-        });
+		const selectedDepartment = employmentOptions.departments.find(
+			department => department.name === formData.department
+		)
+		const selectedPosition = employmentOptions.positions.find(
+			position =>
+				position.name === formData.position &&
+				(!selectedDepartment ||
+					position.departmentId === selectedDepartment.departmentId)
+		)
 
-        setFormData({
-          firstName: "",
-          lastName: "",
-          email: "",
-          phone: "",
-          department: "",
-          position: "",
-          joinDate: "",
-          birthday: "",
-          gender: "Male",
-          nationality: "",
-          maritalStatus: "Single",
-          employmentType: "full-time",
-        });
+		if (!selectedDepartment || !selectedPosition) {
+			toast.error('Please select valid department and position options')
+			return
+		}
 
-        setShowAddDialog(false);
-      } catch {
-        toast.error("Employee add failed", {
-          description: "Unable to reach the API server.",
-        });
-      }
-    })();
-  };
+		void (async () => {
+			try {
+				const response = await fetch(`${apiBaseUrl}/employees`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: `Bearer ${accessToken}`,
+					},
+					body: JSON.stringify({
+						firstName: formData.firstName,
+						lastName: formData.lastName,
+						email: formData.email.trim(),
+						phone: formData.phone,
+						birthday: formData.birthday,
+						gender: formData.gender,
+						nationality: formData.nationality,
+						maritalStatus: formData.maritalStatus,
+						departmentId: selectedDepartment.departmentId,
+						positionId: selectedPosition.positionId,
+						employmentType: formData.employmentType,
+						employmentStatus: 'onboarding',
+						joinDate: formData.joinDate,
+						passwordChanged: false,
+					}),
+				})
 
-  return (
-    <>
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-vibrant-purple" />
-            <span className="text-sm font-medium">Quick Access</span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-vibrant-blue/30 bg-vibrant-blue/10 px-2 py-0.5 text-[10px] font-medium text-vibrant-blue">
-              <Database className="h-3 w-3" />
-              Synced with Settings
-            </span>
-          </div>
-          <Button
-            size="sm"
-            onClick={() => setShowAddDialog(true)}
-            className="bg-vibrant-purple hover:bg-vibrant-purple/90"
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            Add
-          </Button>
-        </div>
-        <div className="space-y-3">
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search employees..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-            />
-          </div>
+				const payload = await response.json().catch(() => ({}))
+				if (!response.ok || !payload?.employee) {
+					toast.error('Employee add failed', {
+						description:
+							payload?.error ||
+							'Unable to create employee in the database.',
+					})
+					return
+				}
 
-          {/* Sort and Filter Controls */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1">
-                <ArrowUpDown className="h-3 w-3" />
-                Sort
-              </label>
-              <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="name">Name</SelectItem>
-                  <SelectItem value="department">Department</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1">
-                <Filter className="h-3 w-3" />
-                Department
-              </label>
-              <Select
-                value={filterDepartment}
-                onValueChange={setFilterDepartment}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  {departments.map((dept) => (
-                    <SelectItem key={dept} value={dept}>
-                      {dept}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          
-          {/* Employment Status Filter */}
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1">
-              <Filter className="h-3 w-3" />
-              Employment Status
-            </label>
-            <Select
-              value={filterEmploymentStatus}
-              onValueChange={(value: any) => setFilterEmploymentStatus(value)}
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="onboarding">Onboarding</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
-                <SelectItem value="all">All</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+				const createdEmployee = mapApiEmployeeToLocal(payload.employee)
+				const nextEmployees = [...employees, createdEmployee]
+				setEmployees(nextEmployees)
+				replaceEmployees(nextEmployees)
 
-          {/* Employee List */}
-          <div className="space-y-2">
-            {isLoadingEmployees ? (
-              <motion.p
-                className="text-center text-sm text-muted-foreground py-4"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.3 }}
-              >
-                Loading employees...
-              </motion.p>
-            ) : displayedEmployees.length > 0 ? (
-              displayedEmployees.map((employee, index) => {
-                const yearsOfService = calculateYearsOfService(employee.joinDate!);
-                const hasAnniversary = isWorkAnniversary(employee.joinDate!);
-                
-                return (
-                  <motion.button
-                    key={employee.id}
-                    onClick={() => onEmployeeClick(employee.id)}
-                    className="w-full text-left p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.3, delay: 0.05 * index }}
-                  >
-                    <p className="font-medium">
-                      {employee.lastName}, {employee.firstName}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {employee.department}
-                    </p>
-                    {employee.employmentStatus === "active" && employee.joinDate && (
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {yearsOfService} {yearsOfService === 1 ? "year" : "years"} of service
-                        </p>
-                        {hasAnniversary && (
-                          <p className="text-xs text-vibrant-blue flex items-center gap-1">
-                            <Award className="h-3 w-3" />
-                            Work Anniversary Today
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </motion.button>
-                );
-              })
-            ) : (
-              <motion.p 
-                className="text-center text-sm text-muted-foreground py-4"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.3 }}
-              >
-                No employees found
-              </motion.p>
-            )}
-          </div>
+				toast.success('Employee added successfully', {
+					description: `${createdEmployee.firstName} ${createdEmployee.lastName} has been onboarded`,
+				})
 
-          {/* Show count */}
-          {sortedEmployees.length > 5 && (
-            <p className="text-xs text-center text-muted-foreground pt-2">
-              Showing 5 of {sortedEmployees.length} employees
-            </p>
-          )}
-        </div>
-      </div>
+				setFormData({
+					firstName: '',
+					lastName: '',
+					email: '',
+					phone: '',
+					department: '',
+					position: '',
+					joinDate: '',
+					birthday: '',
+					gender: 'Male',
+					nationality: '',
+					maritalStatus: 'Single',
+					employmentType: 'full-time',
+				})
 
-      {/* Add Employee Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Employee Onboarding</DialogTitle>
-            <DialogDescription>
-              Add a new employee to the system. All fields are required.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            {/* Personal Information */}
-            <div className="space-y-3">
-              <h4 className="font-medium">Personal Information</h4>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label htmlFor="firstName">First Name *</Label>
-                  <Input
-                    id="firstName"
-                    value={formData.firstName}
-                    onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                    placeholder="John"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="lastName">Last Name *</Label>
-                  <Input
-                    id="lastName"
-                    value={formData.lastName}
-                    onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                    placeholder="Doe"
-                  />
-                </div>
-              </div>
-              
-              <div>
-                <Label htmlFor="birthday">Birthday *</Label>
-                <Input
-                  id="birthday"
-                  type="date"
-                  value={formData.birthday}
-                  onChange={(e) => setFormData({ ...formData, birthday: e.target.value })}
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label htmlFor="gender">Gender *</Label>
-                  <Select
-                    value={formData.gender}
-                    onValueChange={(value: any) => setFormData({ ...formData, gender: value })}
-                  >
-                    <SelectTrigger id="gender">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Male">Male</SelectItem>
-                      <SelectItem value="Female">Female</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
-                      <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="maritalStatus">Marital Status *</Label>
-                  <Select
-                    value={formData.maritalStatus}
-                    onValueChange={(value: any) => setFormData({ ...formData, maritalStatus: value })}
-                  >
-                    <SelectTrigger id="maritalStatus">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Single">Single</SelectItem>
-                      <SelectItem value="Married">Married</SelectItem>
-                      <SelectItem value="Divorced">Divorced</SelectItem>
-                      <SelectItem value="Widowed">Widowed</SelectItem>
-                      <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              
-              <div>
-                <Label htmlFor="nationality">Nationality *</Label>
-                <Input
-                  id="nationality"
-                  value={formData.nationality}
-                  onChange={(e) => setFormData({ ...formData, nationality: e.target.value })}
-                  placeholder="American"
-                />
-              </div>
-            </div>
+				setShowAddDialog(false)
+			} catch {
+				toast.error('Employee add failed', {
+					description: 'Unable to reach the API server.',
+				})
+			}
+		})()
+	}
 
-            {/* Contact Information */}
-            <div className="space-y-3">
-              <h4 className="font-medium">Contact Information *</h4>
-              <div>
-                <Label htmlFor="email">Email *</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="john.doe@company.com"
-                />
-              </div>
-              <div>
-                <Label htmlFor="phone">Phone *</Label>
-                <Input
-                  id="phone"
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="+1 (555) 123-4567"
-                />
-              </div>
-            </div>
+	return (
+		<>
+			<div className="space-y-3">
+				<div className="flex items-center justify-between">
+					<div className="flex items-center gap-2">
+						<Users className="h-4 w-4 text-vibrant-purple" />
+						<span className="text-sm font-medium">
+							Quick Access
+						</span>
+						<span className="inline-flex items-center gap-1 rounded-full border border-vibrant-blue/30 bg-vibrant-blue/10 px-2 py-0.5 text-[10px] font-medium text-vibrant-blue">
+							<Database className="h-3 w-3" />
+							Synced with Settings
+						</span>
+					</div>
+					<Button
+						size="sm"
+						onClick={() => setShowAddDialog(true)}
+						className="bg-vibrant-purple hover:bg-vibrant-purple/90"
+					>
+						<Plus className="h-4 w-4 mr-1" />
+						Add
+					</Button>
+				</div>
+				<div className="space-y-3">
+					{/* Search Bar */}
+					<div className="relative">
+						<Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+						<Input
+							placeholder="Search employees..."
+							value={searchQuery}
+							onChange={e => setSearchQuery(e.target.value)}
+							className="pl-9"
+						/>
+					</div>
 
-            {/* Employment Details */}
-            <div className="space-y-3">
-              <h4 className="font-medium">Employment Details *</h4>
-              <div>
-                <Label htmlFor="employmentType">Employment Type *</Label>
-                <Select
-                  value={formData.employmentType}
-                  onValueChange={(value: any) => setFormData({ ...formData, employmentType: value })}
-                >
-                  <SelectTrigger id="employmentType">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {employmentTypeOptions.map((employmentType) => (
-                      <SelectItem key={employmentType} value={employmentType}>
-                        {employmentType}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="department">Department *</Label>
-                <Select
-                  value={formData.department}
-                  onValueChange={(value) => setFormData({ ...formData, department: value })}
-                >
-                  <SelectTrigger id="department">
-                    <SelectValue placeholder="Select department" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {departments.map((department) => (
-                      <SelectItem key={department} value={department}>
-                        {department}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="position">Position *</Label>
-                <Select
-                  value={formData.position}
-                  onValueChange={(value) => setFormData({ ...formData, position: value })}
-                >
-                  <SelectTrigger id="position">
-                    <SelectValue placeholder="Select position" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {departmentPositionOptions.map((position) => (
-                      <SelectItem key={position} value={position}>
-                        {position}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="joinDate">Join Date *</Label>
-                <Input
-                  id="joinDate"
-                  type="date"
-                  value={formData.joinDate}
-                  onChange={(e) => setFormData({ ...formData, joinDate: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
+					{/* Sort and Filter Controls */}
+					<div className="grid grid-cols-2 gap-3">
+						<div>
+							<label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1">
+								<ArrowUpDown className="h-3 w-3" />
+								Sort
+							</label>
+							<Select
+								value={sortBy}
+								onValueChange={(value: any) => setSortBy(value)}
+							>
+								<SelectTrigger className="h-9">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="name">Name</SelectItem>
+									<SelectItem value="department">
+										Department
+									</SelectItem>
+								</SelectContent>
+							</Select>
+						</div>
+						<div>
+							<label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1">
+								<Filter className="h-3 w-3" />
+								Department
+							</label>
+							<Select
+								value={filterDepartment}
+								onValueChange={setFilterDepartment}
+							>
+								<SelectTrigger className="h-9">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="all">All</SelectItem>
+									{departments.map(dept => (
+										<SelectItem key={dept} value={dept}>
+											{dept}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+					</div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleAddEmployee} className="bg-vibrant-purple hover:bg-vibrant-purple/90">
-              Add Employee
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
+					{/* Employment Status Filter */}
+					<div>
+						<label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1">
+							<Filter className="h-3 w-3" />
+							Employment Status
+						</label>
+						<Select
+							value={filterEmploymentStatus}
+							onValueChange={(value: any) =>
+								setFilterEmploymentStatus(value)
+							}
+						>
+							<SelectTrigger className="h-9">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="active">Active</SelectItem>
+								<SelectItem value="onboarding">
+									Onboarding
+								</SelectItem>
+								<SelectItem value="inactive">
+									Inactive
+								</SelectItem>
+								<SelectItem value="all">All</SelectItem>
+							</SelectContent>
+						</Select>
+					</div>
+
+					{/* Employee List */}
+					<div className="space-y-2">
+						{isLoadingEmployees ? (
+							<motion.p
+								className="text-center text-sm text-muted-foreground py-4"
+								initial={{ opacity: 0 }}
+								animate={{ opacity: 1 }}
+								transition={{ duration: 0.3 }}
+							>
+								Loading employees...
+							</motion.p>
+						) : displayedEmployees.length > 0 ? (
+							displayedEmployees.map((employee, index) => {
+								const yearsOfService = calculateYearsOfService(
+									employee.joinDate!
+								)
+								const hasAnniversary = isWorkAnniversary(
+									employee.joinDate!
+								)
+
+								return (
+									<motion.button
+										key={employee.id}
+										onClick={() =>
+											onEmployeeClick(employee.id)
+										}
+										className="w-full text-left p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+										initial={{ opacity: 0, x: -20 }}
+										animate={{ opacity: 1, x: 0 }}
+										transition={{
+											duration: 0.3,
+											delay: 0.05 * index,
+										}}
+									>
+										<p className="font-medium">
+											{employee.lastName},{' '}
+											{employee.firstName}
+										</p>
+										<p className="text-sm text-muted-foreground">
+											{employee.department}
+										</p>
+										{employee.employmentStatus ===
+											'active' &&
+											employee.joinDate && (
+												<div className="flex items-center gap-2 mt-1 flex-wrap">
+													<p className="text-xs text-muted-foreground flex items-center gap-1">
+														<Calendar className="h-3 w-3" />
+														{yearsOfService}{' '}
+														{yearsOfService === 1
+															? 'year'
+															: 'years'}{' '}
+														of service
+													</p>
+													{hasAnniversary && (
+														<p className="text-xs text-vibrant-blue flex items-center gap-1">
+															<Award className="h-3 w-3" />
+															Work Anniversary
+															Today
+														</p>
+													)}
+												</div>
+											)}
+									</motion.button>
+								)
+							})
+						) : (
+							<motion.p
+								className="text-center text-sm text-muted-foreground py-4"
+								initial={{ opacity: 0 }}
+								animate={{ opacity: 1 }}
+								transition={{ duration: 0.3 }}
+							>
+								No employees found
+							</motion.p>
+						)}
+					</div>
+
+					{/* Show count */}
+					{sortedEmployees.length > 5 && (
+						<p className="text-xs text-center text-muted-foreground pt-2">
+							Showing 5 of {sortedEmployees.length} employees
+						</p>
+					)}
+				</div>
+			</div>
+
+			{/* Add Employee Dialog */}
+			<Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+				<DialogContent className="max-h-[90vh] overflow-y-auto">
+					<DialogHeader>
+						<DialogTitle>Employee Onboarding</DialogTitle>
+						<DialogDescription>
+							Add a new employee to the system. All fields are
+							required.
+						</DialogDescription>
+					</DialogHeader>
+
+					<div className="space-y-4">
+						{/* Personal Information */}
+						<div className="space-y-3">
+							<h4 className="font-medium">
+								Personal Information
+							</h4>
+							<div className="grid grid-cols-2 gap-3">
+								<div>
+									<Label htmlFor="firstName">
+										First Name *
+									</Label>
+									<Input
+										id="firstName"
+										value={formData.firstName}
+										onChange={e =>
+											setFormData({
+												...formData,
+												firstName: e.target.value,
+											})
+										}
+										placeholder="John"
+									/>
+								</div>
+								<div>
+									<Label htmlFor="lastName">
+										Last Name *
+									</Label>
+									<Input
+										id="lastName"
+										value={formData.lastName}
+										onChange={e =>
+											setFormData({
+												...formData,
+												lastName: e.target.value,
+											})
+										}
+										placeholder="Doe"
+									/>
+								</div>
+							</div>
+
+							<div>
+								<Label htmlFor="birthday">Birthday *</Label>
+								<Input
+									id="birthday"
+									type="date"
+									value={formData.birthday}
+									onChange={e =>
+										setFormData({
+											...formData,
+											birthday: e.target.value,
+										})
+									}
+								/>
+							</div>
+
+							<div className="grid grid-cols-2 gap-3">
+								<div>
+									<Label htmlFor="gender">Gender *</Label>
+									<Select
+										value={formData.gender}
+										onValueChange={(value: any) =>
+											setFormData({
+												...formData,
+												gender: value,
+											})
+										}
+									>
+										<SelectTrigger id="gender">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="Male">
+												Male
+											</SelectItem>
+											<SelectItem value="Female">
+												Female
+											</SelectItem>
+											<SelectItem value="Other">
+												Other
+											</SelectItem>
+											<SelectItem value="Prefer not to say">
+												Prefer not to say
+											</SelectItem>
+										</SelectContent>
+									</Select>
+								</div>
+								<div>
+									<Label htmlFor="maritalStatus">
+										Marital Status *
+									</Label>
+									<Select
+										value={formData.maritalStatus}
+										onValueChange={(value: any) =>
+											setFormData({
+												...formData,
+												maritalStatus: value,
+											})
+										}
+									>
+										<SelectTrigger id="maritalStatus">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="Single">
+												Single
+											</SelectItem>
+											<SelectItem value="Married">
+												Married
+											</SelectItem>
+											<SelectItem value="Divorced">
+												Divorced
+											</SelectItem>
+											<SelectItem value="Widowed">
+												Widowed
+											</SelectItem>
+											<SelectItem value="Prefer not to say">
+												Prefer not to say
+											</SelectItem>
+										</SelectContent>
+									</Select>
+								</div>
+							</div>
+
+							<div>
+								<Label htmlFor="nationality">
+									Nationality *
+								</Label>
+								<Input
+									id="nationality"
+									value={formData.nationality}
+									onChange={e =>
+										setFormData({
+											...formData,
+											nationality: e.target.value,
+										})
+									}
+									placeholder="American"
+								/>
+							</div>
+						</div>
+
+						{/* Contact Information */}
+						<div className="space-y-3">
+							<h4 className="font-medium">
+								Contact Information *
+							</h4>
+							<div>
+								<Label htmlFor="email">Email *</Label>
+								<Input
+									id="email"
+									type="email"
+									value={formData.email}
+									onChange={e =>
+										setFormData({
+											...formData,
+											email: e.target.value,
+										})
+									}
+									placeholder="john.doe@company.com"
+								/>
+							</div>
+							<div>
+								<Label htmlFor="phone">Phone *</Label>
+								<Input
+									id="phone"
+									type="tel"
+									value={formData.phone}
+									onChange={e =>
+										setFormData({
+											...formData,
+											phone: e.target.value,
+										})
+									}
+									placeholder="+1 (555) 123-4567"
+								/>
+							</div>
+						</div>
+
+						{/* Employment Details */}
+						<div className="space-y-3">
+							<h4 className="font-medium">
+								Employment Details *
+							</h4>
+							<div>
+								<Label htmlFor="employmentType">
+									Employment Type *
+								</Label>
+								<Select
+									value={formData.employmentType}
+									onValueChange={(value: any) =>
+										setFormData({
+											...formData,
+											employmentType: value,
+										})
+									}
+								>
+									<SelectTrigger id="employmentType">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										{employmentTypeOptions.map(
+											employmentType => (
+												<SelectItem
+													key={employmentType}
+													value={employmentType}
+												>
+													{employmentType}
+												</SelectItem>
+											)
+										)}
+									</SelectContent>
+								</Select>
+							</div>
+							<div>
+								<Label htmlFor="department">Department *</Label>
+								<Select
+									value={formData.department}
+									onValueChange={value =>
+										setFormData({
+											...formData,
+											department: value,
+										})
+									}
+								>
+									<SelectTrigger id="department">
+										<SelectValue placeholder="Select department" />
+									</SelectTrigger>
+									<SelectContent>
+										{departments.map(department => (
+											<SelectItem
+												key={department}
+												value={department}
+											>
+												{department}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+							<div>
+								<Label htmlFor="position">Position *</Label>
+								<Select
+									value={formData.position}
+									onValueChange={value =>
+										setFormData({
+											...formData,
+											position: value,
+										})
+									}
+								>
+									<SelectTrigger id="position">
+										<SelectValue placeholder="Select position" />
+									</SelectTrigger>
+									<SelectContent>
+										{departmentPositionOptions.map(
+											position => (
+												<SelectItem
+													key={position}
+													value={position}
+												>
+													{position}
+												</SelectItem>
+											)
+										)}
+									</SelectContent>
+								</Select>
+							</div>
+							<div>
+								<Label htmlFor="joinDate">Join Date *</Label>
+								<Input
+									id="joinDate"
+									type="date"
+									value={formData.joinDate}
+									onChange={e =>
+										setFormData({
+											...formData,
+											joinDate: e.target.value,
+										})
+									}
+								/>
+							</div>
+						</div>
+					</div>
+
+					<DialogFooter>
+						<Button
+							variant="outline"
+							onClick={() => setShowAddDialog(false)}
+						>
+							Cancel
+						</Button>
+						<Button
+							onClick={handleAddEmployee}
+							className="bg-vibrant-purple hover:bg-vibrant-purple/90"
+						>
+							Add Employee
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+		</>
+	)
 }
-

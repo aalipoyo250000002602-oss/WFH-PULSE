@@ -92,7 +92,6 @@ It will:
 - API issues a short-lived JWT access token.
 - Logout revokes DB session via `app_auth.revoke_session(...)`.
 - RLS context is set per transaction using:
-  - `SET LOCAL app.user_id`
-  - `SET LOCAL app.user_role`
+    - `SET LOCAL app.user_id`
+    - `SET LOCAL app.user_role`
 - Self-service profile update accepts only contact/personal fields; protected fields are blocked by DB trigger.
-

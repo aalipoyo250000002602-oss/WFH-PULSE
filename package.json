@@ -109,6 +109,7 @@
     "@tailwindcss/vite": "4.1.12",
     "@vitejs/plugin-react": "4.7.0",
     "newman": "^6.2.1",
+    "prettier": "^3.9.6",
     "tailwindcss": "4.1.12",
     "vite": "6.3.5"
   },

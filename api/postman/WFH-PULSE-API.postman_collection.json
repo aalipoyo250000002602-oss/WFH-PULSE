@@ -1,309 +1,264 @@
 {
-  "info": {
-    "name": "WFH-PULSE API",
-    "description": "Local API flow for login, refresh, self-service, HR routes, and logout.",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "_postman_id": "bbbe65a8-393e-4de8-bc03-7c06345825af"
-  },
-  "item": [
-    {
-      "name": "Health",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/health",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "health"
-          ]
-        }
-      },
-      "response": []
+    "info": {
+        "name": "WFH-PULSE API",
+        "description": "Local API flow for login, refresh, self-service, HR routes, and logout.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "_postman_id": "bbbe65a8-393e-4de8-bc03-7c06345825af"
     },
-    {
-      "name": "Auth",
-      "item": [
+    "item": [
         {
-          "name": "Login",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Login status is 200', function () {",
-                  "  pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "const json = pm.response.json();",
-                  "if (json.accessToken) {",
-                  "  pm.environment.set('accessToken', json.accessToken);",
-                  "}",
-                  "if (json.refreshToken) {",
-                  "  pm.environment.set('refreshToken', json.refreshToken);",
-                  "}",
-                  "if (json.sessionId) {",
-                  "  pm.environment.set('sessionId', json.sessionId);",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            "name": "Health",
+            "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                    "raw": "{{baseUrl}}/health",
+                    "host": ["{{baseUrl}}"],
+                    "path": ["health"]
+                }
             },
-            "url": {
-              "raw": "{{baseUrl}}/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "login"
-              ]
-            }
-          },
-          "response": []
+            "response": []
         },
         {
-          "name": "Refresh",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Refresh status is 200', function () {",
-                  "  pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "const json = pm.response.json();",
-                  "if (json.accessToken) {",
-                  "  pm.environment.set('accessToken', json.accessToken);",
-                  "}",
-                  "if (json.refreshToken) {",
-                  "  pm.environment.set('refreshToken', json.refreshToken);",
-                  "}",
-                  "if (json.sessionId) {",
-                  "  pm.environment.set('sessionId', json.sessionId);",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/auth/refresh",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "refresh"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Register (Admin/HR)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{registerEmail}}\",\n  \"password\": \"{{registerPassword}}\",\n  \"employeeId\": \"{{registerEmployeeId}}\",\n  \"role\": \"{{registerRole}}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/auth/register",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "register"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Logout",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/auth/logout",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "logout"
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Me (Self-Service)",
-      "item": [
-        {
-          "name": "Get Profile",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/me/profile",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "me",
-                "profile"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Patch Profile (Allowed Fields)",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"phone\": \"+1 (555) 222-3333\",\n  \"address\": \"123 Updated Street, Davao City, Philippines\",\n  \"nationality\": \"German\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/me/profile",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "me",
-                "profile"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Get Attendance",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/me/attendance?from={{fromDate}}&to={{toDate}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "me",
-                "attendance"
-              ],
-              "query": [
+            "name": "Auth",
+            "item": [
                 {
-                  "key": "from",
-                  "value": "{{fromDate}}"
+                    "name": "Login",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Login status is 200', function () {",
+                                    "  pm.response.to.have.status(200);",
+                                    "});",
+                                    "",
+                                    "const json = pm.response.json();",
+                                    "if (json.accessToken) {",
+                                    "  pm.environment.set('accessToken', json.accessToken);",
+                                    "}",
+                                    "if (json.refreshToken) {",
+                                    "  pm.environment.set('refreshToken', json.refreshToken);",
+                                    "}",
+                                    "if (json.sessionId) {",
+                                    "  pm.environment.set('sessionId', json.sessionId);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/login",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["auth", "login"]
+                        }
+                    },
+                    "response": []
                 },
                 {
-                  "key": "to",
-                  "value": "{{toDate}}"
+                    "name": "Refresh",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Refresh status is 200', function () {",
+                                    "  pm.response.to.have.status(200);",
+                                    "});",
+                                    "",
+                                    "const json = pm.response.json();",
+                                    "if (json.accessToken) {",
+                                    "  pm.environment.set('accessToken', json.accessToken);",
+                                    "}",
+                                    "if (json.refreshToken) {",
+                                    "  pm.environment.set('refreshToken', json.refreshToken);",
+                                    "}",
+                                    "if (json.sessionId) {",
+                                    "  pm.environment.set('sessionId', json.sessionId);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/refresh",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["auth", "refresh"]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Register (Admin/HR)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{registerEmail}}\",\n  \"password\": \"{{registerPassword}}\",\n  \"employeeId\": \"{{registerEmployeeId}}\",\n  \"role\": \"{{registerRole}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/register",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["auth", "register"]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Logout",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/logout",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["auth", "logout"]
+                        }
+                    },
+                    "response": []
                 }
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "HR/Admin",
-      "item": [
+            ]
+        },
         {
-          "name": "List Employees",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/hr/employees",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "hr",
-                "employees"
-              ]
-            }
-          },
-          "response": []
+            "name": "Me (Self-Service)",
+            "item": [
+                {
+                    "name": "Get Profile",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/me/profile",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["me", "profile"]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Patch Profile (Allowed Fields)",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"phone\": \"+1 (555) 222-3333\",\n  \"address\": \"123 Updated Street, Davao City, Philippines\",\n  \"nationality\": \"German\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/me/profile",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["me", "profile"]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Attendance",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/me/attendance?from={{fromDate}}&to={{toDate}}",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["me", "attendance"],
+                            "query": [
+                                {
+                                    "key": "from",
+                                    "value": "{{fromDate}}"
+                                },
+                                {
+                                    "key": "to",
+                                    "value": "{{toDate}}"
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "HR/Admin",
+            "item": [
+                {
+                    "name": "List Employees",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/hr/employees",
+                            "host": ["{{baseUrl}}"],
+                            "path": ["hr", "employees"]
+                        }
+                    },
+                    "response": []
+                }
+            ]
         }
-      ]
-    }
-  ]
+    ]
 }
-

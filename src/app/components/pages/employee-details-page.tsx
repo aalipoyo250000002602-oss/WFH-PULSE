@@ -1,1453 +1,1765 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
+import { Badge } from '../ui/badge'
+import { Button } from '../ui/button'
+import { Input } from '../ui/input'
+import { Label } from '../ui/label'
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "../ui/card";
-import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Label } from "../ui/label";
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from '../ui/select'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select";
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from '../ui/dialog'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../ui/dialog";
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from '../ui/alert-dialog'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "../ui/alert-dialog";
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from '../ui/collapsible'
+import { Switch } from '../ui/switch'
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "../ui/collapsible";
-import { Switch } from "../ui/switch";
+	ArrowLeft,
+	User,
+	Mail,
+	Phone,
+	Briefcase,
+	Calendar,
+	Clock,
+	Building2,
+	AlertCircle,
+	Send,
+	Edit,
+	CheckCircle,
+	UserCheck,
+	UserX,
+	Cake,
+	Globe,
+	Heart,
+	IdCard,
+	ChevronDown,
+	ChevronUp,
+	DollarSign,
+	MapPin,
+} from 'lucide-react'
 import {
-  ArrowLeft,
-  User,
-  Mail,
-  Phone,
-  Briefcase,
-  Calendar,
-  Clock,
-  Building2,
-  AlertCircle,
-  Send,
-  Edit,
-  CheckCircle,
-  UserCheck,
-  UserX,
-  Cake,
-  Globe,
-  Heart,
-  IdCard,
-  ChevronDown,
-  ChevronUp,
-  DollarSign,
-  MapPin,
-} from "lucide-react";
-import {
-  getEmployees,
-  replaceEmployees,
-  Employee,
-  PayrollInfo,
-  getDepartmentNamesFromOptions,
-  syncEmployeesWithEmploymentOptions,
-} from "../employee-data";
-import { toast } from "sonner";
-import { EmployeePayrollCard } from "../employee-payroll-card";
-import { EmployeeProfilePDFGenerator } from "../employee-profile-pdf-generator";
+	getEmployees,
+	replaceEmployees,
+	Employee,
+	PayrollInfo,
+	getDepartmentNamesFromOptions,
+	syncEmployeesWithEmploymentOptions,
+} from '../employee-data'
+import { toast } from 'sonner'
+import { EmployeePayrollCard } from '../employee-payroll-card'
+import { EmployeeProfilePDFGenerator } from '../employee-profile-pdf-generator'
 
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 interface EmployeeDetailsPageProps {
-  employeeId: string;
-  apiBaseUrl: string;
-  accessToken: string;
-  employmentOptions: {
-    employmentTypes: string[];
-    departments: Array<{ departmentId: number; name: string }>;
-    positions: Array<{ positionId: number; departmentId: number; name: string }>;
-  };
-  onBack: () => void;
+	employeeId: string
+	apiBaseUrl: string
+	accessToken: string
+	employmentOptions: {
+		employmentTypes: string[]
+		departments: Array<{ departmentId: number; name: string }>
+		positions: Array<{
+			positionId: number
+			departmentId: number
+			name: string
+		}>
+	}
+	onBack: () => void
 }
 
 function mapApiEmployeeToState(row: Record<string, any>): Employee {
-  const deductions = Array.isArray(row.payroll_deductions)
-    ? row.payroll_deductions.map((item: any, idx: number) => ({
-        id: String(item?.deduction_id ?? `ded-${row.employee_id}-${idx + 1}`),
-        name: String(item?.deduction_name ?? "Deduction"),
-        amount: Number(item?.amount ?? 0),
-      }))
-    : [];
+	const deductions = Array.isArray(row.payroll_deductions)
+		? row.payroll_deductions.map((item: any, idx: number) => ({
+				id: String(
+					item?.deduction_id ?? `ded-${row.employee_id}-${idx + 1}`
+				),
+				name: String(item?.deduction_name ?? 'Deduction'),
+				amount: Number(item?.amount ?? 0),
+			}))
+		: []
 
-  const payroll =
-    row.salary == null && deductions.length === 0
-      ? undefined
-      : {
-          salary: Number(row.salary ?? 0),
-          governmentIds: {
-            pagIbig: String(row.pag_ibig ?? ""),
-            philHealth: String(row.phil_health ?? ""),
-            sss: String(row.sss ?? ""),
-            tin: String(row.tin ?? ""),
-          },
-          deductions,
-        };
+	const payroll =
+		row.salary == null && deductions.length === 0
+			? undefined
+			: {
+					salary: Number(row.salary ?? 0),
+					governmentIds: {
+						pagIbig: String(row.pag_ibig ?? ''),
+						philHealth: String(row.phil_health ?? ''),
+						sss: String(row.sss ?? ''),
+						tin: String(row.tin ?? ''),
+					},
+					deductions,
+				}
 
-  return {
-    id: String(row.employee_id),
-    employeeId: String(row.employee_code ?? row.employee_id),
-    firstName: String(row.first_name ?? ""),
-    lastName: String(row.last_name ?? ""),
-    status: (row.attendance_status ?? "present") as Employee["status"],
-    employmentStatus: (row.employment_status ?? "active") as Employee["employmentStatus"],
-    employmentType: String(row.employment_type ?? "full-time"),
-    clockInTime: row.clock_in ? String(row.clock_in).slice(0, 5) : undefined,
-    clockOutTime: row.clock_out ? String(row.clock_out).slice(0, 5) : undefined,
-    isOnBreak: Boolean(row.active_break_started_at),
-    department: String(row.department ?? ""),
-    position: row.position ? String(row.position) : "",
-    email: row.email ? String(row.email) : "",
-    phone: row.phone ? String(row.phone) : "",
-    joinDate: row.join_date ? String(row.join_date).slice(0, 10) : "",
-    birthday: row.birthday ? String(row.birthday).slice(0, 10) : "",
-    gender: row.gender ? String(row.gender) as Employee["gender"] : undefined,
-    nationality: row.nationality ? String(row.nationality) : "",
-    maritalStatus: row.marital_status
-      ? String(row.marital_status) as Employee["maritalStatus"]
-      : undefined,
-    address: row.address ? String(row.address) : "",
-    invitationSentDate: row.invitation_sent_date
-      ? String(row.invitation_sent_date).slice(0, 10)
-      : undefined,
-    passwordChanged:
-      row.password_changed == null
-        ? undefined
-        : Boolean(row.password_changed),
-    profilePicture: row.profile_picture_url ? String(row.profile_picture_url) : undefined,
-    payroll,
-  };
+	return {
+		id: String(row.employee_id),
+		employeeId: String(row.employee_code ?? row.employee_id),
+		firstName: String(row.first_name ?? ''),
+		lastName: String(row.last_name ?? ''),
+		status: (row.attendance_status ?? 'present') as Employee['status'],
+		employmentStatus: (row.employment_status ??
+			'active') as Employee['employmentStatus'],
+		employmentType: String(row.employment_type ?? 'full-time'),
+		clockInTime: row.clock_in
+			? String(row.clock_in).slice(0, 5)
+			: undefined,
+		clockOutTime: row.clock_out
+			? String(row.clock_out).slice(0, 5)
+			: undefined,
+		isOnBreak: Boolean(row.active_break_started_at),
+		department: String(row.department ?? ''),
+		position: row.position ? String(row.position) : '',
+		email: row.email ? String(row.email) : '',
+		phone: row.phone ? String(row.phone) : '',
+		joinDate: row.join_date ? String(row.join_date).slice(0, 10) : '',
+		birthday: row.birthday ? String(row.birthday).slice(0, 10) : '',
+		gender: row.gender
+			? (String(row.gender) as Employee['gender'])
+			: undefined,
+		nationality: row.nationality ? String(row.nationality) : '',
+		maritalStatus: row.marital_status
+			? (String(row.marital_status) as Employee['maritalStatus'])
+			: undefined,
+		address: row.address ? String(row.address) : '',
+		invitationSentDate: row.invitation_sent_date
+			? String(row.invitation_sent_date).slice(0, 10)
+			: undefined,
+		passwordChanged:
+			row.password_changed == null
+				? undefined
+				: Boolean(row.password_changed),
+		profilePicture: row.profile_picture_url
+			? String(row.profile_picture_url)
+			: undefined,
+		payroll,
+	}
 }
 
 export function EmployeeDetailsPage({
-  employeeId,
-  apiBaseUrl,
-  accessToken,
-  employmentOptions,
-  onBack,
+	employeeId,
+	apiBaseUrl,
+	accessToken,
+	employmentOptions,
+	onBack,
 }: EmployeeDetailsPageProps) {
-  const employees = useMemo(
-    () => syncEmployeesWithEmploymentOptions(getEmployees(), employmentOptions),
-    [employmentOptions],
-  );
-  const departmentNames = useMemo(
-    () => getDepartmentNamesFromOptions(employmentOptions.departments),
-    [employmentOptions.departments],
-  );
-  const employmentTypeOptions = useMemo(() => {
-    const seen = new Set<string>();
-    const options: string[] = [];
-    for (const employmentType of employmentOptions.employmentTypes) {
-      const value = employmentType.trim();
-      if (!value) {
-        continue;
-      }
-
-      const key = value.toLowerCase();
-      if (seen.has(key)) {
-        continue;
-      }
-
-      seen.add(key);
-      options.push(value);
-    }
-
-    return options;
-  }, [employmentOptions.employmentTypes]);
-  const positionsByDepartment = useMemo(() => {
-    const departmentNameById = new Map<number, string>();
-    for (const department of employmentOptions.departments) {
-      const name = department.name.trim();
-      if (name) {
-        departmentNameById.set(department.departmentId, name);
-      }
-    }
-
-    const map = new Map<string, string[]>();
-    for (const position of employmentOptions.positions) {
-      const positionName = position.name.trim();
-      if (!positionName) {
-        continue;
-      }
-
-      const departmentName = departmentNameById.get(position.departmentId);
-      if (!departmentName) {
-        continue;
-      }
-
-      const key = departmentName.toLowerCase();
-      const current = map.get(key) ?? [];
-      if (!current.some((name) => name.toLowerCase() === positionName.toLowerCase())) {
-        current.push(positionName);
-      }
-      map.set(key, current);
-    }
-
-    return map;
-  }, [employmentOptions.departments, employmentOptions.positions]);
-  const allPositionOptions = useMemo(() => {
-    const seen = new Set<string>();
-    const options: string[] = [];
-    for (const position of employmentOptions.positions) {
-      const name = position.name.trim();
-      if (!name) {
-        continue;
-      }
-
-      const key = name.toLowerCase();
-      if (seen.has(key)) {
-        continue;
-      }
-
-      seen.add(key);
-      options.push(name);
-    }
-    return options;
-  }, [employmentOptions.positions]);
-  const [employee, setEmployee] = useState(employees.find((emp) => emp.id === employeeId));
-  const [showEditContactDialog, setShowEditContactDialog] = useState(false);
-  const [showEditEmploymentDialog, setShowEditEmploymentDialog] = useState(false);
-  const [showStatusChangeDialog, setShowStatusChangeDialog] = useState(false);
-  const [targetStatus, setTargetStatus] = useState<"active" | "inactive" | null>(null);
-  const [showProfilePictureDialog, setShowProfilePictureDialog] = useState(false);
-  const [profilePicturePreview, setProfilePicturePreview] = useState<string | null>(null);
-  
-  // Collapsible states - default to closed
-  const [isContactOpen, setIsContactOpen] = useState(false);
-  const [isEmploymentOpen, setIsEmploymentOpen] = useState(false);
-  const [isPayrollOpen, setIsPayrollOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-
-  // Edit form states
-  const [contactFormData, setContactFormData] = useState({
-    email: employee?.email || "",
-    phone: employee?.phone || "",
-    birthday: employee?.birthday || "",
-    gender: employee?.gender || "Male",
-    nationality: employee?.nationality || "",
-    maritalStatus: employee?.maritalStatus || "Single",
-    address: employee?.address || "",
-  });
-
-  const [employmentFormData, setEmploymentFormData] = useState({
-    employmentType: employee?.employmentType || employmentTypeOptions[0] || "",
-    department: employee?.department || "",
-    position: employee?.position || "",
-    joinDate: employee?.joinDate || "",
-  });
-
-  const positionOptionsForSelectedDepartment = useMemo(() => {
-    if (!employmentFormData.department) {
-      return allPositionOptions;
-    }
-
-    const byDepartment = positionsByDepartment.get(
-      employmentFormData.department.toLowerCase(),
-    );
-    return byDepartment && byDepartment.length > 0 ? byDepartment : allPositionOptions;
-  }, [allPositionOptions, employmentFormData.department, positionsByDepartment]);
-
-  useEffect(() => {
-    const refreshedEmployee = employees.find((emp) => emp.id === employeeId);
-    if (refreshedEmployee) {
-      setEmployee(refreshedEmployee);
-    }
-  }, [employeeId, employees]);
-
-  useEffect(() => {
-    if (
-      employmentFormData.position &&
-      positionOptionsForSelectedDepartment.length > 0 &&
-      !positionOptionsForSelectedDepartment.includes(employmentFormData.position)
-    ) {
-      setEmploymentFormData((prev) => ({ ...prev, position: "" }));
-    }
-  }, [employmentFormData.position, positionOptionsForSelectedDepartment]);
-
-  useEffect(() => {
-    if (
-      employmentFormData.employmentType &&
-      employmentTypeOptions.length > 0 &&
-      !employmentTypeOptions.includes(employmentFormData.employmentType)
-    ) {
-      setEmploymentFormData((prev) => ({
-        ...prev,
-        employmentType: employmentTypeOptions[0],
-      }));
-    }
-  }, [employmentFormData.employmentType, employmentTypeOptions]);
-
-  if (!employee) {
-    return (
-      <div className="space-y-6 pb-20">
-        <div className="px-4">
-          <Button
-            onClick={onBack}
-            variant="ghost"
-            className="mb-4 -ml-2"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back
-          </Button>
-          <Card>
-            <CardContent className="p-6 text-center">
-              <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">Employee not found</p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
-  const getStatusColor = (status: Employee["status"]) => {
-    switch (status) {
-      case "present":
-        return "bg-vibrant-green text-vibrant-green-foreground";
-      case "on-leave":
-        return "bg-vibrant-orange text-vibrant-orange-foreground";
-      case "absent":
-        return "bg-destructive text-destructive-foreground";
-    }
-  };
-
-  const getStatusText = (status: Employee["status"]) => {
-    switch (status) {
-      case "present":
-        return "Present";
-      case "on-leave":
-        return "On Leave";
-      case "absent":
-        return "Absent";
-    }
-  };
-
-  const getEmploymentStatusColor = (status: Employee["employmentStatus"]) => {
-    switch (status) {
-      case "active":
-        return "bg-vibrant-green/20 text-vibrant-green";
-      case "onboarding":
-        return "bg-vibrant-blue/20 text-vibrant-blue";
-      case "inactive":
-        return "bg-muted-foreground/20 text-muted-foreground";
-    }
-  };
-
-  const calculateYearsOfService = (joinDate: string): number => {
-    const today = new Date(2025, 9, 19);
-    const join = new Date(joinDate);
-    const years = today.getFullYear() - join.getFullYear();
-    const monthDiff = today.getMonth() - join.getMonth();
-    const dayDiff = today.getDate() - join.getDate();
-    
-    if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
-      return years - 1;
-    }
-    return years;
-  };
-
-  const isWorkAnniversary = (joinDate: string): boolean => {
-    const today = new Date(2025, 9, 19);
-    const join = new Date(joinDate);
-    return join.getMonth() === today.getMonth() && join.getDate() === today.getDate();
-  };
-
-  const handleSendInvitation = () => {
-    void updateEmployeeOnApi(
-      {
-        invitationSentDate: new Date().toISOString().split("T")[0],
-      },
-      {
-        successTitle: "Invitation sent successfully",
-        successDescription: `An invitation email has been sent to ${employee.email}`,
-      },
-    );
-  };
-
-  const syncEmployeeCache = (nextEmployee: Employee) => {
-    const currentEmployees = getEmployees();
-    const nextEmployees = currentEmployees.some((entry) => entry.id === nextEmployee.id)
-      ? currentEmployees.map((entry) => (entry.id === nextEmployee.id ? nextEmployee : entry))
-      : [...currentEmployees, nextEmployee];
-    replaceEmployees(nextEmployees);
-  };
-
-  const updateEmployeeOnApi = async (
-    updates: Record<string, unknown>,
-    options?: { successTitle?: string; successDescription?: string },
-  ) => {
-    if (!accessToken) {
-      toast.error("Unable to update employee", {
-        description: "Missing access token. Please sign in again.",
-      });
-      return false;
-    }
-
-    if (isSaving) {
-      return false;
-    }
-
-    setIsSaving(true);
-    try {
-      const response = await fetch(`${apiBaseUrl}/employees/${employee.id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify(updates),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        toast.error("Employee update failed", {
-          description: payload?.error || "Please review your changes and try again.",
-        });
-        return false;
-      }
-
-      if (payload?.employee) {
-        const mapped = mapApiEmployeeToState(payload.employee);
-        setEmployee(mapped);
-        syncEmployeeCache(mapped);
-      }
-
-      if (options?.successTitle) {
-        toast.success(options.successTitle, {
-          description: options.successDescription,
-        });
-      }
-
-      return true;
-    } catch {
-      toast.error("Employee update failed", {
-        description: "Unable to reach the API server.",
-      });
-      return false;
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const updatePayrollOnApi = async (payroll: PayrollInfo) => {
-    if (!accessToken) {
-      toast.error("Unable to update payroll", {
-        description: "Missing access token. Please sign in again.",
-      });
-      return false;
-    }
-
-    if (isSaving) {
-      return false;
-    }
-
-    setIsSaving(true);
-    try {
-      const response = await fetch(`${apiBaseUrl}/employees/${employee.id}/payroll`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          salary: payroll.salary,
-          governmentIds: payroll.governmentIds,
-          deductions: payroll.deductions.map((deduction) => ({
-            id: deduction.id,
-            name: deduction.name,
-            amount: deduction.amount,
-          })),
-        }),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        toast.error("Payroll update failed", {
-          description: payload?.error || "Please review payroll fields and try again.",
-        });
-        return false;
-      }
-
-      if (payload?.employee) {
-        const mapped = mapApiEmployeeToState(payload.employee);
-        setEmployee(mapped);
-        syncEmployeeCache(mapped);
-      }
-
-      toast.success("Payroll updated successfully");
-      return true;
-    } catch {
-      toast.error("Payroll update failed", {
-        description: "Unable to reach the API server.",
-      });
-      return false;
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleUpdateContact = () => {
-    if (!contactFormData.email || !contactFormData.phone || !contactFormData.birthday || !contactFormData.nationality || !contactFormData.address) {
-      toast.error("Please fill in all required fields");
-      return;
-    }
-
-    if (!emailRegex.test(contactFormData.email.trim())) {
-      toast.error("Please enter a valid email address");
-      return;
-    }
-
-    void (async () => {
-      const didUpdate = await updateEmployeeOnApi(
-        {
-          email: contactFormData.email.trim(),
-          phone: contactFormData.phone,
-          birthday: contactFormData.birthday,
-          gender: contactFormData.gender,
-          nationality: contactFormData.nationality,
-          maritalStatus: contactFormData.maritalStatus,
-          address: contactFormData.address,
-        },
-        { successTitle: "Contact information updated successfully" },
-      );
-
-      if (didUpdate) {
-        setShowEditContactDialog(false);
-      }
-    })();
-  };
-
-  const handleUpdateEmployment = () => {
-    if (!employmentFormData.employmentType || !employmentFormData.department || !employmentFormData.position || !employmentFormData.joinDate) {
-      toast.error("Please fill in all required fields");
-      return;
-    }
-
-    if (
-      departmentNames.length > 0 &&
-      !departmentNames.includes(employmentFormData.department)
-    ) {
-      toast.error("Please select a valid department from employment details");
-      return;
-    }
-
-    if (
-      employmentTypeOptions.length > 0 &&
-      !employmentTypeOptions.includes(employmentFormData.employmentType)
-    ) {
-      toast.error("Please select a valid employment type from employment details");
-      return;
-    }
-
-    if (
-      positionOptionsForSelectedDepartment.length > 0 &&
-      !positionOptionsForSelectedDepartment.includes(employmentFormData.position)
-    ) {
-      toast.error("Please select a valid position from employment details");
-      return;
-    }
-
-    const selectedDepartment = employmentOptions.departments.find(
-      (department) => department.name === employmentFormData.department,
-    );
-    const selectedPosition = employmentOptions.positions.find(
-      (position) =>
-        position.name === employmentFormData.position &&
-        (!selectedDepartment || position.departmentId === selectedDepartment.departmentId),
-    );
-
-    if (!selectedDepartment || !selectedPosition) {
-      toast.error("Please select valid department and position options");
-      return;
-    }
-
-    void (async () => {
-      const didUpdate = await updateEmployeeOnApi(
-        {
-          employmentType: employmentFormData.employmentType,
-          departmentId: selectedDepartment.departmentId,
-          positionId: selectedPosition.positionId,
-          joinDate: employmentFormData.joinDate,
-        },
-        { successTitle: "Employment details updated successfully" },
-      );
-
-      if (didUpdate) {
-        setShowEditEmploymentDialog(false);
-      }
-    })();
-  };
-
-  const handleStatusChange = () => {
-    if (!targetStatus) return;
-
-    void (async () => {
-      const didUpdate = await updateEmployeeOnApi(
-        {
-          employmentStatus: targetStatus,
-        },
-        {
-          successTitle: `Employee status changed to ${targetStatus}`,
-        },
-      );
-
-      if (didUpdate) {
-        setShowStatusChangeDialog(false);
-        setTargetStatus(null);
-      }
-    })();
-  };
-
-  const handleUpdatePayroll = (payroll: PayrollInfo) => {
-    void updatePayrollOnApi(payroll);
-  };
-
-  const handleProfilePictureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (!validTypes.includes(file.type)) {
-      toast.error("Please upload a valid image file (JPEG, PNG, GIF, or WebP)");
-      return;
-    }
-
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image size should not exceed 5MB");
-      return;
-    }
-
-    // Read and validate image dimensions
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const aspectRatio = img.width / img.height;
-        
-        // Check if image is roughly square (aspect ratio between 0.8 and 1.2)
-        if (aspectRatio < 0.8 || aspectRatio > 1.2) {
-          toast.error("Please upload a square image (1:1 aspect ratio) for best results");
-          return;
-        }
-
-        // Image is valid, set preview
-        setProfilePicturePreview(event.target?.result as string);
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleSaveProfilePicture = () => {
-    if (!profilePicturePreview) {
-      toast.error("Please select an image");
-      return;
-    }
-
-    void (async () => {
-      const didUpdate = await updateEmployeeOnApi(
-        {
-          profilePictureUrl: profilePicturePreview,
-        },
-        {
-          successTitle: "Profile picture updated successfully",
-        },
-      );
-
-      if (didUpdate) {
-        setShowProfilePictureDialog(false);
-        setProfilePicturePreview(null);
-      }
-    })();
-  };
-
-  const handleRemoveProfilePicture = () => {
-    void (async () => {
-      const didUpdate = await updateEmployeeOnApi(
-        {
-          profilePictureUrl: null,
-        },
-        {
-          successTitle: "Profile picture removed",
-        },
-      );
-
-      if (didUpdate) {
-        setShowProfilePictureDialog(false);
-        setProfilePicturePreview(null);
-      }
-    })();
-  };
-
-  const canChangeToInactive = () => {
-    return employee.employmentStatus === "active";
-  };
-
-  return (
-    <div className="space-y-6 pb-20">
-      <div className="px-4 space-y-4">
-        {/* Back Button and Profile Actions */}
-        <div className="flex items-center justify-between">
-          <Button
-            onClick={onBack}
-            variant="ghost"
-            className="-ml-2"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back
-          </Button>
-          
-          <EmployeeProfilePDFGenerator employee={employee} />
-        </div>
-
-        {/* Employee Header with Employment Status */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  {employee.profilePicture ? (
-                    <img
-                      src={employee.profilePicture}
-                      alt={`${employee.firstName} ${employee.lastName}`}
-                      className="h-16 w-16 rounded-full object-cover border-2 border-vibrant-blue"
-                    />
-                  ) : (
-                    <div className="h-16 w-16 rounded-full bg-vibrant-blue/10 flex items-center justify-center">
-                      <User className="h-8 w-8 text-vibrant-blue" />
-                    </div>
-                  )}
-                  <button
-                    onClick={() => {
-                      setProfilePicturePreview(employee.profilePicture || null);
-                      setShowProfilePictureDialog(true);
-                    }}
-                    className="absolute -bottom-1 -right-1 h-6 w-6 rounded-full bg-vibrant-blue text-white flex items-center justify-center hover:bg-vibrant-blue/90 transition-colors"
-                  >
-                    <Edit className="h-3 w-3" />
-                  </button>
-                </div>
-                <div>
-                  <h2>
-                    {employee.firstName} {employee.lastName}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    {employee.position}
-                  </p>
-                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                    <IdCard className="h-3 w-3" />
-                    {employee.employeeId}
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-col items-end gap-2">
-                {/* Only show attendance status if employment status is active */}
-                {employee.employmentStatus === "active" && (
-                  <Badge className={getStatusColor(employee.status)}>
-                    {getStatusText(employee.status)}
-                  </Badge>
-                )}
-                <Badge className={getEmploymentStatusColor(employee.employmentStatus)}>
-                  {employee.employmentStatus}
-                </Badge>
-              </div>
-            </div>
-          </CardHeader>
-
-          {/* Employment Status Management - Onboarding */}
-          {employee.employmentStatus === "onboarding" && (
-            <CardContent className="space-y-4 border-t pt-4">
-              <div className="flex items-center gap-2">
-                <UserCheck className="h-5 w-5 text-vibrant-blue" />
-                <h3 className="font-medium">Onboarding Status</h3>
-              </div>
-              
-              <Button
-                onClick={handleSendInvitation}
-                disabled={isSaving || !!employee.invitationSentDate || !!employee.passwordChanged}
-                className="w-full bg-vibrant-blue hover:bg-vibrant-blue/90"
-              >
-                <Send className="h-4 w-4 mr-2" />
-                {isSaving ? "Saving..." : "Send Invitation Link"}
-              </Button>
-
-              {/* Invitation Logs */}
-              <div className="space-y-2">
-                {employee.invitationSentDate && (
-                  <div className="flex items-start gap-2 p-2 rounded bg-muted/50">
-                    <CheckCircle className="h-4 w-4 text-vibrant-green mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-sm">Invitation sent</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(employee.invitationSentDate).toLocaleDateString("en-US", {
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                {employee.passwordChanged && (
-                  <div className="flex items-start gap-2 p-2 rounded bg-vibrant-green/10">
-                    <CheckCircle className="h-4 w-4 text-vibrant-green mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-vibrant-green">
-                      Employee already changed password
-                    </p>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          )}
-
-          {/* Employment Status Management - Active */}
-          {employee.employmentStatus === "active" && (
-            <CardContent className="border-t pt-4">
-              <div className="flex items-center justify-between p-3 rounded-lg border">
-                <div className="flex items-center gap-3">
-                  <UserCheck className="h-5 w-5 text-vibrant-green" />
-                  <div>
-                    <p className="font-medium">Active Status</p>
-                    <p className="text-sm text-muted-foreground">Employee is currently active</p>
-                  </div>
-                </div>
-                <Switch
-                  checked={true}
-                  disabled={isSaving}
-                  onCheckedChange={(checked) => {
-                    if (!checked) {
-                      setTargetStatus("inactive");
-                      setShowStatusChangeDialog(true);
-                    }
-                  }}
-                />
-              </div>
-            </CardContent>
-          )}
-
-          {/* Employment Status Management - Inactive */}
-          {employee.employmentStatus === "inactive" && (
-            <CardContent className="border-t pt-4">
-              <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
-                <div className="flex items-center gap-3">
-                  <UserX className="h-5 w-5 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium">Inactive Status</p>
-                    <p className="text-sm text-muted-foreground">Employee is currently inactive</p>
-                  </div>
-                </div>
-                <Switch
-                  checked={false}
-                  disabled={isSaving}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setTargetStatus("active");
-                      setShowStatusChangeDialog(true);
-                    }
-                  }}
-                />
-              </div>
-            </CardContent>
-          )}
-        </Card>
-
-        {/* Today's Attendance */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-vibrant-green" />
-              Today's Attendance
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-3 rounded-lg bg-muted/30">
-                <p className="text-sm text-muted-foreground mb-1">
-                  Clock-In
-                </p>
-                <p className="font-medium">{employee.clockInTime || "No log yet"}</p>
-              </div>
-              <div className="p-3 rounded-lg bg-muted/30">
-                <p className="text-sm text-muted-foreground mb-1">
-                  Clock-Out
-                </p>
-                <p className="font-medium">
-                  {employee.clockOutTime || (employee.clockInTime ? "Not clocked out" : "No log yet")}
-                </p>
-              </div>
-            </div>
-
-            {employee.workDuration && (
-              <div className="p-3 rounded-lg bg-vibrant-blue/10">
-                <p className="text-sm text-muted-foreground mb-1">
-                  Work Duration
-                </p>
-                <p className="font-medium text-vibrant-blue">
-                  {employee.workDuration}
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Leave Status */}
-        {employee.status === "on-leave" && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-vibrant-orange" />
-                Leave Status
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="p-4 rounded-lg bg-vibrant-orange/10 text-center">
-                <p className="text-vibrant-orange">
-                  Employee is currently on leave
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Contact Information - Collapsible */}
-        <Collapsible open={isContactOpen} onOpenChange={setIsContactOpen}>
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CollapsibleTrigger className="flex items-center gap-2 flex-1">
-                  <CardTitle className="flex items-center gap-2">
-                    <User className="h-5 w-5 text-vibrant-blue" />
-                    Contact Information
-                  </CardTitle>
-                  {isContactOpen ? (
-                    <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </CollapsibleTrigger>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={!isContactOpen}
-                  onClick={() => {
-                    setContactFormData({
-                      email: employee.email || "",
-                      phone: employee.phone || "",
-                      birthday: employee.birthday || "",
-                      gender: employee.gender || "Male",
-                      nationality: employee.nationality || "",
-                      maritalStatus: employee.maritalStatus || "Single",
-                      address: employee.address || "",
-                    });
-                    setShowEditContactDialog(true);
-                  }}
-                >
-                  <Edit className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CollapsibleContent>
-              <CardContent className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <Mail className="h-4 w-4 text-vibrant-blue mt-0.5" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Email</p>
-                    <p className="break-all">{employee.email}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Phone className="h-4 w-4 text-vibrant-green mt-0.5" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Phone</p>
-                    <p>{employee.phone}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Cake className="h-4 w-4 text-vibrant-purple mt-0.5" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Birthday</p>
-                    <p>
-                      {employee.birthday && new Date(employee.birthday).toLocaleDateString("en-US", {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                      })}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <User className="h-4 w-4 text-vibrant-orange mt-0.5" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Gender</p>
-                    <p>{employee.gender}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Globe className="h-4 w-4 text-vibrant-blue mt-0.5" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Nationality</p>
-                    <p>{employee.nationality}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Heart className="h-4 w-4 text-destructive mt-0.5" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Marital Status</p>
-                    <p>{employee.maritalStatus}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <MapPin className="h-4 w-4 text-vibrant-green mt-0.5" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Address</p>
-                    <p>{employee.address || "No address provided"}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </CollapsibleContent>
-          </Card>
-        </Collapsible>
-
-        {/* Employment Details - Collapsible */}
-        <Collapsible open={isEmploymentOpen} onOpenChange={setIsEmploymentOpen}>
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CollapsibleTrigger className="flex items-center gap-2 flex-1">
-                  <CardTitle className="flex items-center gap-2">
-                    <Briefcase className="h-5 w-5 text-vibrant-purple" />
-                    Employment Details
-                  </CardTitle>
-                  {isEmploymentOpen ? (
-                    <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </CollapsibleTrigger>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={!isEmploymentOpen}
-                  onClick={() => {
-                    setEmploymentFormData({
-                      employmentType:
-                        employee.employmentType || employmentTypeOptions[0] || "",
-                      department: employee.department || "",
-                      position: employee.position || "",
-                      joinDate: employee.joinDate || "",
-                    });
-                    setShowEditEmploymentDialog(true);
-                  }}
-                >
-                  <Edit className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CollapsibleContent>
-              <CardContent className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <Briefcase className="h-4 w-4 text-vibrant-purple mt-0.5" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Employment Type</p>
-                    <p className="capitalize">{employee.employmentType}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Building2 className="h-4 w-4 text-vibrant-orange mt-0.5" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Department</p>
-                    <p>{employee.department}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <IdCard className="h-4 w-4 text-vibrant-blue mt-0.5" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Position</p>
-                    <p>{employee.position}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Calendar className="h-4 w-4 text-vibrant-green mt-0.5" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Join Date</p>
-                    <p>
-                      {employee.joinDate && new Date(employee.joinDate).toLocaleDateString("en-US", {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                      })}
-                    </p>
-                  </div>
-                </div>
-                {employee.employmentStatus === "active" && employee.joinDate && (
-                  <div className="flex items-start gap-3">
-                    <Clock className="h-4 w-4 text-vibrant-purple mt-0.5" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">Years of Service</p>
-                      <p>
-                        {calculateYearsOfService(employee.joinDate)} {calculateYearsOfService(employee.joinDate) === 1 ? "year" : "years"}
-                      </p>
-                      {isWorkAnniversary(employee.joinDate) && (
-                        <Badge className="mt-1 bg-vibrant-blue/20 text-vibrant-blue">
-                          Work Anniversary Today
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </CollapsibleContent>
-          </Card>
-        </Collapsible>
-
-        {/* Payroll - Collapsible */}
-        <EmployeePayrollCard 
-          payroll={employee.payroll} 
-          onUpdate={handleUpdatePayroll}
-          isOpen={isPayrollOpen}
-          onOpenChange={setIsPayrollOpen}
-        />
-      </div>
-
-      {/* Edit Contact Information Dialog */}
-      <Dialog open={showEditContactDialog} onOpenChange={setShowEditContactDialog}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Contact Information</DialogTitle>
-            <DialogDescription>
-              Update employee contact details
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="edit-email">Email *</Label>
-              <Input
-                id="edit-email"
-                type="email"
-                value={contactFormData.email}
-                onChange={(e) => setContactFormData({ ...contactFormData, email: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="edit-phone">Phone *</Label>
-              <Input
-                id="edit-phone"
-                type="tel"
-                value={contactFormData.phone}
-                onChange={(e) => setContactFormData({ ...contactFormData, phone: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="edit-birthday">Birthday *</Label>
-              <Input
-                id="edit-birthday"
-                type="date"
-                value={contactFormData.birthday}
-                onChange={(e) => setContactFormData({ ...contactFormData, birthday: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="edit-gender">Gender *</Label>
-              <Select
-                value={contactFormData.gender}
-                onValueChange={(value: any) => setContactFormData({ ...contactFormData, gender: value })}
-              >
-                <SelectTrigger id="edit-gender">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Male">Male</SelectItem>
-                  <SelectItem value="Female">Female</SelectItem>
-                  <SelectItem value="Other">Other</SelectItem>
-                  <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="edit-nationality">Nationality *</Label>
-              <Input
-                id="edit-nationality"
-                value={contactFormData.nationality}
-                onChange={(e) => setContactFormData({ ...contactFormData, nationality: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="edit-maritalStatus">Marital Status *</Label>
-              <Select
-                value={contactFormData.maritalStatus}
-                onValueChange={(value: any) => setContactFormData({ ...contactFormData, maritalStatus: value })}
-              >
-                <SelectTrigger id="edit-maritalStatus">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Single">Single</SelectItem>
-                  <SelectItem value="Married">Married</SelectItem>
-                  <SelectItem value="Divorced">Divorced</SelectItem>
-                  <SelectItem value="Widowed">Widowed</SelectItem>
-                  <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="edit-address">Address *</Label>
-              <Input
-                id="edit-address"
-                value={contactFormData.address}
-                onChange={(e) => setContactFormData({ ...contactFormData, address: e.target.value })}
-                placeholder="Search for address (e.g., 123 Main St, City, Country)"
-                autoComplete="street-address"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Enter complete address with street, city, and country
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" disabled={isSaving} onClick={() => setShowEditContactDialog(false)}>
-              Cancel
-            </Button>
-            <Button disabled={isSaving} onClick={handleUpdateContact} className="bg-vibrant-blue hover:bg-vibrant-blue/90">
-              {isSaving ? "Saving..." : "Save Changes"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Employment Details Dialog */}
-      <Dialog open={showEditEmploymentDialog} onOpenChange={setShowEditEmploymentDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Employment Details</DialogTitle>
-            <DialogDescription>
-              Update employee employment information
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="edit-employmentType">Employment Type *</Label>
-              <Select
-                value={employmentFormData.employmentType}
-                onValueChange={(value: any) => setEmploymentFormData({ ...employmentFormData, employmentType: value })}
-              >
-                <SelectTrigger id="edit-employmentType">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {employmentTypeOptions.map((employmentType) => (
-                    <SelectItem key={employmentType} value={employmentType}>
-                      {employmentType}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="edit-department">Department *</Label>
-              <Select
-                value={employmentFormData.department}
-                onValueChange={(value) =>
-                  setEmploymentFormData({ ...employmentFormData, department: value })
-                }
-              >
-                <SelectTrigger id="edit-department">
-                  <SelectValue placeholder="Select department" />
-                </SelectTrigger>
-                <SelectContent>
-                  {departmentNames.map((department) => (
-                    <SelectItem key={department} value={department}>
-                      {department}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="edit-position">Position *</Label>
-              <Select
-                value={employmentFormData.position}
-                onValueChange={(value) =>
-                  setEmploymentFormData({ ...employmentFormData, position: value })
-                }
-              >
-                <SelectTrigger id="edit-position">
-                  <SelectValue placeholder="Select position" />
-                </SelectTrigger>
-                <SelectContent>
-                  {positionOptionsForSelectedDepartment.map((position) => (
-                    <SelectItem key={position} value={position}>
-                      {position}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="edit-joinDate">Join Date *</Label>
-              <Input
-                id="edit-joinDate"
-                type="date"
-                value={employmentFormData.joinDate}
-                onChange={(e) => setEmploymentFormData({ ...employmentFormData, joinDate: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" disabled={isSaving} onClick={() => setShowEditEmploymentDialog(false)}>
-              Cancel
-            </Button>
-            <Button disabled={isSaving} onClick={handleUpdateEmployment} className="bg-vibrant-purple hover:bg-vibrant-purple/90">
-              {isSaving ? "Saving..." : "Save Changes"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Status Change Confirmation Dialog */}
-      <AlertDialog open={showStatusChangeDialog} onOpenChange={setShowStatusChangeDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirm Status Change</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to change this employee's status to{" "}
-              <span className="font-medium">{targetStatus}</span>? This action will update their employment status.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isSaving} onClick={() => setTargetStatus(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction disabled={isSaving} onClick={handleStatusChange}>
-              {isSaving ? "Saving..." : "Confirm"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Profile Picture Dialog */}
-      <Dialog open={showProfilePictureDialog} onOpenChange={setShowProfilePictureDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Profile Picture</DialogTitle>
-            <DialogDescription>
-              Upload a square image (1:1 aspect ratio) for the best results. Max file size: 5MB.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="flex flex-col items-center gap-4">
-              {profilePicturePreview ? (
-                <img
-                  src={profilePicturePreview}
-                  alt="Preview"
-                  className="h-32 w-32 rounded-full object-cover border-2 border-vibrant-blue"
-                />
-              ) : employee.profilePicture ? (
-                <img
-                  src={employee.profilePicture}
-                  alt={`${employee.firstName} ${employee.lastName}`}
-                  className="h-32 w-32 rounded-full object-cover border-2 border-vibrant-blue"
-                />
-              ) : (
-                <div className="h-32 w-32 rounded-full bg-vibrant-blue/10 flex items-center justify-center">
-                  <User className="h-16 w-16 text-vibrant-blue" />
-                </div>
-              )}
-
-              <div className="w-full space-y-3">
-                <Label htmlFor="profile-picture-upload" className="cursor-pointer">
-                  <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center hover:border-vibrant-blue/50 transition-colors">
-                    <div className="flex flex-col items-center gap-2">
-                      <User className="h-8 w-8 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">Click to upload</p>
-                        <p className="text-xs text-muted-foreground">
-                          JPEG, PNG, GIF, or WebP (Max 5MB)
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Square image recommended
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <input
-                    id="profile-picture-upload"
-                    type="file"
-                    accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
-                    onChange={handleProfilePictureChange}
-                    className="hidden"
-                  />
-                </Label>
-                
-                {(employee.profilePicture || profilePicturePreview) && (
-                  <Button
-                    variant="outline"
-                    disabled={isSaving}
-                    onClick={handleRemoveProfilePicture}
-                    className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
-                  >
-                    {isSaving ? "Saving..." : "Remove Picture"}
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              disabled={isSaving}
-              onClick={() => {
-                setShowProfilePictureDialog(false);
-                setProfilePicturePreview(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveProfilePicture}
-              disabled={isSaving || !profilePicturePreview}
-              className="bg-vibrant-blue hover:bg-vibrant-blue/90"
-            >
-              {isSaving ? "Saving..." : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
+	const employees = useMemo(
+		() =>
+			syncEmployeesWithEmploymentOptions(
+				getEmployees(),
+				employmentOptions
+			),
+		[employmentOptions]
+	)
+	const departmentNames = useMemo(
+		() => getDepartmentNamesFromOptions(employmentOptions.departments),
+		[employmentOptions.departments]
+	)
+	const employmentTypeOptions = useMemo(() => {
+		const seen = new Set<string>()
+		const options: string[] = []
+		for (const employmentType of employmentOptions.employmentTypes) {
+			const value = employmentType.trim()
+			if (!value) {
+				continue
+			}
+
+			const key = value.toLowerCase()
+			if (seen.has(key)) {
+				continue
+			}
+
+			seen.add(key)
+			options.push(value)
+		}
+
+		return options
+	}, [employmentOptions.employmentTypes])
+	const positionsByDepartment = useMemo(() => {
+		const departmentNameById = new Map<number, string>()
+		for (const department of employmentOptions.departments) {
+			const name = department.name.trim()
+			if (name) {
+				departmentNameById.set(department.departmentId, name)
+			}
+		}
+
+		const map = new Map<string, string[]>()
+		for (const position of employmentOptions.positions) {
+			const positionName = position.name.trim()
+			if (!positionName) {
+				continue
+			}
+
+			const departmentName = departmentNameById.get(position.departmentId)
+			if (!departmentName) {
+				continue
+			}
+
+			const key = departmentName.toLowerCase()
+			const current = map.get(key) ?? []
+			if (
+				!current.some(
+					name => name.toLowerCase() === positionName.toLowerCase()
+				)
+			) {
+				current.push(positionName)
+			}
+			map.set(key, current)
+		}
+
+		return map
+	}, [employmentOptions.departments, employmentOptions.positions])
+	const allPositionOptions = useMemo(() => {
+		const seen = new Set<string>()
+		const options: string[] = []
+		for (const position of employmentOptions.positions) {
+			const name = position.name.trim()
+			if (!name) {
+				continue
+			}
+
+			const key = name.toLowerCase()
+			if (seen.has(key)) {
+				continue
+			}
+
+			seen.add(key)
+			options.push(name)
+		}
+		return options
+	}, [employmentOptions.positions])
+	const [employee, setEmployee] = useState(
+		employees.find(emp => emp.id === employeeId)
+	)
+	const [showEditContactDialog, setShowEditContactDialog] = useState(false)
+	const [showEditEmploymentDialog, setShowEditEmploymentDialog] =
+		useState(false)
+	const [showStatusChangeDialog, setShowStatusChangeDialog] = useState(false)
+	const [targetStatus, setTargetStatus] = useState<
+		'active' | 'inactive' | null
+	>(null)
+	const [showProfilePictureDialog, setShowProfilePictureDialog] =
+		useState(false)
+	const [profilePicturePreview, setProfilePicturePreview] = useState<
+		string | null
+	>(null)
+
+	// Collapsible states - default to closed
+	const [isContactOpen, setIsContactOpen] = useState(false)
+	const [isEmploymentOpen, setIsEmploymentOpen] = useState(false)
+	const [isPayrollOpen, setIsPayrollOpen] = useState(false)
+	const [isSaving, setIsSaving] = useState(false)
+
+	// Edit form states
+	const [contactFormData, setContactFormData] = useState({
+		email: employee?.email || '',
+		phone: employee?.phone || '',
+		birthday: employee?.birthday || '',
+		gender: employee?.gender || 'Male',
+		nationality: employee?.nationality || '',
+		maritalStatus: employee?.maritalStatus || 'Single',
+		address: employee?.address || '',
+	})
+
+	const [employmentFormData, setEmploymentFormData] = useState({
+		employmentType:
+			employee?.employmentType || employmentTypeOptions[0] || '',
+		department: employee?.department || '',
+		position: employee?.position || '',
+		joinDate: employee?.joinDate || '',
+	})
+
+	const positionOptionsForSelectedDepartment = useMemo(() => {
+		if (!employmentFormData.department) {
+			return allPositionOptions
+		}
+
+		const byDepartment = positionsByDepartment.get(
+			employmentFormData.department.toLowerCase()
+		)
+		return byDepartment && byDepartment.length > 0
+			? byDepartment
+			: allPositionOptions
+	}, [
+		allPositionOptions,
+		employmentFormData.department,
+		positionsByDepartment,
+	])
+
+	useEffect(() => {
+		const refreshedEmployee = employees.find(emp => emp.id === employeeId)
+		if (refreshedEmployee) {
+			setEmployee(refreshedEmployee)
+		}
+	}, [employeeId, employees])
+
+	useEffect(() => {
+		if (
+			employmentFormData.position &&
+			positionOptionsForSelectedDepartment.length > 0 &&
+			!positionOptionsForSelectedDepartment.includes(
+				employmentFormData.position
+			)
+		) {
+			setEmploymentFormData(prev => ({ ...prev, position: '' }))
+		}
+	}, [employmentFormData.position, positionOptionsForSelectedDepartment])
+
+	useEffect(() => {
+		if (
+			employmentFormData.employmentType &&
+			employmentTypeOptions.length > 0 &&
+			!employmentTypeOptions.includes(employmentFormData.employmentType)
+		) {
+			setEmploymentFormData(prev => ({
+				...prev,
+				employmentType: employmentTypeOptions[0],
+			}))
+		}
+	}, [employmentFormData.employmentType, employmentTypeOptions])
+
+	if (!employee) {
+		return (
+			<div className="space-y-6 pb-20">
+				<div className="px-4">
+					<Button
+						onClick={onBack}
+						variant="ghost"
+						className="mb-4 -ml-2"
+					>
+						<ArrowLeft className="h-4 w-4 mr-2" />
+						Back
+					</Button>
+					<Card>
+						<CardContent className="p-6 text-center">
+							<AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+							<p className="text-muted-foreground">
+								Employee not found
+							</p>
+						</CardContent>
+					</Card>
+				</div>
+			</div>
+		)
+	}
+
+	const getStatusColor = (status: Employee['status']) => {
+		switch (status) {
+			case 'present':
+				return 'bg-vibrant-green text-vibrant-green-foreground'
+			case 'on-leave':
+				return 'bg-vibrant-orange text-vibrant-orange-foreground'
+			case 'absent':
+				return 'bg-destructive text-destructive-foreground'
+		}
+	}
+
+	const getStatusText = (status: Employee['status']) => {
+		switch (status) {
+			case 'present':
+				return 'Present'
+			case 'on-leave':
+				return 'On Leave'
+			case 'absent':
+				return 'Absent'
+		}
+	}
+
+	const getEmploymentStatusColor = (status: Employee['employmentStatus']) => {
+		switch (status) {
+			case 'active':
+				return 'bg-vibrant-green/20 text-vibrant-green'
+			case 'onboarding':
+				return 'bg-vibrant-blue/20 text-vibrant-blue'
+			case 'inactive':
+				return 'bg-muted-foreground/20 text-muted-foreground'
+		}
+	}
+
+	const calculateYearsOfService = (joinDate: string): number => {
+		const today = new Date(2025, 9, 19)
+		const join = new Date(joinDate)
+		const years = today.getFullYear() - join.getFullYear()
+		const monthDiff = today.getMonth() - join.getMonth()
+		const dayDiff = today.getDate() - join.getDate()
+
+		if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+			return years - 1
+		}
+		return years
+	}
+
+	const isWorkAnniversary = (joinDate: string): boolean => {
+		const today = new Date(2025, 9, 19)
+		const join = new Date(joinDate)
+		return (
+			join.getMonth() === today.getMonth() &&
+			join.getDate() === today.getDate()
+		)
+	}
+
+	const handleSendInvitation = () => {
+		void updateEmployeeOnApi(
+			{
+				invitationSentDate: new Date().toISOString().split('T')[0],
+			},
+			{
+				successTitle: 'Invitation sent successfully',
+				successDescription: `An invitation email has been sent to ${employee.email}`,
+			}
+		)
+	}
+
+	const syncEmployeeCache = (nextEmployee: Employee) => {
+		const currentEmployees = getEmployees()
+		const nextEmployees = currentEmployees.some(
+			entry => entry.id === nextEmployee.id
+		)
+			? currentEmployees.map(entry =>
+					entry.id === nextEmployee.id ? nextEmployee : entry
+				)
+			: [...currentEmployees, nextEmployee]
+		replaceEmployees(nextEmployees)
+	}
+
+	const updateEmployeeOnApi = async (
+		updates: Record<string, unknown>,
+		options?: { successTitle?: string; successDescription?: string }
+	) => {
+		if (!accessToken) {
+			toast.error('Unable to update employee', {
+				description: 'Missing access token. Please sign in again.',
+			})
+			return false
+		}
+
+		if (isSaving) {
+			return false
+		}
+
+		setIsSaving(true)
+		try {
+			const response = await fetch(
+				`${apiBaseUrl}/employees/${employee.id}`,
+				{
+					method: 'PATCH',
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: `Bearer ${accessToken}`,
+					},
+					body: JSON.stringify(updates),
+				}
+			)
+
+			const payload = await response.json().catch(() => ({}))
+			if (!response.ok) {
+				toast.error('Employee update failed', {
+					description:
+						payload?.error ||
+						'Please review your changes and try again.',
+				})
+				return false
+			}
+
+			if (payload?.employee) {
+				const mapped = mapApiEmployeeToState(payload.employee)
+				setEmployee(mapped)
+				syncEmployeeCache(mapped)
+			}
+
+			if (options?.successTitle) {
+				toast.success(options.successTitle, {
+					description: options.successDescription,
+				})
+			}
+
+			return true
+		} catch {
+			toast.error('Employee update failed', {
+				description: 'Unable to reach the API server.',
+			})
+			return false
+		} finally {
+			setIsSaving(false)
+		}
+	}
+
+	const updatePayrollOnApi = async (payroll: PayrollInfo) => {
+		if (!accessToken) {
+			toast.error('Unable to update payroll', {
+				description: 'Missing access token. Please sign in again.',
+			})
+			return false
+		}
+
+		if (isSaving) {
+			return false
+		}
+
+		setIsSaving(true)
+		try {
+			const response = await fetch(
+				`${apiBaseUrl}/employees/${employee.id}/payroll`,
+				{
+					method: 'PUT',
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: `Bearer ${accessToken}`,
+					},
+					body: JSON.stringify({
+						salary: payroll.salary,
+						governmentIds: payroll.governmentIds,
+						deductions: payroll.deductions.map(deduction => ({
+							id: deduction.id,
+							name: deduction.name,
+							amount: deduction.amount,
+						})),
+					}),
+				}
+			)
+
+			const payload = await response.json().catch(() => ({}))
+			if (!response.ok) {
+				toast.error('Payroll update failed', {
+					description:
+						payload?.error ||
+						'Please review payroll fields and try again.',
+				})
+				return false
+			}
+
+			if (payload?.employee) {
+				const mapped = mapApiEmployeeToState(payload.employee)
+				setEmployee(mapped)
+				syncEmployeeCache(mapped)
+			}
+
+			toast.success('Payroll updated successfully')
+			return true
+		} catch {
+			toast.error('Payroll update failed', {
+				description: 'Unable to reach the API server.',
+			})
+			return false
+		} finally {
+			setIsSaving(false)
+		}
+	}
+
+	const handleUpdateContact = () => {
+		if (
+			!contactFormData.email ||
+			!contactFormData.phone ||
+			!contactFormData.birthday ||
+			!contactFormData.nationality ||
+			!contactFormData.address
+		) {
+			toast.error('Please fill in all required fields')
+			return
+		}
+
+		if (!emailRegex.test(contactFormData.email.trim())) {
+			toast.error('Please enter a valid email address')
+			return
+		}
+
+		void (async () => {
+			const didUpdate = await updateEmployeeOnApi(
+				{
+					email: contactFormData.email.trim(),
+					phone: contactFormData.phone,
+					birthday: contactFormData.birthday,
+					gender: contactFormData.gender,
+					nationality: contactFormData.nationality,
+					maritalStatus: contactFormData.maritalStatus,
+					address: contactFormData.address,
+				},
+				{ successTitle: 'Contact information updated successfully' }
+			)
+
+			if (didUpdate) {
+				setShowEditContactDialog(false)
+			}
+		})()
+	}
+
+	const handleUpdateEmployment = () => {
+		if (
+			!employmentFormData.employmentType ||
+			!employmentFormData.department ||
+			!employmentFormData.position ||
+			!employmentFormData.joinDate
+		) {
+			toast.error('Please fill in all required fields')
+			return
+		}
+
+		if (
+			departmentNames.length > 0 &&
+			!departmentNames.includes(employmentFormData.department)
+		) {
+			toast.error(
+				'Please select a valid department from employment details'
+			)
+			return
+		}
+
+		if (
+			employmentTypeOptions.length > 0 &&
+			!employmentTypeOptions.includes(employmentFormData.employmentType)
+		) {
+			toast.error(
+				'Please select a valid employment type from employment details'
+			)
+			return
+		}
+
+		if (
+			positionOptionsForSelectedDepartment.length > 0 &&
+			!positionOptionsForSelectedDepartment.includes(
+				employmentFormData.position
+			)
+		) {
+			toast.error(
+				'Please select a valid position from employment details'
+			)
+			return
+		}
+
+		const selectedDepartment = employmentOptions.departments.find(
+			department => department.name === employmentFormData.department
+		)
+		const selectedPosition = employmentOptions.positions.find(
+			position =>
+				position.name === employmentFormData.position &&
+				(!selectedDepartment ||
+					position.departmentId === selectedDepartment.departmentId)
+		)
+
+		if (!selectedDepartment || !selectedPosition) {
+			toast.error('Please select valid department and position options')
+			return
+		}
+
+		void (async () => {
+			const didUpdate = await updateEmployeeOnApi(
+				{
+					employmentType: employmentFormData.employmentType,
+					departmentId: selectedDepartment.departmentId,
+					positionId: selectedPosition.positionId,
+					joinDate: employmentFormData.joinDate,
+				},
+				{ successTitle: 'Employment details updated successfully' }
+			)
+
+			if (didUpdate) {
+				setShowEditEmploymentDialog(false)
+			}
+		})()
+	}
+
+	const handleStatusChange = () => {
+		if (!targetStatus) return
+
+		void (async () => {
+			const didUpdate = await updateEmployeeOnApi(
+				{
+					employmentStatus: targetStatus,
+				},
+				{
+					successTitle: `Employee status changed to ${targetStatus}`,
+				}
+			)
+
+			if (didUpdate) {
+				setShowStatusChangeDialog(false)
+				setTargetStatus(null)
+			}
+		})()
+	}
+
+	const handleUpdatePayroll = (payroll: PayrollInfo) => {
+		void updatePayrollOnApi(payroll)
+	}
+
+	const handleProfilePictureChange = (
+		e: React.ChangeEvent<HTMLInputElement>
+	) => {
+		const file = e.target.files?.[0]
+		if (!file) return
+
+		// Validate file type
+		const validTypes = [
+			'image/jpeg',
+			'image/jpg',
+			'image/png',
+			'image/gif',
+			'image/webp',
+		]
+		if (!validTypes.includes(file.type)) {
+			toast.error(
+				'Please upload a valid image file (JPEG, PNG, GIF, or WebP)'
+			)
+			return
+		}
+
+		// Validate file size (max 5MB)
+		if (file.size > 5 * 1024 * 1024) {
+			toast.error('Image size should not exceed 5MB')
+			return
+		}
+
+		// Read and validate image dimensions
+		const reader = new FileReader()
+		reader.onload = event => {
+			const img = new Image()
+			img.onload = () => {
+				const aspectRatio = img.width / img.height
+
+				// Check if image is roughly square (aspect ratio between 0.8 and 1.2)
+				if (aspectRatio < 0.8 || aspectRatio > 1.2) {
+					toast.error(
+						'Please upload a square image (1:1 aspect ratio) for best results'
+					)
+					return
+				}
+
+				// Image is valid, set preview
+				setProfilePicturePreview(event.target?.result as string)
+			}
+			img.src = event.target?.result as string
+		}
+		reader.readAsDataURL(file)
+	}
+
+	const handleSaveProfilePicture = () => {
+		if (!profilePicturePreview) {
+			toast.error('Please select an image')
+			return
+		}
+
+		void (async () => {
+			const didUpdate = await updateEmployeeOnApi(
+				{
+					profilePictureUrl: profilePicturePreview,
+				},
+				{
+					successTitle: 'Profile picture updated successfully',
+				}
+			)
+
+			if (didUpdate) {
+				setShowProfilePictureDialog(false)
+				setProfilePicturePreview(null)
+			}
+		})()
+	}
+
+	const handleRemoveProfilePicture = () => {
+		void (async () => {
+			const didUpdate = await updateEmployeeOnApi(
+				{
+					profilePictureUrl: null,
+				},
+				{
+					successTitle: 'Profile picture removed',
+				}
+			)
+
+			if (didUpdate) {
+				setShowProfilePictureDialog(false)
+				setProfilePicturePreview(null)
+			}
+		})()
+	}
+
+	const canChangeToInactive = () => {
+		return employee.employmentStatus === 'active'
+	}
+
+	return (
+		<div className="space-y-6 pb-20">
+			<div className="px-4 space-y-4">
+				{/* Back Button and Profile Actions */}
+				<div className="flex items-center justify-between">
+					<Button onClick={onBack} variant="ghost" className="-ml-2">
+						<ArrowLeft className="h-4 w-4 mr-2" />
+						Back
+					</Button>
+
+					<EmployeeProfilePDFGenerator employee={employee} />
+				</div>
+
+				{/* Employee Header with Employment Status */}
+				<Card>
+					<CardHeader className="pb-3">
+						<div className="flex items-start justify-between">
+							<div className="flex items-center gap-3">
+								<div className="relative">
+									{employee.profilePicture ? (
+										<img
+											src={employee.profilePicture}
+											alt={`${employee.firstName} ${employee.lastName}`}
+											className="h-16 w-16 rounded-full object-cover border-2 border-vibrant-blue"
+										/>
+									) : (
+										<div className="h-16 w-16 rounded-full bg-vibrant-blue/10 flex items-center justify-center">
+											<User className="h-8 w-8 text-vibrant-blue" />
+										</div>
+									)}
+									<button
+										onClick={() => {
+											setProfilePicturePreview(
+												employee.profilePicture || null
+											)
+											setShowProfilePictureDialog(true)
+										}}
+										className="absolute -bottom-1 -right-1 h-6 w-6 rounded-full bg-vibrant-blue text-white flex items-center justify-center hover:bg-vibrant-blue/90 transition-colors"
+									>
+										<Edit className="h-3 w-3" />
+									</button>
+								</div>
+								<div>
+									<h2>
+										{employee.firstName} {employee.lastName}
+									</h2>
+									<p className="text-sm text-muted-foreground">
+										{employee.position}
+									</p>
+									<p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+										<IdCard className="h-3 w-3" />
+										{employee.employeeId}
+									</p>
+								</div>
+							</div>
+							<div className="flex flex-col items-end gap-2">
+								{/* Only show attendance status if employment status is active */}
+								{employee.employmentStatus === 'active' && (
+									<Badge
+										className={getStatusColor(
+											employee.status
+										)}
+									>
+										{getStatusText(employee.status)}
+									</Badge>
+								)}
+								<Badge
+									className={getEmploymentStatusColor(
+										employee.employmentStatus
+									)}
+								>
+									{employee.employmentStatus}
+								</Badge>
+							</div>
+						</div>
+					</CardHeader>
+
+					{/* Employment Status Management - Onboarding */}
+					{employee.employmentStatus === 'onboarding' && (
+						<CardContent className="space-y-4 border-t pt-4">
+							<div className="flex items-center gap-2">
+								<UserCheck className="h-5 w-5 text-vibrant-blue" />
+								<h3 className="font-medium">
+									Onboarding Status
+								</h3>
+							</div>
+
+							<Button
+								onClick={handleSendInvitation}
+								disabled={
+									isSaving ||
+									!!employee.invitationSentDate ||
+									!!employee.passwordChanged
+								}
+								className="w-full bg-vibrant-blue hover:bg-vibrant-blue/90"
+							>
+								<Send className="h-4 w-4 mr-2" />
+								{isSaving
+									? 'Saving...'
+									: 'Send Invitation Link'}
+							</Button>
+
+							{/* Invitation Logs */}
+							<div className="space-y-2">
+								{employee.invitationSentDate && (
+									<div className="flex items-start gap-2 p-2 rounded bg-muted/50">
+										<CheckCircle className="h-4 w-4 text-vibrant-green mt-0.5 flex-shrink-0" />
+										<div>
+											<p className="text-sm">
+												Invitation sent
+											</p>
+											<p className="text-xs text-muted-foreground">
+												{new Date(
+													employee.invitationSentDate
+												).toLocaleDateString('en-US', {
+													year: 'numeric',
+													month: 'long',
+													day: 'numeric',
+												})}
+											</p>
+										</div>
+									</div>
+								)}
+								{employee.passwordChanged && (
+									<div className="flex items-start gap-2 p-2 rounded bg-vibrant-green/10">
+										<CheckCircle className="h-4 w-4 text-vibrant-green mt-0.5 flex-shrink-0" />
+										<p className="text-sm text-vibrant-green">
+											Employee already changed password
+										</p>
+									</div>
+								)}
+							</div>
+						</CardContent>
+					)}
+
+					{/* Employment Status Management - Active */}
+					{employee.employmentStatus === 'active' && (
+						<CardContent className="border-t pt-4">
+							<div className="flex items-center justify-between p-3 rounded-lg border">
+								<div className="flex items-center gap-3">
+									<UserCheck className="h-5 w-5 text-vibrant-green" />
+									<div>
+										<p className="font-medium">
+											Active Status
+										</p>
+										<p className="text-sm text-muted-foreground">
+											Employee is currently active
+										</p>
+									</div>
+								</div>
+								<Switch
+									checked={true}
+									disabled={isSaving}
+									onCheckedChange={checked => {
+										if (!checked) {
+											setTargetStatus('inactive')
+											setShowStatusChangeDialog(true)
+										}
+									}}
+								/>
+							</div>
+						</CardContent>
+					)}
+
+					{/* Employment Status Management - Inactive */}
+					{employee.employmentStatus === 'inactive' && (
+						<CardContent className="border-t pt-4">
+							<div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
+								<div className="flex items-center gap-3">
+									<UserX className="h-5 w-5 text-muted-foreground" />
+									<div>
+										<p className="font-medium">
+											Inactive Status
+										</p>
+										<p className="text-sm text-muted-foreground">
+											Employee is currently inactive
+										</p>
+									</div>
+								</div>
+								<Switch
+									checked={false}
+									disabled={isSaving}
+									onCheckedChange={checked => {
+										if (checked) {
+											setTargetStatus('active')
+											setShowStatusChangeDialog(true)
+										}
+									}}
+								/>
+							</div>
+						</CardContent>
+					)}
+				</Card>
+
+				{/* Today's Attendance */}
+				<Card>
+					<CardHeader className="pb-3">
+						<CardTitle className="flex items-center gap-2">
+							<Clock className="h-5 w-5 text-vibrant-green" />
+							Today's Attendance
+						</CardTitle>
+					</CardHeader>
+					<CardContent className="space-y-3">
+						<div className="grid grid-cols-2 gap-4">
+							<div className="p-3 rounded-lg bg-muted/30">
+								<p className="text-sm text-muted-foreground mb-1">
+									Clock-In
+								</p>
+								<p className="font-medium">
+									{employee.clockInTime || 'No log yet'}
+								</p>
+							</div>
+							<div className="p-3 rounded-lg bg-muted/30">
+								<p className="text-sm text-muted-foreground mb-1">
+									Clock-Out
+								</p>
+								<p className="font-medium">
+									{employee.clockOutTime ||
+										(employee.clockInTime
+											? 'Not clocked out'
+											: 'No log yet')}
+								</p>
+							</div>
+						</div>
+
+						{employee.workDuration && (
+							<div className="p-3 rounded-lg bg-vibrant-blue/10">
+								<p className="text-sm text-muted-foreground mb-1">
+									Work Duration
+								</p>
+								<p className="font-medium text-vibrant-blue">
+									{employee.workDuration}
+								</p>
+							</div>
+						)}
+					</CardContent>
+				</Card>
+
+				{/* Leave Status */}
+				{employee.status === 'on-leave' && (
+					<Card>
+						<CardHeader className="pb-3">
+							<CardTitle className="flex items-center gap-2">
+								<Calendar className="h-5 w-5 text-vibrant-orange" />
+								Leave Status
+							</CardTitle>
+						</CardHeader>
+						<CardContent>
+							<div className="p-4 rounded-lg bg-vibrant-orange/10 text-center">
+								<p className="text-vibrant-orange">
+									Employee is currently on leave
+								</p>
+							</div>
+						</CardContent>
+					</Card>
+				)}
+
+				{/* Contact Information - Collapsible */}
+				<Collapsible
+					open={isContactOpen}
+					onOpenChange={setIsContactOpen}
+				>
+					<Card>
+						<CardHeader className="pb-3">
+							<div className="flex items-center justify-between">
+								<CollapsibleTrigger className="flex items-center gap-2 flex-1">
+									<CardTitle className="flex items-center gap-2">
+										<User className="h-5 w-5 text-vibrant-blue" />
+										Contact Information
+									</CardTitle>
+									{isContactOpen ? (
+										<ChevronUp className="h-4 w-4 text-muted-foreground" />
+									) : (
+										<ChevronDown className="h-4 w-4 text-muted-foreground" />
+									)}
+								</CollapsibleTrigger>
+								<Button
+									variant="ghost"
+									size="sm"
+									disabled={!isContactOpen}
+									onClick={() => {
+										setContactFormData({
+											email: employee.email || '',
+											phone: employee.phone || '',
+											birthday: employee.birthday || '',
+											gender: employee.gender || 'Male',
+											nationality:
+												employee.nationality || '',
+											maritalStatus:
+												employee.maritalStatus ||
+												'Single',
+											address: employee.address || '',
+										})
+										setShowEditContactDialog(true)
+									}}
+								>
+									<Edit className="h-4 w-4" />
+								</Button>
+							</div>
+						</CardHeader>
+						<CollapsibleContent>
+							<CardContent className="space-y-3">
+								<div className="flex items-start gap-3">
+									<Mail className="h-4 w-4 text-vibrant-blue mt-0.5" />
+									<div>
+										<p className="text-sm text-muted-foreground">
+											Email
+										</p>
+										<p className="break-all">
+											{employee.email}
+										</p>
+									</div>
+								</div>
+								<div className="flex items-start gap-3">
+									<Phone className="h-4 w-4 text-vibrant-green mt-0.5" />
+									<div>
+										<p className="text-sm text-muted-foreground">
+											Phone
+										</p>
+										<p>{employee.phone}</p>
+									</div>
+								</div>
+								<div className="flex items-start gap-3">
+									<Cake className="h-4 w-4 text-vibrant-purple mt-0.5" />
+									<div>
+										<p className="text-sm text-muted-foreground">
+											Birthday
+										</p>
+										<p>
+											{employee.birthday &&
+												new Date(
+													employee.birthday
+												).toLocaleDateString('en-US', {
+													year: 'numeric',
+													month: 'long',
+													day: 'numeric',
+												})}
+										</p>
+									</div>
+								</div>
+								<div className="flex items-start gap-3">
+									<User className="h-4 w-4 text-vibrant-orange mt-0.5" />
+									<div>
+										<p className="text-sm text-muted-foreground">
+											Gender
+										</p>
+										<p>{employee.gender}</p>
+									</div>
+								</div>
+								<div className="flex items-start gap-3">
+									<Globe className="h-4 w-4 text-vibrant-blue mt-0.5" />
+									<div>
+										<p className="text-sm text-muted-foreground">
+											Nationality
+										</p>
+										<p>{employee.nationality}</p>
+									</div>
+								</div>
+								<div className="flex items-start gap-3">
+									<Heart className="h-4 w-4 text-destructive mt-0.5" />
+									<div>
+										<p className="text-sm text-muted-foreground">
+											Marital Status
+										</p>
+										<p>{employee.maritalStatus}</p>
+									</div>
+								</div>
+								<div className="flex items-start gap-3">
+									<MapPin className="h-4 w-4 text-vibrant-green mt-0.5" />
+									<div>
+										<p className="text-sm text-muted-foreground">
+											Address
+										</p>
+										<p>
+											{employee.address ||
+												'No address provided'}
+										</p>
+									</div>
+								</div>
+							</CardContent>
+						</CollapsibleContent>
+					</Card>
+				</Collapsible>
+
+				{/* Employment Details - Collapsible */}
+				<Collapsible
+					open={isEmploymentOpen}
+					onOpenChange={setIsEmploymentOpen}
+				>
+					<Card>
+						<CardHeader className="pb-3">
+							<div className="flex items-center justify-between">
+								<CollapsibleTrigger className="flex items-center gap-2 flex-1">
+									<CardTitle className="flex items-center gap-2">
+										<Briefcase className="h-5 w-5 text-vibrant-purple" />
+										Employment Details
+									</CardTitle>
+									{isEmploymentOpen ? (
+										<ChevronUp className="h-4 w-4 text-muted-foreground" />
+									) : (
+										<ChevronDown className="h-4 w-4 text-muted-foreground" />
+									)}
+								</CollapsibleTrigger>
+								<Button
+									variant="ghost"
+									size="sm"
+									disabled={!isEmploymentOpen}
+									onClick={() => {
+										setEmploymentFormData({
+											employmentType:
+												employee.employmentType ||
+												employmentTypeOptions[0] ||
+												'',
+											department:
+												employee.department || '',
+											position: employee.position || '',
+											joinDate: employee.joinDate || '',
+										})
+										setShowEditEmploymentDialog(true)
+									}}
+								>
+									<Edit className="h-4 w-4" />
+								</Button>
+							</div>
+						</CardHeader>
+						<CollapsibleContent>
+							<CardContent className="space-y-3">
+								<div className="flex items-start gap-3">
+									<Briefcase className="h-4 w-4 text-vibrant-purple mt-0.5" />
+									<div>
+										<p className="text-sm text-muted-foreground">
+											Employment Type
+										</p>
+										<p className="capitalize">
+											{employee.employmentType}
+										</p>
+									</div>
+								</div>
+								<div className="flex items-start gap-3">
+									<Building2 className="h-4 w-4 text-vibrant-orange mt-0.5" />
+									<div>
+										<p className="text-sm text-muted-foreground">
+											Department
+										</p>
+										<p>{employee.department}</p>
+									</div>
+								</div>
+								<div className="flex items-start gap-3">
+									<IdCard className="h-4 w-4 text-vibrant-blue mt-0.5" />
+									<div>
+										<p className="text-sm text-muted-foreground">
+											Position
+										</p>
+										<p>{employee.position}</p>
+									</div>
+								</div>
+								<div className="flex items-start gap-3">
+									<Calendar className="h-4 w-4 text-vibrant-green mt-0.5" />
+									<div>
+										<p className="text-sm text-muted-foreground">
+											Join Date
+										</p>
+										<p>
+											{employee.joinDate &&
+												new Date(
+													employee.joinDate
+												).toLocaleDateString('en-US', {
+													year: 'numeric',
+													month: 'long',
+													day: 'numeric',
+												})}
+										</p>
+									</div>
+								</div>
+								{employee.employmentStatus === 'active' &&
+									employee.joinDate && (
+										<div className="flex items-start gap-3">
+											<Clock className="h-4 w-4 text-vibrant-purple mt-0.5" />
+											<div>
+												<p className="text-sm text-muted-foreground">
+													Years of Service
+												</p>
+												<p>
+													{calculateYearsOfService(
+														employee.joinDate
+													)}{' '}
+													{calculateYearsOfService(
+														employee.joinDate
+													) === 1
+														? 'year'
+														: 'years'}
+												</p>
+												{isWorkAnniversary(
+													employee.joinDate
+												) && (
+													<Badge className="mt-1 bg-vibrant-blue/20 text-vibrant-blue">
+														Work Anniversary Today
+													</Badge>
+												)}
+											</div>
+										</div>
+									)}
+							</CardContent>
+						</CollapsibleContent>
+					</Card>
+				</Collapsible>
+
+				{/* Payroll - Collapsible */}
+				<EmployeePayrollCard
+					payroll={employee.payroll}
+					onUpdate={handleUpdatePayroll}
+					isOpen={isPayrollOpen}
+					onOpenChange={setIsPayrollOpen}
+				/>
+			</div>
+
+			{/* Edit Contact Information Dialog */}
+			<Dialog
+				open={showEditContactDialog}
+				onOpenChange={setShowEditContactDialog}
+			>
+				<DialogContent className="max-h-[90vh] overflow-y-auto">
+					<DialogHeader>
+						<DialogTitle>Edit Contact Information</DialogTitle>
+						<DialogDescription>
+							Update employee contact details
+						</DialogDescription>
+					</DialogHeader>
+
+					<div className="space-y-4">
+						<div>
+							<Label htmlFor="edit-email">Email *</Label>
+							<Input
+								id="edit-email"
+								type="email"
+								value={contactFormData.email}
+								onChange={e =>
+									setContactFormData({
+										...contactFormData,
+										email: e.target.value,
+									})
+								}
+							/>
+						</div>
+						<div>
+							<Label htmlFor="edit-phone">Phone *</Label>
+							<Input
+								id="edit-phone"
+								type="tel"
+								value={contactFormData.phone}
+								onChange={e =>
+									setContactFormData({
+										...contactFormData,
+										phone: e.target.value,
+									})
+								}
+							/>
+						</div>
+						<div>
+							<Label htmlFor="edit-birthday">Birthday *</Label>
+							<Input
+								id="edit-birthday"
+								type="date"
+								value={contactFormData.birthday}
+								onChange={e =>
+									setContactFormData({
+										...contactFormData,
+										birthday: e.target.value,
+									})
+								}
+							/>
+						</div>
+						<div>
+							<Label htmlFor="edit-gender">Gender *</Label>
+							<Select
+								value={contactFormData.gender}
+								onValueChange={(value: any) =>
+									setContactFormData({
+										...contactFormData,
+										gender: value,
+									})
+								}
+							>
+								<SelectTrigger id="edit-gender">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="Male">Male</SelectItem>
+									<SelectItem value="Female">
+										Female
+									</SelectItem>
+									<SelectItem value="Other">Other</SelectItem>
+									<SelectItem value="Prefer not to say">
+										Prefer not to say
+									</SelectItem>
+								</SelectContent>
+							</Select>
+						</div>
+						<div>
+							<Label htmlFor="edit-nationality">
+								Nationality *
+							</Label>
+							<Input
+								id="edit-nationality"
+								value={contactFormData.nationality}
+								onChange={e =>
+									setContactFormData({
+										...contactFormData,
+										nationality: e.target.value,
+									})
+								}
+							/>
+						</div>
+						<div>
+							<Label htmlFor="edit-maritalStatus">
+								Marital Status *
+							</Label>
+							<Select
+								value={contactFormData.maritalStatus}
+								onValueChange={(value: any) =>
+									setContactFormData({
+										...contactFormData,
+										maritalStatus: value,
+									})
+								}
+							>
+								<SelectTrigger id="edit-maritalStatus">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="Single">
+										Single
+									</SelectItem>
+									<SelectItem value="Married">
+										Married
+									</SelectItem>
+									<SelectItem value="Divorced">
+										Divorced
+									</SelectItem>
+									<SelectItem value="Widowed">
+										Widowed
+									</SelectItem>
+									<SelectItem value="Prefer not to say">
+										Prefer not to say
+									</SelectItem>
+								</SelectContent>
+							</Select>
+						</div>
+						<div>
+							<Label htmlFor="edit-address">Address *</Label>
+							<Input
+								id="edit-address"
+								value={contactFormData.address}
+								onChange={e =>
+									setContactFormData({
+										...contactFormData,
+										address: e.target.value,
+									})
+								}
+								placeholder="Search for address (e.g., 123 Main St, City, Country)"
+								autoComplete="street-address"
+							/>
+							<p className="text-xs text-muted-foreground mt-1">
+								Enter complete address with street, city, and
+								country
+							</p>
+						</div>
+					</div>
+
+					<DialogFooter>
+						<Button
+							variant="outline"
+							disabled={isSaving}
+							onClick={() => setShowEditContactDialog(false)}
+						>
+							Cancel
+						</Button>
+						<Button
+							disabled={isSaving}
+							onClick={handleUpdateContact}
+							className="bg-vibrant-blue hover:bg-vibrant-blue/90"
+						>
+							{isSaving ? 'Saving...' : 'Save Changes'}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Edit Employment Details Dialog */}
+			<Dialog
+				open={showEditEmploymentDialog}
+				onOpenChange={setShowEditEmploymentDialog}
+			>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Edit Employment Details</DialogTitle>
+						<DialogDescription>
+							Update employee employment information
+						</DialogDescription>
+					</DialogHeader>
+
+					<div className="space-y-4">
+						<div>
+							<Label htmlFor="edit-employmentType">
+								Employment Type *
+							</Label>
+							<Select
+								value={employmentFormData.employmentType}
+								onValueChange={(value: any) =>
+									setEmploymentFormData({
+										...employmentFormData,
+										employmentType: value,
+									})
+								}
+							>
+								<SelectTrigger id="edit-employmentType">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									{employmentTypeOptions.map(
+										employmentType => (
+											<SelectItem
+												key={employmentType}
+												value={employmentType}
+											>
+												{employmentType}
+											</SelectItem>
+										)
+									)}
+								</SelectContent>
+							</Select>
+						</div>
+						<div>
+							<Label htmlFor="edit-department">
+								Department *
+							</Label>
+							<Select
+								value={employmentFormData.department}
+								onValueChange={value =>
+									setEmploymentFormData({
+										...employmentFormData,
+										department: value,
+									})
+								}
+							>
+								<SelectTrigger id="edit-department">
+									<SelectValue placeholder="Select department" />
+								</SelectTrigger>
+								<SelectContent>
+									{departmentNames.map(department => (
+										<SelectItem
+											key={department}
+											value={department}
+										>
+											{department}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+						<div>
+							<Label htmlFor="edit-position">Position *</Label>
+							<Select
+								value={employmentFormData.position}
+								onValueChange={value =>
+									setEmploymentFormData({
+										...employmentFormData,
+										position: value,
+									})
+								}
+							>
+								<SelectTrigger id="edit-position">
+									<SelectValue placeholder="Select position" />
+								</SelectTrigger>
+								<SelectContent>
+									{positionOptionsForSelectedDepartment.map(
+										position => (
+											<SelectItem
+												key={position}
+												value={position}
+											>
+												{position}
+											</SelectItem>
+										)
+									)}
+								</SelectContent>
+							</Select>
+						</div>
+						<div>
+							<Label htmlFor="edit-joinDate">Join Date *</Label>
+							<Input
+								id="edit-joinDate"
+								type="date"
+								value={employmentFormData.joinDate}
+								onChange={e =>
+									setEmploymentFormData({
+										...employmentFormData,
+										joinDate: e.target.value,
+									})
+								}
+							/>
+						</div>
+					</div>
+
+					<DialogFooter>
+						<Button
+							variant="outline"
+							disabled={isSaving}
+							onClick={() => setShowEditEmploymentDialog(false)}
+						>
+							Cancel
+						</Button>
+						<Button
+							disabled={isSaving}
+							onClick={handleUpdateEmployment}
+							className="bg-vibrant-purple hover:bg-vibrant-purple/90"
+						>
+							{isSaving ? 'Saving...' : 'Save Changes'}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Status Change Confirmation Dialog */}
+			<AlertDialog
+				open={showStatusChangeDialog}
+				onOpenChange={setShowStatusChangeDialog}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>
+							Confirm Status Change
+						</AlertDialogTitle>
+						<AlertDialogDescription>
+							Are you sure you want to change this employee's
+							status to{' '}
+							<span className="font-medium">{targetStatus}</span>?
+							This action will update their employment status.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel
+							disabled={isSaving}
+							onClick={() => setTargetStatus(null)}
+						>
+							Cancel
+						</AlertDialogCancel>
+						<AlertDialogAction
+							disabled={isSaving}
+							onClick={handleStatusChange}
+						>
+							{isSaving ? 'Saving...' : 'Confirm'}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+
+			{/* Profile Picture Dialog */}
+			<Dialog
+				open={showProfilePictureDialog}
+				onOpenChange={setShowProfilePictureDialog}
+			>
+				<DialogContent className="max-w-md">
+					<DialogHeader>
+						<DialogTitle>Profile Picture</DialogTitle>
+						<DialogDescription>
+							Upload a square image (1:1 aspect ratio) for the
+							best results. Max file size: 5MB.
+						</DialogDescription>
+					</DialogHeader>
+
+					<div className="space-y-4">
+						<div className="flex flex-col items-center gap-4">
+							{profilePicturePreview ? (
+								<img
+									src={profilePicturePreview}
+									alt="Preview"
+									className="h-32 w-32 rounded-full object-cover border-2 border-vibrant-blue"
+								/>
+							) : employee.profilePicture ? (
+								<img
+									src={employee.profilePicture}
+									alt={`${employee.firstName} ${employee.lastName}`}
+									className="h-32 w-32 rounded-full object-cover border-2 border-vibrant-blue"
+								/>
+							) : (
+								<div className="h-32 w-32 rounded-full bg-vibrant-blue/10 flex items-center justify-center">
+									<User className="h-16 w-16 text-vibrant-blue" />
+								</div>
+							)}
+
+							<div className="w-full space-y-3">
+								<Label
+									htmlFor="profile-picture-upload"
+									className="cursor-pointer"
+								>
+									<div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center hover:border-vibrant-blue/50 transition-colors">
+										<div className="flex flex-col items-center gap-2">
+											<User className="h-8 w-8 text-muted-foreground" />
+											<div>
+												<p className="text-sm font-medium">
+													Click to upload
+												</p>
+												<p className="text-xs text-muted-foreground">
+													JPEG, PNG, GIF, or WebP (Max
+													5MB)
+												</p>
+												<p className="text-xs text-muted-foreground">
+													Square image recommended
+												</p>
+											</div>
+										</div>
+									</div>
+									<input
+										id="profile-picture-upload"
+										type="file"
+										accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+										onChange={handleProfilePictureChange}
+										className="hidden"
+									/>
+								</Label>
+
+								{(employee.profilePicture ||
+									profilePicturePreview) && (
+									<Button
+										variant="outline"
+										disabled={isSaving}
+										onClick={handleRemoveProfilePicture}
+										className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
+									>
+										{isSaving
+											? 'Saving...'
+											: 'Remove Picture'}
+									</Button>
+								)}
+							</div>
+						</div>
+					</div>
+
+					<DialogFooter className="gap-2">
+						<Button
+							variant="outline"
+							disabled={isSaving}
+							onClick={() => {
+								setShowProfilePictureDialog(false)
+								setProfilePicturePreview(null)
+							}}
+						>
+							Cancel
+						</Button>
+						<Button
+							onClick={handleSaveProfilePicture}
+							disabled={isSaving || !profilePicturePreview}
+							className="bg-vibrant-blue hover:bg-vibrant-blue/90"
+						>
+							{isSaving ? 'Saving...' : 'Save'}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+		</div>
+	)
 }
-
