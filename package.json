@@ -10,6 +10,8 @@
         "preview": "vite preview --host 0.0.0.0 --port 4173",
         "start": "vite",
         "setup": "corepack pnpm install",
+        "exec:local": "powershell -ExecutionPolicy Bypass -File ./scripts/run-env-local.ps1",
+        "exec:prod": "powershell -ExecutionPolicy Bypass -File ./scripts/run-env-prod.ps1",
         "android:sync": "powershell -ExecutionPolicy Bypass -File ./scripts/android-sync.ps1",
         "android:run": "powershell -ExecutionPolicy Bypass -File ./scripts/android-run.ps1",
         "android:run:auto": "powershell -ExecutionPolicy Bypass -File ./scripts/android-run.ps1",
