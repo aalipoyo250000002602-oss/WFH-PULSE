@@ -16,6 +16,32 @@ This API wires the PostgreSQL schema to a Node.js backend with auth endpoints an
 - `GET /hr/employees` (HR/Admin)
 - `GET /health`
 
+## MVC Structure
+
+The API is now organized with an MVC-oriented layout under `api/src`:
+
+- `controllers/` route handlers and API composition
+- `models/` database access and RLS context helpers
+- `services/` auth/token domain services
+- `middleware/` request auth/role guards
+- `config/` runtime config/env resolution
+
+Current domain controller split:
+
+- `controllers/auth.controller.mjs` as auth-domain composition root
+- `controllers/auth-session.controller.mjs` for login/session/token/logout endpoints
+- `controllers/auth-admin.controller.mjs` for admin/hr registration endpoint
+- `controllers/me.controller.mjs` as me-domain composition root
+- `controllers/me-profile.controller.mjs` for `/me/profile`, `/me/security-preferences*`, and `/meta/employment-options`
+- `controllers/me-attendance.controller.mjs` for attendance, adjustment, overtime, and calendar routes
+- `controllers/employees.controller.mjs` as employees-domain composition root
+- `controllers/employees-core.controller.mjs` for `/employees` CRUD and `/hr/employees`
+- `controllers/employees-payroll.controller.mjs` for `/employees/:employeeId/payroll`
+- `controllers/settings.controller.mjs` for `/settings/company-working-hours*`
+- `controllers/api.controller.mjs` remains the API composition root (health endpoint, wiring, boot lifecycle)
+
+Backward-compatible root modules (`api/server.mjs`, `api/auth.mjs`, `api/db.mjs`, `api/middleware.mjs`, `api/config.mjs`) are kept as entry/shim files.
+
 ## Required config
 
 1. `database/.env.local.postgres`
