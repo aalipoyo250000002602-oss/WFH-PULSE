@@ -1920,7 +1920,13 @@ export default function App() {
                     />
                 )
             case 'dashboard':
-                return <DashboardPage />
+                return (
+                    <DashboardPage
+                        apiBaseUrl={apiBaseUrl}
+                        accessToken={authSession?.accessToken ?? ''}
+                        employmentOptions={employmentOptions}
+                    />
+                )
             case 'calendar':
                 return (
                     <CalendarPage

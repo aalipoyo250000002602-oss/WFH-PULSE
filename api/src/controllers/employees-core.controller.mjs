@@ -13,6 +13,24 @@ export function registerEmployeeCoreRoutes(app, deps) {
     } = deps
 
     app.get('/employees', requireAuth, async (req, res) => {
+        const from = typeof req.query.from === 'string' ? req.query.from : null
+        const to = typeof req.query.to === 'string' ? req.query.to : null
+        const isoDateRegex = /^\d{4}-\d{2}-\d{2}$/
+
+        if (from != null && !isoDateRegex.test(from)) {
+            return res.status(400).json({ error: 'Invalid from date format' })
+        }
+
+        if (to != null && !isoDateRegex.test(to)) {
+            return res.status(400).json({ error: 'Invalid to date format' })
+        }
+
+        if (from != null && to != null && from > to) {
+            return res
+                .status(400)
+                .json({ error: 'The from date must be on or before to date' })
+        }
+
         try {
             const rows = await withRlsContext(req.auth, async client => {
                 const result = await client.query(
@@ -65,9 +83,30 @@ export function registerEmployeeCoreRoutes(app, deps) {
               ar.active_break_started_at
             FROM app.attendance_records ar
             WHERE ar.employee_id = e.employee_id
-              AND ar.attendance_date = (NOW() AT TIME ZONE $1::text)::date
+                            AND (
+                                (
+                                    $2::date IS NULL
+                                    AND $3::date IS NULL
+                                    AND ar.attendance_date = (NOW() AT TIME ZONE $1::text)::date
+                                )
+                                OR (
+                                    $2::date IS NOT NULL
+                                    AND $3::date IS NOT NULL
+                                    AND ar.attendance_date BETWEEN $2::date AND $3::date
+                                )
+                                OR (
+                                    $2::date IS NOT NULL
+                                    AND $3::date IS NULL
+                                    AND ar.attendance_date >= $2::date
+                                )
+                                OR (
+                                    $2::date IS NULL
+                                    AND $3::date IS NOT NULL
+                                    AND ar.attendance_date <= $3::date
+                                )
+                            )
               AND ar.record_type = 'actual'::app.attendance_record_type
-            ORDER BY ar.attendance_id DESC
+                        ORDER BY ar.attendance_date DESC, ar.attendance_id DESC
             LIMIT 1
           ) ta ON TRUE
           LEFT JOIN app.payroll_profiles pp ON pp.employee_id = e.employee_id
@@ -86,7 +125,7 @@ export function registerEmployeeCoreRoutes(app, deps) {
           ORDER BY e.employee_code
           LIMIT 500
           `,
-                    [attendanceTimeZone]
+                    [attendanceTimeZone, from, to]
                 )
                 return result.rows
             })

@@ -1,7 +1,8 @@
-﻿import { useState, useEffect } from 'react'
+﻿import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
+import { Input } from '../ui/input'
 import {
     Select,
     SelectContent,
@@ -31,7 +32,12 @@ import {
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
 import { toast } from 'sonner'
-import { getEmployees, Employee } from '../employee-data'
+import {
+    getEmployees,
+    replaceEmployees,
+    Employee,
+    syncEmployeesWithEmploymentOptions,
+} from '../employee-data'
 import {
     Dialog,
     DialogContent,
@@ -81,14 +87,42 @@ interface LeaveRequest {
     logTrail: LogEntry[]
 }
 
-export function DashboardPage() {
-    const [employees] = useState<Employee[]>(getEmployees())
+interface DashboardPageProps {
+    apiBaseUrl: string
+    accessToken: string
+    employmentOptions: {
+        employmentTypes: string[]
+        departments: Array<{ departmentId: number; name: string }>
+        positions: Array<{
+            positionId: number
+            departmentId: number
+            name: string
+        }>
+    }
+}
+
+export function DashboardPage({
+    apiBaseUrl,
+    accessToken,
+    employmentOptions,
+}: DashboardPageProps) {
+    const getTodayIsoDate = () => {
+        const now = new Date()
+        const year = now.getFullYear()
+        const month = String(now.getMonth() + 1).padStart(2, '0')
+        const day = String(now.getDate()).padStart(2, '0')
+        return `${year}-${month}-${day}`
+    }
+
+    const [employees, setEmployees] = useState<Employee[]>(() => getEmployees())
     const [currentPage, setCurrentPage] = useState(1)
+    const [fromDate, setFromDate] = useState<string>(() => getTodayIsoDate())
+    const [toDate, setToDate] = useState<string>(() => getTodayIsoDate())
     const [sortBy, setSortBy] = useState<'name' | 'department' | 'status'>(
         'name'
     )
     const [filterStatus, setFilterStatus] = useState<
-        'all' | 'present' | 'on-leave' | 'absent'
+        'all' | Employee['status']
     >('all')
     const [logoBase64, setLogoBase64] = useState<string>('')
 
@@ -132,6 +166,192 @@ export function DashboardPage() {
         }
         convertImageToBase64()
     }, [])
+
+    useEffect(() => {
+        const mapApiEmployeeToLocal = (row: Record<string, any>): Employee => ({
+            id: String(row.employee_id),
+            employeeId: String(row.employee_code ?? row.employee_id),
+            firstName: String(row.first_name ?? ''),
+            lastName: String(row.last_name ?? ''),
+            status: (row.attendance_status ?? 'present') as Employee['status'],
+            employmentStatus: (row.employment_status ??
+                'active') as Employee['employmentStatus'],
+            employmentType: String(row.employment_type ?? 'full-time'),
+            clockInTime: row.clock_in
+                ? String(row.clock_in).slice(0, 5)
+                : undefined,
+            clockOutTime: row.clock_out
+                ? String(row.clock_out).slice(0, 5)
+                : undefined,
+            isOnBreak: Boolean(row.active_break_started_at),
+            department: String(row.department ?? ''),
+            position: row.position ? String(row.position) : '',
+            email: row.email ? String(row.email) : '',
+            phone: row.phone ? String(row.phone) : '',
+            joinDate: row.join_date ? String(row.join_date).slice(0, 10) : '',
+            birthday: row.birthday ? String(row.birthday).slice(0, 10) : '',
+            gender: row.gender
+                ? (String(row.gender) as Employee['gender'])
+                : undefined,
+            nationality: row.nationality ? String(row.nationality) : '',
+            maritalStatus: row.marital_status
+                ? (String(row.marital_status) as Employee['maritalStatus'])
+                : undefined,
+            address: row.address ? String(row.address) : '',
+            invitationSentDate: row.invitation_sent_date
+                ? String(row.invitation_sent_date).slice(0, 10)
+                : undefined,
+            passwordChanged:
+                row.password_changed == null
+                    ? undefined
+                    : Boolean(row.password_changed),
+            profilePicture: row.profile_picture_url
+                ? String(row.profile_picture_url)
+                : undefined,
+        })
+
+        const loadEmployees = async () => {
+            if (!accessToken) {
+                return
+            }
+
+            try {
+                const queryParams = new URLSearchParams()
+                if (fromDate) {
+                    queryParams.set('from', fromDate)
+                }
+                if (toDate) {
+                    queryParams.set('to', toDate)
+                }
+
+                const endpoint =
+                    queryParams.size > 0
+                        ? `${apiBaseUrl}/employees?${queryParams.toString()}`
+                        : `${apiBaseUrl}/employees`
+
+                const response = await fetch(endpoint, {
+                    method: 'GET',
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                    },
+                })
+
+                if (!response.ok) {
+                    return
+                }
+
+                const payload = await response.json().catch(() => ({}))
+                const rows = Array.isArray(payload?.employees)
+                    ? payload.employees
+                    : []
+                const mappedEmployees = rows.map(mapApiEmployeeToLocal)
+                setEmployees(mappedEmployees)
+                replaceEmployees(mappedEmployees)
+            } catch {
+                // Keep local cache values when API is unavailable.
+            }
+        }
+
+        void loadEmployees()
+    }, [accessToken, apiBaseUrl, fromDate, toDate])
+
+    const handleFromDateChange = (value: string) => {
+        if (!value) {
+            return
+        }
+
+        setFromDate(value)
+        if (toDate && value > toDate) {
+            setToDate(value)
+        }
+        setCurrentPage(1)
+    }
+
+    const handleToDateChange = (value: string) => {
+        if (!value) {
+            return
+        }
+
+        setToDate(value)
+        if (fromDate && value < fromDate) {
+            setFromDate(value)
+        }
+        setCurrentPage(1)
+    }
+
+    const resetDateRangeToToday = () => {
+        const today = getTodayIsoDate()
+        setFromDate(today)
+        setToDate(today)
+        setCurrentPage(1)
+    }
+
+    const employeesWithSyncedMeta = useMemo(() => {
+        return syncEmployeesWithEmploymentOptions(employees, employmentOptions)
+    }, [employees, employmentOptions])
+
+    const statusValues = useMemo(() => {
+        const unique = new Set<Employee['status']>()
+        for (const employee of employeesWithSyncedMeta) {
+            unique.add(employee.status)
+        }
+
+        const preferredOrder: Employee['status'][] = [
+            'present',
+            'on-leave',
+            'absent',
+        ]
+
+        return preferredOrder.filter(status => unique.has(status))
+    }, [employeesWithSyncedMeta])
+
+    const statusSummaryGridClassName = useMemo(() => {
+        const count = statusValues.length
+
+        if (count <= 1) {
+            return 'grid grid-cols-1 gap-3'
+        }
+
+        if (count === 2) {
+            return 'grid grid-cols-2 gap-3'
+        }
+
+        if (count === 3) {
+            return 'grid grid-cols-1 sm:grid-cols-3 gap-3'
+        }
+
+        if (count === 4) {
+            return 'grid grid-cols-2 sm:grid-cols-4 gap-3'
+        }
+
+        return 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3'
+    }, [statusValues.length])
+
+    const formatStatusLabel = (status: Employee['status']) =>
+        status
+            .split('-')
+            .map(segment => segment.charAt(0).toUpperCase() + segment.slice(1))
+            .join(' ')
+
+    const getStatusSummaryClasses = (status: Employee['status']) => {
+        switch (status) {
+            case 'present':
+                return {
+                    container: 'bg-vibrant-green/10',
+                    text: 'text-vibrant-green',
+                }
+            case 'on-leave':
+                return {
+                    container: 'bg-vibrant-orange/10',
+                    text: 'text-vibrant-orange',
+                }
+            case 'absent':
+                return {
+                    container: 'bg-destructive/10',
+                    text: 'text-destructive',
+                }
+        }
+    }
 
     // Leave requests state
     const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([
@@ -442,7 +662,7 @@ export function DashboardPage() {
     const [cancelAttachments, setCancelAttachments] = useState<string[]>([])
 
     // Filter employees
-    const filteredEmployees = employees.filter(emp =>
+    const filteredEmployees = employeesWithSyncedMeta.filter(emp =>
         filterStatus === 'all' ? true : emp.status === filterStatus
     )
 
@@ -474,12 +694,20 @@ export function DashboardPage() {
     }
 
     const handleFilterChange = (value: string) => {
-        setFilterStatus(value as 'all' | 'present' | 'on-leave' | 'absent')
+        setFilterStatus(value as 'all' | Employee['status'])
         setCurrentPage(1)
     }
 
     // Calculate statistics
-    const stats = employees.reduce(
+    const stats = employeesWithSyncedMeta.reduce(
+        (acc, emp) => {
+            acc[emp.status]++
+            return acc
+        },
+        { present: 0, 'on-leave': 0, absent: 0 }
+    )
+
+    const exportedStats = sortedEmployees.reduce(
         (acc, emp) => {
             acc[emp.status]++
             return acc
@@ -524,6 +752,7 @@ export function DashboardPage() {
             'Employee ID',
             'Last Name',
             'First Name',
+            'Position',
             'Department',
             'Status',
             'Clock-In Time',
@@ -535,10 +764,9 @@ export function DashboardPage() {
             emp.employeeId,
             emp.lastName,
             emp.firstName,
+            emp.position || 'N/A',
             emp.department,
-            emp.status === 'on-leave'
-                ? 'On Leave'
-                : emp.status.charAt(0).toUpperCase() + emp.status.slice(1),
+            formatStatusLabel(emp.status),
             emp.clockInTime || 'N/A',
             emp.clockOutTime ||
                 (emp.status === 'present' && !emp.clockOutTime
@@ -552,11 +780,17 @@ export function DashboardPage() {
             `Employee Status Report`,
             `Date: ${getCurrentDate()}`,
             ``,
+            `Applied Filter: ${
+                filterStatus === 'all' ? 'All' : formatStatusLabel(filterStatus)
+            }`,
+            `Applied Sort: ${sortBy}`,
+            `Applied Date Range: ${fromDate} to ${toDate}`,
+            ``,
             `Summary:`,
-            `Total Employees: ${employees.length}`,
-            `Present: ${stats.present}`,
-            `On Leave: ${stats['on-leave']}`,
-            `Absent: ${stats.absent}`,
+            `Total Employees (Result): ${sortedEmployees.length}`,
+            `Present: ${exportedStats.present}`,
+            `On Leave: ${exportedStats['on-leave']}`,
+            `Absent: ${exportedStats.absent}`,
             ``,
             headers.join(','),
             ...rows.map(row => row.join(',')),
@@ -617,15 +851,24 @@ export function DashboardPage() {
           </div>
           <div class="summary">
             <div class="summary-item"><strong>Total Employees:</strong> ${employees.length}</div>
-            <div class="summary-item"><strong>Present:</strong> ${stats.present}</div>
-            <div class="summary-item"><strong>On Leave:</strong> ${stats['on-leave']}</div>
-            <div class="summary-item"><strong>Absent:</strong> ${stats.absent}</div>
+                        <div class="summary-item"><strong>Applied Filter:</strong> ${
+                            filterStatus === 'all'
+                                ? 'All'
+                                : formatStatusLabel(filterStatus)
+                        }</div>
+                        <div class="summary-item"><strong>Applied Sort:</strong> ${sortBy}</div>
+                        <div class="summary-item"><strong>Applied Date Range:</strong> ${fromDate} to ${toDate}</div>
+                        <div class="summary-item"><strong>Total Employees (Result):</strong> ${sortedEmployees.length}</div>
+                        <div class="summary-item"><strong>Present:</strong> ${exportedStats.present}</div>
+                        <div class="summary-item"><strong>On Leave:</strong> ${exportedStats['on-leave']}</div>
+                        <div class="summary-item"><strong>Absent:</strong> ${exportedStats.absent}</div>
           </div>
           <table>
             <thead>
               <tr>
                 <th>Employee ID</th>
                 <th>Employee Name</th>
+                                <th>Position</th>
                 <th>Department</th>
                 <th>Status</th>
                 <th>Clock-In</th>
@@ -641,8 +884,9 @@ export function DashboardPage() {
                 <tr>
                   <td>${emp.employeeId}</td>
                   <td>${emp.lastName}, ${emp.firstName}</td>
+                                    <td>${emp.position || 'N/A'}</td>
                   <td>${emp.department}</td>
-                  <td class="status-${emp.status}">${emp.status === 'on-leave' ? 'On Leave' : emp.status.charAt(0).toUpperCase() + emp.status.slice(1)}</td>
+                                    <td class="status-${emp.status}">${formatStatusLabel(emp.status)}</td>
                   <td>${emp.clockInTime || 'N/A'}</td>
                   <td>${emp.clockOutTime || (emp.status === 'present' && !emp.clockOutTime ? 'Active' : 'N/A')}</td>
                   <td>${emp.workDuration || 'N/A'}</td>
@@ -910,34 +1154,72 @@ export function DashboardPage() {
                             >
                                 <CardContent className="space-y-4 pt-0">
                                     {/* Statistics Summary */}
-                                    <div className="grid grid-cols-3 gap-3">
-                                        <div className="text-center p-3 rounded-lg bg-vibrant-green/10">
-                                            <p className="text-2xl font-bold text-vibrant-green">
-                                                {stats.present}
-                                            </p>
-                                            <p className="text-sm text-muted-foreground">
-                                                Present
-                                            </p>
-                                        </div>
-                                        <div className="text-center p-3 rounded-lg bg-vibrant-orange/10">
-                                            <p className="text-2xl font-bold text-vibrant-orange">
-                                                {stats['on-leave']}
-                                            </p>
-                                            <p className="text-sm text-muted-foreground">
-                                                On Leave
-                                            </p>
-                                        </div>
-                                        <div className="text-center p-3 rounded-lg bg-destructive/10">
-                                            <p className="text-2xl font-bold text-destructive">
-                                                {stats.absent}
-                                            </p>
-                                            <p className="text-sm text-muted-foreground">
-                                                Absent
-                                            </p>
-                                        </div>
+                                    <div className={statusSummaryGridClassName}>
+                                        {statusValues.map(status => {
+                                            const styles =
+                                                getStatusSummaryClasses(status)
+                                            return (
+                                                <div
+                                                    key={status}
+                                                    className={`text-center p-3 rounded-lg ${styles.container}`}
+                                                >
+                                                    <p
+                                                        className={`text-2xl font-bold ${styles.text}`}
+                                                    >
+                                                        {stats[status]}
+                                                    </p>
+                                                    <p className="text-sm text-muted-foreground">
+                                                        {formatStatusLabel(
+                                                            status
+                                                        )}
+                                                    </p>
+                                                </div>
+                                            )
+                                        })}
                                     </div>
 
                                     {/* Sort and Filter Controls */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div>
+                                            <label className="text-sm text-muted-foreground mb-2 block">
+                                                From Date
+                                            </label>
+                                            <Input
+                                                type="date"
+                                                value={fromDate}
+                                                onChange={event =>
+                                                    handleFromDateChange(
+                                                        event.target.value
+                                                    )
+                                                }
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-sm text-muted-foreground mb-2 block">
+                                                To Date
+                                            </label>
+                                            <Input
+                                                type="date"
+                                                value={toDate}
+                                                onChange={event =>
+                                                    handleToDateChange(
+                                                        event.target.value
+                                                    )
+                                                }
+                                            />
+                                        </div>
+                                        <div className="flex items-end">
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                className="w-full"
+                                                onClick={resetDateRangeToToday}
+                                            >
+                                                Set Today
+                                            </Button>
+                                        </div>
+                                    </div>
+
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
                                             <label className="text-sm text-muted-foreground mb-2 block flex items-center gap-1">
@@ -982,15 +1264,18 @@ export function DashboardPage() {
                                                     <SelectItem value="all">
                                                         All
                                                     </SelectItem>
-                                                    <SelectItem value="present">
-                                                        Present
-                                                    </SelectItem>
-                                                    <SelectItem value="on-leave">
-                                                        On Leave
-                                                    </SelectItem>
-                                                    <SelectItem value="absent">
-                                                        Absent
-                                                    </SelectItem>
+                                                    {statusValues.map(
+                                                        status => (
+                                                            <SelectItem
+                                                                key={status}
+                                                                value={status}
+                                                            >
+                                                                {formatStatusLabel(
+                                                                    status
+                                                                )}
+                                                            </SelectItem>
+                                                        )
+                                                    )}
                                                 </SelectContent>
                                             </Select>
                                         </div>
@@ -1042,10 +1327,9 @@ export function DashboardPage() {
                                                         <Badge
                                                             className={`text-xs ${getStatusColor(employee.status)}`}
                                                         >
-                                                            {employee.status ===
-                                                            'on-leave'
-                                                                ? 'On Leave'
-                                                                : employee.status}
+                                                            {formatStatusLabel(
+                                                                employee.status
+                                                            )}
                                                         </Badge>
                                                         {employee.lateMinutes && (
                                                             <Badge
@@ -1061,7 +1345,11 @@ export function DashboardPage() {
                                                         )}
                                                     </div>
                                                     <div className="text-sm text-muted-foreground mb-1">
-                                                        {employee.department}
+                                                        {employee.position ||
+                                                            'Unassigned Position'}{' '}
+                                                        •{' '}
+                                                        {employee.department ||
+                                                            'Unassigned Department'}
                                                     </div>
                                                     {employee.clockInTime && (
                                                         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
