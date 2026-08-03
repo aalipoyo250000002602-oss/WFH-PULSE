@@ -16,6 +16,12 @@ export function registerEmployeeCoreRoutes(app, deps) {
         const from = typeof req.query.from === 'string' ? req.query.from : null
         const to = typeof req.query.to === 'string' ? req.query.to : null
         const isoDateRegex = /^\d{4}-\d{2}-\d{2}$/
+        const todayInAttendanceTimeZone = new Intl.DateTimeFormat('en-CA', {
+            timeZone: attendanceTimeZone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).format(new Date())
 
         if (from != null && !isoDateRegex.test(from)) {
             return res.status(400).json({ error: 'Invalid from date format' })
@@ -31,8 +37,45 @@ export function registerEmployeeCoreRoutes(app, deps) {
                 .json({ error: 'The from date must be on or before to date' })
         }
 
+        if (
+            (from != null && from > todayInAttendanceTimeZone) ||
+            (to != null && to > todayInAttendanceTimeZone)
+        ) {
+            return res
+                .status(400)
+                .json({ error: 'Future dates are not allowed' })
+        }
+
         try {
             const rows = await withRlsContext(req.auth, async client => {
+                // Auto-close stale open shifts at end-of-day so missed clock-outs are normalized.
+                await client.query(
+                    `
+                    WITH local_now AS (
+                        SELECT
+                            (NOW() AT TIME ZONE $1::text)::date AS local_today
+                    )
+                    UPDATE app.attendance_records ar
+                    SET
+                        clock_out = '23:59'::time,
+                        work_duration_minutes = 480,
+                        status = CASE
+                            WHEN COALESCE(ar.late_minutes, 0) >= 15
+                                THEN 'late'::app.attendance_status
+                            ELSE 'present'::app.attendance_status
+                        END,
+                        active_break_started_at = NULL
+                    FROM local_now ln
+                    WHERE ar.record_type = 'actual'::app.attendance_record_type
+                        AND ar.clock_in IS NOT NULL
+                        AND ar.clock_out IS NULL
+                        AND ar.attendance_date < ln.local_today
+                        AND ($2::date IS NULL OR ar.attendance_date >= $2::date)
+                        AND ($3::date IS NULL OR ar.attendance_date <= $3::date)
+                    `,
+                    [attendanceTimeZone, from, to]
+                )
+
                 const result = await client.query(
                     `
           SELECT
@@ -50,12 +93,15 @@ export function registerEmployeeCoreRoutes(app, deps) {
               WHEN ta.status = 'on-leave'::app.attendance_status THEN 'on-leave'::app.attendance_status
               WHEN ta.status IN ('present'::app.attendance_status, 'late'::app.attendance_status)
                 THEN 'present'::app.attendance_status
-              ELSE e.attendance_status
+                            ELSE 'absent'::app.attendance_status
             END AS attendance_status,
             e.employment_status,
             e.employment_type,
             ta.clock_in,
             ta.clock_out,
+            ta.attendance_date AS status_date,
+            ta.work_duration_minutes,
+            ta.late_minutes,
             ta.active_break_started_at,
             e.join_date,
             e.birthday,
@@ -78,8 +124,11 @@ export function registerEmployeeCoreRoutes(app, deps) {
           LEFT JOIN LATERAL (
             SELECT
               ar.status,
+              ar.attendance_date,
               ar.clock_in,
               ar.clock_out,
+              ar.work_duration_minutes,
+              ar.late_minutes,
               ar.active_break_started_at
             FROM app.attendance_records ar
             WHERE ar.employee_id = e.employee_id

@@ -1,30 +1,30 @@
 ﻿import { useState, useEffect } from 'react'
 import { Button } from './ui/button'
 import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
 } from './ui/dialog'
 import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
 } from './ui/dropdown-menu'
 import { Label } from './ui/label'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
 import {
-	FileText,
-	Mail,
-	Download,
-	ChevronDown,
-	Send,
-	Plus,
-	X,
+    FileText,
+    Mail,
+    Download,
+    ChevronDown,
+    Send,
+    Plus,
+    X,
 } from 'lucide-react'
 import { Employee } from './employee-data'
 import { toast } from 'sonner'
@@ -33,54 +33,54 @@ import { format } from 'date-fns'
 import logoImage from 'figma:asset/80b7a2d7f7164e79d1aa41e678d57bd410cbb0ae.png'
 
 interface EmployeeProfilePDFGeneratorProps {
-	employee: Employee
-	currentUserEmail?: string
+    employee: Employee
+    currentUserEmail?: string
 }
 
 export function EmployeeProfilePDFGenerator({
-	employee,
-	currentUserEmail = 'hr@wfhpulse.com',
+    employee,
+    currentUserEmail = 'hr@wfhpulse.com',
 }: EmployeeProfilePDFGeneratorProps) {
-	const [showEmailDialog, setShowEmailDialog] = useState(false)
-	const [emailTo, setEmailTo] = useState(currentUserEmail)
-	const [emailCc, setEmailCc] = useState<string[]>([employee.email || ''])
-	const [newCc, setNewCc] = useState('')
-	const [emailSubject, setEmailSubject] = useState(
-		`Employee Profile - ${employee.firstName} ${employee.lastName}`
-	)
-	const [emailMessage, setEmailMessage] = useState('')
-	const [logoBase64, setLogoBase64] = useState<string>('')
+    const [showEmailDialog, setShowEmailDialog] = useState(false)
+    const [emailTo, setEmailTo] = useState(currentUserEmail)
+    const [emailCc, setEmailCc] = useState<string[]>([employee.email || ''])
+    const [newCc, setNewCc] = useState('')
+    const [emailSubject, setEmailSubject] = useState(
+        `Employee Profile - ${employee.firstName} ${employee.lastName}`
+    )
+    const [emailMessage, setEmailMessage] = useState('')
+    const [logoBase64, setLogoBase64] = useState<string>('')
 
-	// Convert logo to base64 for embedding in PDF
-	useEffect(() => {
-		const convertImageToBase64 = async () => {
-			try {
-				const response = await fetch(logoImage)
-				const blob = await response.blob()
-				const reader = new FileReader()
-				reader.onloadend = () => {
-					setLogoBase64(reader.result as string)
-				}
-				reader.readAsDataURL(blob)
-			} catch (error) {
-				console.error('Failed to convert logo to base64:', error)
-			}
-		}
-		convertImageToBase64()
-	}, [])
+    // Convert logo to base64 for embedding in PDF
+    useEffect(() => {
+        const convertImageToBase64 = async () => {
+            try {
+                const response = await fetch(logoImage)
+                const blob = await response.blob()
+                const reader = new FileReader()
+                reader.onloadend = () => {
+                    setLogoBase64(reader.result as string)
+                }
+                reader.readAsDataURL(blob)
+            } catch (error) {
+                console.error('Failed to convert logo to base64:', error)
+            }
+        }
+        convertImageToBase64()
+    }, [])
 
-	const generateProfilePDF = () => {
-		const formatCurrency = (amount: number) => {
-			return `Php ${amount.toLocaleString('en-US', {
-				minimumFractionDigits: 2,
-				maximumFractionDigits: 2,
-			})}`
-		}
+    const generateProfilePDF = () => {
+        const formatCurrency = (amount: number) => {
+            return `Php ${amount.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            })}`
+        }
 
-		const payroll = employee.payroll
-		const govIds = payroll?.governmentIds
+        const payroll = employee.payroll
+        const govIds = payroll?.governmentIds
 
-		const htmlContent = `
+        const htmlContent = `
       <!DOCTYPE html>
       <html>
         <head>
@@ -261,12 +261,12 @@ export function EmployeeProfilePDFGenerator({
           
           <div class="profile-section">
             ${
-				employee.profilePicture
-					? `
+                employee.profilePicture
+                    ? `
               <img src="${employee.profilePicture}" alt="${employee.firstName} ${employee.lastName}" class="profile-picture" />
             `
-					: ''
-			}
+                    : ''
+            }
             <div class="profile-info-wrapper ${!employee.profilePicture ? 'employee-info' : ''}">
               <div class="employee-info">
                 <table>
@@ -326,15 +326,15 @@ export function EmployeeProfilePDFGenerator({
               </div>
             </div>
             ${
-				employee.address
-					? `
+                employee.address
+                    ? `
             <div class="info-item" style="margin-top: 15px;">
               <div class="label">Address</div>
               <div class="value" style="font-size: 14px;">${employee.address}</div>
             </div>
             `
-					: ''
-			}
+                    : ''
+            }
           </div>
 
           <div class="section">
@@ -360,8 +360,8 @@ export function EmployeeProfilePDFGenerator({
           </div>
 
           ${
-				payroll
-					? `
+              payroll
+                  ? `
           <div class="section">
             <h2>Payroll Details</h2>
             <div class="info-grid">
@@ -376,8 +376,8 @@ export function EmployeeProfilePDFGenerator({
             </div>
 
             ${
-				govIds
-					? `
+                govIds
+                    ? `
             <h3 style="margin: 20px 0 15px 0; font-size: 16px; color: #1e293b;">Government IDs</h3>
             <div class="info-grid">
               <div class="info-item">
@@ -398,12 +398,12 @@ export function EmployeeProfilePDFGenerator({
               </div>
             </div>
             `
-					: ''
-			}
+                    : ''
+            }
 
             ${
-				payroll.deductions && payroll.deductions.length > 0
-					? `
+                payroll.deductions && payroll.deductions.length > 0
+                    ? `
             <h3 style="margin: 20px 0 15px 0; font-size: 16px; color: #1e293b;">Payroll Deductions</h3>
             <table>
               <thead>
@@ -414,24 +414,24 @@ export function EmployeeProfilePDFGenerator({
               </thead>
               <tbody>
                 ${payroll.deductions
-					.map(
-						d => `
+                    .map(
+                        d => `
                   <tr>
                     <td>${d.name}</td>
                     <td class="amount">${formatCurrency(d.amount)}</td>
                   </tr>
                 `
-					)
-					.join('')}
+                    )
+                    .join('')}
               </tbody>
             </table>
             `
-					: ''
-			}
+                    : ''
+            }
           </div>
           `
-					: ''
-			}
+                  : ''
+          }
 
           <div class="footer">
             Generated on ${format(new Date(), "MMMM dd, yyyy 'at' h:mm a")}<br>
@@ -441,76 +441,77 @@ export function EmployeeProfilePDFGenerator({
       </html>
     `
 
-		const blob = new Blob([htmlContent], { type: 'text/html' })
-		const url = URL.createObjectURL(blob)
-		const newWindow = window.open(url, '_blank')
+        const blob = new Blob([htmlContent], { type: 'text/html' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.setAttribute('href', url)
+        link.setAttribute(
+            'download',
+            `employee-profile-${employee.id}-${new Date().toISOString().split('T')[0]}.html`
+        )
+        link.style.visibility = 'hidden'
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
 
-		if (newWindow) {
-			newWindow.onload = () => {
-				setTimeout(() => {
-					newWindow.print()
-				}, 250)
-			}
-			toast.success('Employee profile PDF opened in new window')
-		} else {
-			toast.error('Please allow popups to export PDF')
-		}
-	}
+        toast.success('Employee profile report downloaded successfully')
+    }
 
-	const handleAddCc = () => {
-		if (!newCc) return
+    const handleAddCc = () => {
+        if (!newCc) return
 
-		// Validate email format
-		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-		if (!emailRegex.test(newCc)) {
-			toast.error('Please enter a valid email address')
-			return
-		}
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        if (!emailRegex.test(newCc)) {
+            toast.error('Please enter a valid email address')
+            return
+        }
 
-		if (emailCc.includes(newCc)) {
-			toast.error('This email is already in CC list')
-			return
-		}
+        if (emailCc.includes(newCc)) {
+            toast.error('This email is already in CC list')
+            return
+        }
 
-		setEmailCc([...emailCc, newCc])
-		setNewCc('')
-	}
+        setEmailCc([...emailCc, newCc])
+        setNewCc('')
+    }
 
-	const handleRemoveCc = (index: number) => {
-		setEmailCc(emailCc.filter((_, i) => i !== index))
-	}
+    const handleRemoveCc = (index: number) => {
+        setEmailCc(emailCc.filter((_, i) => i !== index))
+    }
 
-	const handleSendEmail = () => {
-		if (!emailTo || !emailSubject || !emailMessage) {
-			toast.error('Please fill in all required fields')
-			return
-		}
+    const handleSendEmail = () => {
+        if (!emailTo || !emailSubject || !emailMessage) {
+            toast.error('Please fill in all required fields')
+            return
+        }
 
-		// Validate email format
-		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-		if (!emailRegex.test(emailTo)) {
-			toast.error('Please enter a valid recipient email address')
-			return
-		}
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        if (!emailRegex.test(emailTo)) {
+            toast.error('Please enter a valid recipient email address')
+            return
+        }
 
-		// Simulate sending email
-		const ccText =
-			emailCc.filter(email => email).length > 0
-				? ` (CC: ${emailCc.filter(email => email).join(', ')})`
-				: ''
+        // Simulate sending email
+        const ccText =
+            emailCc.filter(email => email).length > 0
+                ? ` (CC: ${emailCc.filter(email => email).join(', ')})`
+                : ''
 
-		toast.success(`Profile sent to ${emailTo}${ccText}`, {
-			description: 'The employee profile has been sent via email.',
-		})
+        toast.success(`Profile sent to ${emailTo}${ccText}`, {
+            description: 'The employee profile has been sent via email.',
+        })
 
-		setShowEmailDialog(false)
-		setEmailMessage('')
-		setEmailCc([employee.email || ''])
-		setNewCc('')
-	}
+        setShowEmailDialog(false)
+        setEmailMessage('')
+        setEmailCc([employee.email || ''])
+        setNewCc('')
+    }
 
-	const getDefaultEmailMessage = () => {
-		return `Dear Team,
+    const getDefaultEmailMessage = () => {
+        return `Dear Team,
 
 I hope this email finds you well.
 
@@ -523,168 +524,168 @@ Thank you.
 Best regards,
 HR Department
 WFH PULSE`
-	}
+    }
 
-	return (
-		<>
-			<DropdownMenu>
-				<DropdownMenuTrigger asChild>
-					<Button variant="ghost" size="sm" className="gap-2">
-						<FileText className="h-4 w-4" />
-						<span className="hidden sm:inline">Profile</span>
-						<ChevronDown className="h-4 w-4" />
-					</Button>
-				</DropdownMenuTrigger>
-				<DropdownMenuContent align="end">
-					<DropdownMenuItem onClick={generateProfilePDF}>
-						<Download className="h-4 w-4 mr-2" />
-						Generate PDF
-					</DropdownMenuItem>
-					<DropdownMenuItem
-						onClick={() => {
-							setEmailMessage(getDefaultEmailMessage())
-							setShowEmailDialog(true)
-						}}
-					>
-						<Mail className="h-4 w-4 mr-2" />
-						Send via Email
-					</DropdownMenuItem>
-				</DropdownMenuContent>
-			</DropdownMenu>
+    return (
+        <>
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="gap-2">
+                        <FileText className="h-4 w-4" />
+                        <span className="hidden sm:inline">Profile</span>
+                        <ChevronDown className="h-4 w-4" />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={generateProfilePDF}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Generate PDF
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        onClick={() => {
+                            setEmailMessage(getDefaultEmailMessage())
+                            setShowEmailDialog(true)
+                        }}
+                    >
+                        <Mail className="h-4 w-4 mr-2" />
+                        Send via Email
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
 
-			{/* Email Dialog */}
-			<Dialog open={showEmailDialog} onOpenChange={setShowEmailDialog}>
-				<DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-					<DialogHeader>
-						<DialogTitle className="flex items-center gap-2">
-							<Send className="h-5 w-5 text-vibrant-blue" />
-							Send Employee Profile via Email
-						</DialogTitle>
-						<DialogDescription>
-							Compose and send the employee profile via email
-						</DialogDescription>
-					</DialogHeader>
+            {/* Email Dialog */}
+            <Dialog open={showEmailDialog} onOpenChange={setShowEmailDialog}>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Send className="h-5 w-5 text-vibrant-blue" />
+                            Send Employee Profile via Email
+                        </DialogTitle>
+                        <DialogDescription>
+                            Compose and send the employee profile via email
+                        </DialogDescription>
+                    </DialogHeader>
 
-					<div className="space-y-4">
-						<div>
-							<Label htmlFor="email-to">
-								To <span className="text-red-500">*</span>
-							</Label>
-							<Input
-								id="email-to"
-								type="email"
-								value={emailTo}
-								onChange={e => setEmailTo(e.target.value)}
-								placeholder="Enter recipient email"
-							/>
-						</div>
+                    <div className="space-y-4">
+                        <div>
+                            <Label htmlFor="email-to">
+                                To <span className="text-red-500">*</span>
+                            </Label>
+                            <Input
+                                id="email-to"
+                                type="email"
+                                value={emailTo}
+                                onChange={e => setEmailTo(e.target.value)}
+                                placeholder="Enter recipient email"
+                            />
+                        </div>
 
-						<div>
-							<Label htmlFor="email-cc">CC</Label>
-							<div className="space-y-2">
-								<div className="flex gap-2">
-									<Input
-										id="email-cc"
-										type="email"
-										value={newCc}
-										onChange={e => setNewCc(e.target.value)}
-										onKeyPress={e => {
-											if (e.key === 'Enter') {
-												e.preventDefault()
-												handleAddCc()
-											}
-										}}
-										placeholder="Add CC email"
-									/>
-									<Button
-										type="button"
-										size="icon"
-										variant="outline"
-										onClick={handleAddCc}
-									>
-										<Plus className="h-4 w-4" />
-									</Button>
-								</div>
+                        <div>
+                            <Label htmlFor="email-cc">CC</Label>
+                            <div className="space-y-2">
+                                <div className="flex gap-2">
+                                    <Input
+                                        id="email-cc"
+                                        type="email"
+                                        value={newCc}
+                                        onChange={e => setNewCc(e.target.value)}
+                                        onKeyPress={e => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault()
+                                                handleAddCc()
+                                            }
+                                        }}
+                                        placeholder="Add CC email"
+                                    />
+                                    <Button
+                                        type="button"
+                                        size="icon"
+                                        variant="outline"
+                                        onClick={handleAddCc}
+                                    >
+                                        <Plus className="h-4 w-4" />
+                                    </Button>
+                                </div>
 
-								{emailCc.filter(email => email).length > 0 && (
-									<div className="flex flex-wrap gap-2">
-										{emailCc
-											.filter(email => email)
-											.map((email, index) => (
-												<div
-													key={index}
-													className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-sm"
-												>
-													<span>{email}</span>
-													<button
-														type="button"
-														onClick={() =>
-															handleRemoveCc(
-																index
-															)
-														}
-														className="text-muted-foreground hover:text-foreground"
-													>
-														<X className="h-3 w-3" />
-													</button>
-												</div>
-											))}
-									</div>
-								)}
-							</div>
-						</div>
+                                {emailCc.filter(email => email).length > 0 && (
+                                    <div className="flex flex-wrap gap-2">
+                                        {emailCc
+                                            .filter(email => email)
+                                            .map((email, index) => (
+                                                <div
+                                                    key={index}
+                                                    className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-sm"
+                                                >
+                                                    <span>{email}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            handleRemoveCc(
+                                                                index
+                                                            )
+                                                        }
+                                                        className="text-muted-foreground hover:text-foreground"
+                                                    >
+                                                        <X className="h-3 w-3" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
 
-						<div>
-							<Label htmlFor="email-subject">
-								Subject <span className="text-red-500">*</span>
-							</Label>
-							<Input
-								id="email-subject"
-								value={emailSubject}
-								onChange={e => setEmailSubject(e.target.value)}
-								placeholder="Enter email subject"
-							/>
-						</div>
+                        <div>
+                            <Label htmlFor="email-subject">
+                                Subject <span className="text-red-500">*</span>
+                            </Label>
+                            <Input
+                                id="email-subject"
+                                value={emailSubject}
+                                onChange={e => setEmailSubject(e.target.value)}
+                                placeholder="Enter email subject"
+                            />
+                        </div>
 
-						<div>
-							<Label htmlFor="email-message">
-								Message <span className="text-red-500">*</span>
-							</Label>
-							<Textarea
-								id="email-message"
-								value={emailMessage}
-								onChange={e => setEmailMessage(e.target.value)}
-								placeholder="Enter your message"
-								rows={10}
-								className="font-mono text-sm"
-							/>
-						</div>
+                        <div>
+                            <Label htmlFor="email-message">
+                                Message <span className="text-red-500">*</span>
+                            </Label>
+                            <Textarea
+                                id="email-message"
+                                value={emailMessage}
+                                onChange={e => setEmailMessage(e.target.value)}
+                                placeholder="Enter your message"
+                                rows={10}
+                                className="font-mono text-sm"
+                            />
+                        </div>
 
-						<div className="bg-muted/50 p-3 rounded-lg">
-							<p className="text-sm text-muted-foreground">
-								<strong>Attachment:</strong> Employee_Profile_
-								{employee.employeeId}.pdf
-							</p>
-						</div>
-					</div>
+                        <div className="bg-muted/50 p-3 rounded-lg">
+                            <p className="text-sm text-muted-foreground">
+                                <strong>Attachment:</strong> Employee_Profile_
+                                {employee.employeeId}.pdf
+                            </p>
+                        </div>
+                    </div>
 
-					<DialogFooter>
-						<Button
-							variant="outline"
-							onClick={() => setShowEmailDialog(false)}
-						>
-							Cancel
-						</Button>
-						<Button
-							onClick={handleSendEmail}
-							className="bg-vibrant-blue hover:bg-vibrant-blue/90"
-						>
-							<Send className="h-4 w-4 mr-2" />
-							Send Email
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
-		</>
-	)
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setShowEmailDialog(false)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleSendEmail}
+                            className="bg-vibrant-blue hover:bg-vibrant-blue/90"
+                        >
+                            <Send className="h-4 w-4 mr-2" />
+                            Send Email
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </>
+    )
 }

@@ -1292,12 +1292,15 @@ async function getEmployeeRowForApi(client, employeeId) {
         WHEN ta.status = 'on-leave'::app.attendance_status THEN 'on-leave'::app.attendance_status
         WHEN ta.status IN ('present'::app.attendance_status, 'late'::app.attendance_status)
           THEN 'present'::app.attendance_status
-        ELSE e.attendance_status
+                ELSE 'absent'::app.attendance_status
       END AS attendance_status,
       e.employment_status,
       e.employment_type,
+    ta.attendance_date AS status_date,
       ta.clock_in,
       ta.clock_out,
+            ta.work_duration_minutes,
+            ta.late_minutes,
       ta.active_break_started_at,
       e.join_date,
       e.birthday,
@@ -1320,8 +1323,11 @@ async function getEmployeeRowForApi(client, employeeId) {
     LEFT JOIN LATERAL (
       SELECT
         ar.status,
+        ar.attendance_date,
         ar.clock_in,
         ar.clock_out,
+        ar.work_duration_minutes,
+        ar.late_minutes,
         ar.active_break_started_at
       FROM app.attendance_records ar
       WHERE ar.employee_id = e.employee_id

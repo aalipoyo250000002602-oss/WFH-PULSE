@@ -114,10 +114,29 @@ export function DashboardPage({
         return `${year}-${month}-${day}`
     }
 
+    const getNowDateTimeLocal = () => {
+        const now = new Date()
+        const year = now.getFullYear()
+        const month = String(now.getMonth() + 1).padStart(2, '0')
+        const day = String(now.getDate()).padStart(2, '0')
+        const hour = String(now.getHours()).padStart(2, '0')
+        const minute = String(now.getMinutes()).padStart(2, '0')
+        return `${year}-${month}-${day}T${hour}:${minute}`
+    }
+
+    const toDateOnly = (value: string) => value.slice(0, 10)
+
+    const toDateTimeAtStartOfDay = (dateValue: string) => `${dateValue}T00:00`
+    const toDateTimeAtEndOfDay = (dateValue: string) => `${dateValue}T23:59`
+
     const [employees, setEmployees] = useState<Employee[]>(() => getEmployees())
     const [currentPage, setCurrentPage] = useState(1)
-    const [fromDate, setFromDate] = useState<string>(() => getTodayIsoDate())
-    const [toDate, setToDate] = useState<string>(() => getTodayIsoDate())
+    const [fromDate, setFromDate] = useState<string>(() =>
+        toDateTimeAtStartOfDay(getTodayIsoDate())
+    )
+    const [toDate, setToDate] = useState<string>(() =>
+        toDateTimeAtEndOfDay(getTodayIsoDate())
+    )
     const [sortBy, setSortBy] = useState<'name' | 'department' | 'status'>(
         'name'
     )
@@ -125,6 +144,13 @@ export function DashboardPage({
         'all' | Employee['status']
     >('all')
     const [logoBase64, setLogoBase64] = useState<string>('')
+    const [maxSelectableDateTime, setMaxSelectableDateTime] = useState<string>(
+        () => getNowDateTimeLocal()
+    )
+
+    useEffect(() => {
+        setMaxSelectableDateTime(getNowDateTimeLocal())
+    }, [])
 
     // Collapsible card states
     const [isEmployeeStatusOpen, setIsEmployeeStatusOpen] = useState(false)
@@ -168,12 +194,26 @@ export function DashboardPage({
     }, [])
 
     useEffect(() => {
+        const formatWorkDuration = (minutes: number | null | undefined) => {
+            if (minutes == null || !Number.isFinite(Number(minutes))) {
+                return undefined
+            }
+
+            const totalMinutes = Math.max(0, Number(minutes))
+            const hours = Math.floor(totalMinutes / 60)
+            const remainingMinutes = totalMinutes % 60
+            return `${hours}h ${String(remainingMinutes).padStart(2, '0')}m`
+        }
+
         const mapApiEmployeeToLocal = (row: Record<string, any>): Employee => ({
             id: String(row.employee_id),
             employeeId: String(row.employee_code ?? row.employee_id),
             firstName: String(row.first_name ?? ''),
             lastName: String(row.last_name ?? ''),
             status: (row.attendance_status ?? 'present') as Employee['status'],
+            statusDate: row.status_date
+                ? String(row.status_date).slice(0, 10)
+                : undefined,
             employmentStatus: (row.employment_status ??
                 'active') as Employee['employmentStatus'],
             employmentType: String(row.employment_type ?? 'full-time'),
@@ -183,6 +223,9 @@ export function DashboardPage({
             clockOutTime: row.clock_out
                 ? String(row.clock_out).slice(0, 5)
                 : undefined,
+            workDuration: formatWorkDuration(row.work_duration_minutes),
+            lateMinutes:
+                row.late_minutes == null ? undefined : Number(row.late_minutes),
             isOnBreak: Boolean(row.active_break_started_at),
             department: String(row.department ?? ''),
             position: row.position ? String(row.position) : '',
@@ -218,10 +261,10 @@ export function DashboardPage({
             try {
                 const queryParams = new URLSearchParams()
                 if (fromDate) {
-                    queryParams.set('from', fromDate)
+                    queryParams.set('from', toDateOnly(fromDate))
                 }
                 if (toDate) {
-                    queryParams.set('to', toDate)
+                    queryParams.set('to', toDateOnly(toDate))
                 }
 
                 const endpoint =
@@ -260,9 +303,12 @@ export function DashboardPage({
             return
         }
 
-        setFromDate(value)
-        if (toDate && value > toDate) {
-            setToDate(value)
+        const clampedValue =
+            value > maxSelectableDateTime ? maxSelectableDateTime : value
+
+        setFromDate(clampedValue)
+        if (toDate && clampedValue > toDate) {
+            setToDate(clampedValue)
         }
         setCurrentPage(1)
     }
@@ -272,17 +318,20 @@ export function DashboardPage({
             return
         }
 
-        setToDate(value)
-        if (fromDate && value < fromDate) {
-            setFromDate(value)
+        const clampedValue =
+            value > maxSelectableDateTime ? maxSelectableDateTime : value
+
+        setToDate(clampedValue)
+        if (fromDate && clampedValue < fromDate) {
+            setFromDate(clampedValue)
         }
         setCurrentPage(1)
     }
 
     const resetDateRangeToToday = () => {
         const today = getTodayIsoDate()
-        setFromDate(today)
-        setToDate(today)
+        setFromDate(toDateTimeAtStartOfDay(today))
+        setToDate(toDateTimeAtEndOfDay(today))
         setCurrentPage(1)
     }
 
@@ -752,6 +801,7 @@ export function DashboardPage({
             'Employee ID',
             'Last Name',
             'First Name',
+            'Status Date',
             'Position',
             'Department',
             'Status',
@@ -764,6 +814,7 @@ export function DashboardPage({
             emp.employeeId,
             emp.lastName,
             emp.firstName,
+            emp.statusDate || toDateOnly(toDate),
             emp.position || 'N/A',
             emp.department,
             formatStatusLabel(emp.status),
@@ -784,7 +835,7 @@ export function DashboardPage({
                 filterStatus === 'all' ? 'All' : formatStatusLabel(filterStatus)
             }`,
             `Applied Sort: ${sortBy}`,
-            `Applied Date Range: ${fromDate} to ${toDate}`,
+            `Applied Date Range: ${toDateOnly(fromDate)} to ${toDateOnly(toDate)}`,
             ``,
             `Summary:`,
             `Total Employees (Result): ${sortedEmployees.length}`,
@@ -857,7 +908,7 @@ export function DashboardPage({
                                 : formatStatusLabel(filterStatus)
                         }</div>
                         <div class="summary-item"><strong>Applied Sort:</strong> ${sortBy}</div>
-                        <div class="summary-item"><strong>Applied Date Range:</strong> ${fromDate} to ${toDate}</div>
+                        <div class="summary-item"><strong>Applied Date Range:</strong> ${toDateOnly(fromDate)} to ${toDateOnly(toDate)}</div>
                         <div class="summary-item"><strong>Total Employees (Result):</strong> ${sortedEmployees.length}</div>
                         <div class="summary-item"><strong>Present:</strong> ${exportedStats.present}</div>
                         <div class="summary-item"><strong>On Leave:</strong> ${exportedStats['on-leave']}</div>
@@ -868,6 +919,7 @@ export function DashboardPage({
               <tr>
                 <th>Employee ID</th>
                 <th>Employee Name</th>
+                                <th>Status Date</th>
                                 <th>Position</th>
                 <th>Department</th>
                 <th>Status</th>
@@ -884,6 +936,7 @@ export function DashboardPage({
                 <tr>
                   <td>${emp.employeeId}</td>
                   <td>${emp.lastName}, ${emp.firstName}</td>
+                                    <td>${emp.statusDate || toDateOnly(toDate)}</td>
                                     <td>${emp.position || 'N/A'}</td>
                   <td>${emp.department}</td>
                                     <td class="status-${emp.status}">${formatStatusLabel(emp.status)}</td>
@@ -907,18 +960,19 @@ export function DashboardPage({
 
         const blob = new Blob([htmlContent], { type: 'text/html' })
         const url = URL.createObjectURL(blob)
-        const newWindow = window.open(url, '_blank')
+        const link = document.createElement('a')
+        link.setAttribute('href', url)
+        link.setAttribute(
+            'download',
+            `employee-status-${new Date().toISOString().split('T')[0]}.html`
+        )
+        link.style.visibility = 'hidden'
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
 
-        if (newWindow) {
-            newWindow.onload = () => {
-                setTimeout(() => {
-                    newWindow.print()
-                }, 250)
-            }
-            toast.success('PDF report opened in new window')
-        } else {
-            toast.error('Please allow popups to export PDF')
-        }
+        toast.success('Report downloaded successfully')
     }
 
     const getStatusColor = (status: Employee['status']) => {
@@ -1185,8 +1239,10 @@ export function DashboardPage({
                                                 From Date
                                             </label>
                                             <Input
-                                                type="date"
+                                                type="datetime-local"
                                                 value={fromDate}
+                                                max={maxSelectableDateTime}
+                                                step={60}
                                                 onChange={event =>
                                                     handleFromDateChange(
                                                         event.target.value
@@ -1199,8 +1255,10 @@ export function DashboardPage({
                                                 To Date
                                             </label>
                                             <Input
-                                                type="date"
+                                                type="datetime-local"
                                                 value={toDate}
+                                                max={maxSelectableDateTime}
+                                                step={60}
                                                 onChange={event =>
                                                     handleToDateChange(
                                                         event.target.value
@@ -1350,6 +1408,11 @@ export function DashboardPage({
                                                         •{' '}
                                                         {employee.department ||
                                                             'Unassigned Department'}
+                                                    </div>
+                                                    <div className="text-xs text-muted-foreground mb-1">
+                                                        Status Date:{' '}
+                                                        {employee.statusDate ||
+                                                            toDateOnly(toDate)}
                                                     </div>
                                                     {employee.clockInTime && (
                                                         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
