@@ -23,7 +23,7 @@ export function registerMeAttendanceRoutes(app, deps) {
         mapOvertimeRequestRow,
         overtimeRequestCreateSchema,
         overtimeRequestUpdateSchema,
-                leaveRequestCreateSchema,
+        leaveRequestCreateSchema,
         getWorkingScheduleForDate,
         validateOvertimeOutsideWorkingHours,
         buildOvertimeLogReason,
@@ -31,17 +31,17 @@ export function registerMeAttendanceRoutes(app, deps) {
         seedCalendarSampleAttendanceIfEmpty,
     } = deps
 
-        const leaveRequestStatusOptions = new Set([
-                'pending',
-                'approved',
-                'denied',
-                'cancelled',
-        ])
-        const leaveRequestSourceOptions = new Set(['calendar', 'home', 'dashboard'])
+    const leaveRequestStatusOptions = new Set([
+        'pending',
+        'approved',
+        'denied',
+        'cancelled',
+    ])
+    const leaveRequestSourceOptions = new Set(['calendar', 'home', 'dashboard'])
 
-        const getLeaveRequestByIdForApi = async (client, requestId) => {
-                const result = await client.query(
-                        `
+    const getLeaveRequestByIdForApi = async (client, requestId) => {
+        const result = await client.query(
+            `
                         SELECT
                             lr.request_id,
                             lr.employee_id,
@@ -86,11 +86,11 @@ export function registerMeAttendanceRoutes(app, deps) {
                         WHERE lr.request_id = $1::text
                         LIMIT 1
                         `,
-                        [requestId]
-                )
+            [requestId]
+        )
 
-                return result.rows[0] ?? null
-        }
+        return result.rows[0] ?? null
+    }
 
     const autoCloseMissedClockOuts = async (
         authContext,
@@ -1100,11 +1100,9 @@ export function registerMeAttendanceRoutes(app, deps) {
 
         const payload = parsed.data
         if (payload.shiftDateFrom > payload.shiftDateTo) {
-            return res
-                .status(400)
-                .json({
-                    error: 'shiftDateFrom must be on or before shiftDateTo',
-                })
+            return res.status(400).json({
+                error: 'shiftDateFrom must be on or before shiftDateTo',
+            })
         }
 
         if (
@@ -2257,7 +2255,9 @@ export function registerMeAttendanceRoutes(app, deps) {
 
                 if (status) {
                     params.push(status)
-                    where.push(`lr.status = $${params.length}::app.request_status`)
+                    where.push(
+                        `lr.status = $${params.length}::app.request_status`
+                    )
                 }
 
                 if (sourcePage && sourcePage !== 'all') {
@@ -2340,7 +2340,9 @@ export function registerMeAttendanceRoutes(app, deps) {
             })
         }
 
-        const sourcePage = (payload.sourcePage ?? 'calendar').trim().toLowerCase()
+        const sourcePage = (payload.sourcePage ?? 'calendar')
+            .trim()
+            .toLowerCase()
         if (!leaveRequestSourceOptions.has(sourcePage)) {
             return res.status(400).json({
                 error: 'Invalid sourcePage. Use calendar, home, or dashboard.',
@@ -2484,57 +2486,62 @@ export function registerMeAttendanceRoutes(app, deps) {
         }
     })
 
-    app.post('/me/leave-requests/:requestId/cancel', requireAuth, async (req, res) => {
-        const requestId = String(req.params.requestId || '').trim()
-        if (!requestId) {
-            return res.status(400).json({ error: 'Invalid requestId' })
-        }
-
-        try {
-            const resolvedEmployeeId = await ensureEmployeeLinkForUser(
-                req.auth.userId
-            )
-            if (!resolvedEmployeeId) {
-                return res.status(404).json({
-                    error: 'No employee profile is linked to this account yet.',
-                })
+    app.post(
+        '/me/leave-requests/:requestId/cancel',
+        requireAuth,
+        async (req, res) => {
+            const requestId = String(req.params.requestId || '').trim()
+            if (!requestId) {
+                return res.status(400).json({ error: 'Invalid requestId' })
             }
 
-            const request = await withRlsContext(req.auth, async client => {
-                const existingResult = await client.query(
-                    `
+            try {
+                const resolvedEmployeeId = await ensureEmployeeLinkForUser(
+                    req.auth.userId
+                )
+                if (!resolvedEmployeeId) {
+                    return res.status(404).json({
+                        error: 'No employee profile is linked to this account yet.',
+                    })
+                }
+
+                const request = await withRlsContext(req.auth, async client => {
+                    const existingResult = await client.query(
+                        `
                     SELECT request_id, status
                     FROM app.leave_requests
                     WHERE request_id = $1::text
                       AND employee_id = $2::text
                     LIMIT 1
                     `,
-                    [requestId, resolvedEmployeeId]
-                )
+                        [requestId, resolvedEmployeeId]
+                    )
 
-                if (existingResult.rowCount === 0) {
-                    throw new Error('Leave request not found')
-                }
+                    if (existingResult.rowCount === 0) {
+                        throw new Error('Leave request not found')
+                    }
 
-                const existing = existingResult.rows[0]
-                if (existing.status === 'denied') {
-                    throw new Error('Denied leave requests cannot be cancelled')
-                }
-                if (existing.status === 'cancelled') {
-                    throw new Error('Leave request is already cancelled')
-                }
+                    const existing = existingResult.rows[0]
+                    if (existing.status === 'denied') {
+                        throw new Error(
+                            'Denied leave requests cannot be cancelled'
+                        )
+                    }
+                    if (existing.status === 'cancelled') {
+                        throw new Error('Leave request is already cancelled')
+                    }
 
-                await client.query(
-                    `
+                    await client.query(
+                        `
                     UPDATE app.leave_requests
                     SET status = 'cancelled'::app.request_status
                     WHERE request_id = $1::text
                     `,
-                    [requestId]
-                )
+                        [requestId]
+                    )
 
-                await client.query(
-                    `
+                    await client.query(
+                        `
                     INSERT INTO app.leave_request_logs (request_id, status, logged_at, approved_by, reason)
                     VALUES (
                       $1::text,
@@ -2544,17 +2551,18 @@ export function registerMeAttendanceRoutes(app, deps) {
                       'Leave request cancelled by employee'
                     )
                     `,
-                    [requestId]
-                )
+                        [requestId]
+                    )
 
-                return getLeaveRequestByIdForApi(client, requestId)
-            })
+                    return getLeaveRequestByIdForApi(client, requestId)
+                })
 
-            return res.json({ request, cancelled: true })
-        } catch (error) {
-            return res.status(400).json({ error: error.message })
+                return res.json({ request, cancelled: true })
+            } catch (error) {
+                return res.status(400).json({ error: error.message })
+            }
         }
-    })
+    )
 
     app.delete(
         '/me/overtime-requests/:requestId',

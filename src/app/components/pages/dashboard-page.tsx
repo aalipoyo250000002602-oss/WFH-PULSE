@@ -189,8 +189,8 @@ export function DashboardPage({
     const [adjustmentFilterStatus, setAdjustmentFilterStatus] = useState<
         'all' | 'pending' | 'approved' | 'denied' | 'cancelled'
     >(() => {
-        const fallbackValue: 'all' | 'pending' | 'approved' | 'denied' | 'cancelled' =
-            'pending'
+        const fallbackValue:
+            'all' | 'pending' | 'approved' | 'denied' | 'cancelled' = 'pending'
         if (typeof window === 'undefined') {
             return fallbackValue
         }
@@ -786,8 +786,8 @@ export function DashboardPage({
     const [leaveFilterStatus, setLeaveFilterStatus] = useState<
         'all' | 'pending' | 'approved' | 'denied' | 'cancelled'
     >(() => {
-        const fallbackValue: 'all' | 'pending' | 'approved' | 'denied' | 'cancelled' =
-            'pending'
+        const fallbackValue:
+            'all' | 'pending' | 'approved' | 'denied' | 'cancelled' = 'pending'
         if (typeof window === 'undefined') {
             return fallbackValue
         }

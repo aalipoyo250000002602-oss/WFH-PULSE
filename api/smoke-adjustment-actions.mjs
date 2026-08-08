@@ -72,7 +72,9 @@ async function callAction(accessToken, requestId, action, reason) {
     )
 
     if (!response.ok) {
-        throw new Error(body?.error ?? `Failed to ${action} request ${requestId}`)
+        throw new Error(
+            body?.error ?? `Failed to ${action} request ${requestId}`
+        )
     }
 
     return body?.request ?? null
@@ -115,7 +117,12 @@ async function run() {
         const approveTargetId = pending[1].request_id
 
         const denyReason = `[${runId}] HR denial smoke reason`
-        const denied = await callAction(accessToken, denyTargetId, 'deny', denyReason)
+        const denied = await callAction(
+            accessToken,
+            denyTargetId,
+            'deny',
+            denyReason
+        )
         if (
             denied?.status !== 'denied' ||
             !hasLog(denied, 'denied', denyReason)
@@ -124,23 +131,35 @@ async function run() {
         }
         result.deny = `passed (${denyTargetId})`
 
-        const approved = await callAction(accessToken, approveTargetId, 'approve')
+        const approved = await callAction(
+            accessToken,
+            approveTargetId,
+            'approve'
+        )
         if (
             approved?.status !== 'approved' ||
             !hasLog(approved, 'approved', 'Approved by HR')
         ) {
-            throw new Error(`Approve verification failed for ${approveTargetId}`)
+            throw new Error(
+                `Approve verification failed for ${approveTargetId}`
+            )
         }
         result.approve = `passed (${approveTargetId})`
         approvedFromSmoke = approveTargetId
     } else if (pending.length === 1) {
         const approveTargetId = pending[0].request_id
-        const approved = await callAction(accessToken, approveTargetId, 'approve')
+        const approved = await callAction(
+            accessToken,
+            approveTargetId,
+            'approve'
+        )
         if (
             approved?.status !== 'approved' ||
             !hasLog(approved, 'approved', 'Approved by HR')
         ) {
-            throw new Error(`Approve verification failed for ${approveTargetId}`)
+            throw new Error(
+                `Approve verification failed for ${approveTargetId}`
+            )
         }
         result.approve = `passed (${approveTargetId})`
         approvedFromSmoke = approveTargetId
@@ -153,7 +172,8 @@ async function run() {
     requests = await fetchRequests(accessToken)
     const approvedList = requests.filter(item => item.status === 'approved')
     const cancelTargetId =
-        approvedFromSmoke ?? (approvedList.length > 0 ? approvedList[0].request_id : null)
+        approvedFromSmoke ??
+        (approvedList.length > 0 ? approvedList[0].request_id : null)
 
     if (cancelTargetId) {
         const cancelReason = `[${runId}] HR cancellation smoke reason`
@@ -186,7 +206,9 @@ async function run() {
             String(result.cancel).startsWith('passed')
 
         if (!allPassed) {
-            throw new Error('Strict mode failed because one or more actions were skipped')
+            throw new Error(
+                'Strict mode failed because one or more actions were skipped'
+            )
         }
     }
 }

@@ -570,7 +570,9 @@ export function registerEmployeeCoreRoutes(app, deps) {
 
                     if (status) {
                         params.push(status)
-                        where.push(`lr.status = $${params.length}::app.request_status`)
+                        where.push(
+                            `lr.status = $${params.length}::app.request_status`
+                        )
                     }
 
                     if (sourcePage && sourcePage !== 'all') {
@@ -692,7 +694,9 @@ export function registerEmployeeCoreRoutes(app, deps) {
 
                     if (status) {
                         params.push(status)
-                        where.push(`r.status = $${params.length}::app.request_status`)
+                        where.push(
+                            `r.status = $${params.length}::app.request_status`
+                        )
                     }
 
                     if (sourcePage && sourcePage !== 'all') {
