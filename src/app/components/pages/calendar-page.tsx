@@ -61,6 +61,11 @@ interface Holiday {
     name: string
     date: string
     type: 'public' | 'personal'
+    countryCode?: string
+    countryName?: string
+    subdivisionCode?: string
+    subdivisionName?: string
+    scope?: 'national' | 'subdivision'
     daysUntil: number
 }
 
@@ -128,28 +133,33 @@ interface LeaveRequestApiRow {
 interface CalendarPageProps {
     apiBaseUrl: string
     accessToken: string
+    currentUserRole: 'admin' | 'hr_manager' | 'employee'
     attendanceData: Record<
         string,
         'present' | 'absent' | 'holiday' | 'late' | 'on-leave'
     >
     holidays: Holiday[]
-    onAddHoliday: (holiday: Omit<Holiday, 'id' | 'daysUntil'>) => void
+    onAddHoliday: (
+        holiday: Omit<Holiday, 'id' | 'daysUntil'>
+    ) => Promise<boolean>
     onEditHoliday: (
         id: string,
         holiday: Omit<Holiday, 'id' | 'daysUntil'>
-    ) => void
-    onDeleteHoliday: (id: string) => void
+    ) => Promise<boolean>
+    onDeleteHoliday: (id: string) => Promise<boolean>
 }
 
 export function CalendarPage({
     apiBaseUrl,
     accessToken,
+    currentUserRole,
     attendanceData,
     holidays,
     onAddHoliday,
     onEditHoliday,
     onDeleteHoliday,
 }: CalendarPageProps) {
+    const canManageHolidays = currentUserRole === 'admin'
     const [currentDate, setCurrentDate] = useState(new Date())
     const [selectedDate, setSelectedDate] = useState<string>('')
     const [isHolidayDialogOpen, setIsHolidayDialogOpen] = useState(false)
@@ -158,6 +168,11 @@ export function CalendarPage({
         name: '',
         date: '',
         type: 'personal' as 'public' | 'personal',
+        scope: 'national' as 'national' | 'subdivision',
+        countryCode: 'PH',
+        countryName: 'Philippines',
+        subdivisionCode: '',
+        subdivisionName: '',
     })
 
     // Collapsible card states
@@ -172,6 +187,36 @@ export function CalendarPage({
     const [bulkHolidayForm, setBulkHolidayForm] = useState({
         name: '',
         type: 'personal' as 'public' | 'personal',
+        scope: 'national' as 'national' | 'subdivision',
+        countryCode: 'PH',
+        countryName: 'Philippines',
+        subdivisionCode: '',
+        subdivisionName: '',
+    })
+    const [holidayCountryFilter, setHolidayCountryFilter] =
+        useState<string>('ALL')
+    const [holidaySubdivisionFilter, setHolidaySubdivisionFilter] =
+        useState<string>('ALL')
+    const [holidayScopeFilter, setHolidayScopeFilter] = useState<
+        'ALL' | 'national' | 'subdivision'
+    >(() => {
+        if (typeof window === 'undefined') {
+            return 'ALL'
+        }
+
+        const saved = window.localStorage.getItem(
+            'wfh-pulse:calendar:holiday-scope-filter'
+        )
+
+        if (
+            saved === 'ALL' ||
+            saved === 'national' ||
+            saved === 'subdivision'
+        ) {
+            return saved
+        }
+
+        return 'ALL'
     })
 
     // Leave management state
@@ -423,6 +468,16 @@ export function CalendarPage({
         return `${year}-${month}-${day}`
     }
 
+    const getCountryNameFromCode = (countryCode: string) => {
+        if (countryCode === 'AU') {
+            return 'Australia'
+        }
+        if (countryCode === 'US') {
+            return 'United States'
+        }
+        return 'Philippines'
+    }
+
     const getDaysInMonth = (date: Date) => {
         const year = date.getFullYear()
         const month = date.getMonth()
@@ -457,7 +512,7 @@ export function CalendarPage({
 
     const getDayStatus = (day: number) => {
         const dateKey = getDateKey(day)
-        const holiday = holidays.find(h => h.date === dateKey)
+        const holiday = filteredHolidays.find(h => h.date === dateKey)
         if (holiday) return 'holiday'
         return attendanceData[dateKey] || null
     }
@@ -605,13 +660,22 @@ export function CalendarPage({
 
         // Regular single day selection
         setSelectedDate(dateKey)
-        const existingHoliday = holidays.find(h => h.date === dateKey)
+        const existingHoliday = filteredHolidays.find(h => h.date === dateKey)
+        if (!canManageHolidays) {
+            return
+        }
+
         if (existingHoliday) {
             setEditingHoliday(existingHoliday)
             setHolidayForm({
                 name: existingHoliday.name,
                 date: existingHoliday.date,
                 type: existingHoliday.type,
+                scope: existingHoliday.scope ?? 'national',
+                countryCode: existingHoliday.countryCode ?? 'PH',
+                countryName: existingHoliday.countryName ?? 'Philippines',
+                subdivisionCode: existingHoliday.subdivisionCode ?? '',
+                subdivisionName: existingHoliday.subdivisionName ?? '',
             })
         } else {
             setEditingHoliday(null)
@@ -619,33 +683,74 @@ export function CalendarPage({
                 name: '',
                 date: dateKey,
                 type: 'personal',
+                scope: 'national',
+                countryCode: 'PH',
+                countryName: 'Philippines',
+                subdivisionCode: '',
+                subdivisionName: '',
             })
         }
         setIsHolidayDialogOpen(true)
     }
 
-    const handleSaveHoliday = () => {
+    const handleSaveHoliday = async () => {
+        if (!canManageHolidays) {
+            toast.error('Only admin users can manage holidays')
+            return
+        }
+
         if (!holidayForm.name.trim()) {
             toast.error('Please enter a holiday name')
             return
         }
 
+        if (
+            holidayForm.scope === 'subdivision' &&
+            !holidayForm.subdivisionCode.trim()
+        ) {
+            toast.error('Please enter a subdivision code')
+            return
+        }
+
         if (editingHoliday) {
-            onEditHoliday(editingHoliday.id, holidayForm)
+            const updated = await onEditHoliday(editingHoliday.id, holidayForm)
+            if (!updated) {
+                return
+            }
             toast.success('Holiday updated successfully')
         } else {
-            onAddHoliday(holidayForm)
+            const inserted = await onAddHoliday(holidayForm)
+            if (!inserted) {
+                return
+            }
             toast.success('Holiday added successfully')
         }
 
         setIsHolidayDialogOpen(false)
         setEditingHoliday(null)
-        setHolidayForm({ name: '', date: '', type: 'personal' })
+        setHolidayForm({
+            name: '',
+            date: '',
+            type: 'personal',
+            scope: 'national',
+            countryCode: 'PH',
+            countryName: 'Philippines',
+            subdivisionCode: '',
+            subdivisionName: '',
+        })
     }
 
-    const handleDeleteHoliday = () => {
+    const handleDeleteHoliday = async () => {
+        if (!canManageHolidays) {
+            toast.error('Only admin users can manage holidays')
+            return
+        }
+
         if (editingHoliday) {
-            onDeleteHoliday(editingHoliday.id)
+            const deleted = await onDeleteHoliday(editingHoliday.id)
+            if (!deleted) {
+                return
+            }
             toast.success('Holiday deleted successfully')
             setIsHolidayDialogOpen(false)
             setEditingHoliday(null)
@@ -657,7 +762,15 @@ export function CalendarPage({
         setSelectedDates([])
         setRangeStart('')
         setRangeEnd('')
-        setBulkHolidayForm({ name: '', type: 'personal' })
+        setBulkHolidayForm({
+            name: '',
+            type: 'personal',
+            scope: 'national',
+            countryCode: 'PH',
+            countryName: 'Philippines',
+            subdivisionCode: '',
+            subdivisionName: '',
+        })
     }
 
     const getDatesInRange = (start: string, end: string): string[] => {
@@ -680,9 +793,22 @@ export function CalendarPage({
         return dates
     }
 
-    const handleBulkSave = () => {
+    const handleBulkSave = async () => {
+        if (!canManageHolidays) {
+            toast.error('Only admin users can manage holidays')
+            return
+        }
+
         if (!bulkHolidayForm.name.trim()) {
             toast.error('Please enter a holiday name')
+            return
+        }
+
+        if (
+            bulkHolidayForm.scope === 'subdivision' &&
+            !bulkHolidayForm.subdivisionCode.trim()
+        ) {
+            toast.error('Please enter a subdivision code')
             return
         }
 
@@ -700,20 +826,52 @@ export function CalendarPage({
         }
 
         // Add holidays for each selected date
-        datesToAdd.forEach(date => {
-            // Check if holiday already exists for this date
-            const existingHoliday = holidays.find(h => h.date === date)
-            if (!existingHoliday) {
-                onAddHoliday({
-                    name: bulkHolidayForm.name,
-                    date: date,
-                    type: bulkHolidayForm.type,
-                })
+        let insertedCount = 0
+        for (const date of datesToAdd) {
+            const existingHoliday = holidays.find(
+                h =>
+                    h.date === date &&
+                    (h.countryCode ?? 'PH') === bulkHolidayForm.countryCode &&
+                    (h.scope ?? 'national') === bulkHolidayForm.scope &&
+                    (bulkHolidayForm.scope === 'subdivision'
+                        ? (h.subdivisionCode ?? '') ===
+                          bulkHolidayForm.subdivisionCode
+                        : !h.subdivisionCode)
+            )
+            if (existingHoliday) {
+                continue
             }
-        })
+
+            const inserted = await onAddHoliday({
+                name: bulkHolidayForm.name,
+                date: date,
+                type: bulkHolidayForm.type,
+                scope: bulkHolidayForm.scope,
+                countryCode: bulkHolidayForm.countryCode,
+                countryName: bulkHolidayForm.countryName,
+                subdivisionCode:
+                    bulkHolidayForm.scope === 'subdivision'
+                        ? bulkHolidayForm.subdivisionCode
+                        : undefined,
+                subdivisionName:
+                    bulkHolidayForm.scope === 'subdivision'
+                        ? bulkHolidayForm.subdivisionName ||
+                          bulkHolidayForm.subdivisionCode
+                        : undefined,
+            })
+
+            if (inserted) {
+                insertedCount += 1
+            }
+        }
+
+        if (insertedCount === 0) {
+            toast.error('No new holidays were added')
+            return
+        }
 
         toast.success(
-            `Successfully added ${datesToAdd.length} holiday${datesToAdd.length > 1 ? 's' : ''}`
+            `Successfully added ${insertedCount} holiday${insertedCount > 1 ? 's' : ''}`
         )
         setIsBulkDialogOpen(false)
         resetBulkMode()
@@ -1028,6 +1186,17 @@ export function CalendarPage({
         )
     }, [leaveRequestFilterStatus])
 
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            return
+        }
+
+        window.localStorage.setItem(
+            'wfh-pulse:calendar:holiday-scope-filter',
+            holidayScopeFilter
+        )
+    }, [holidayScopeFilter])
+
     const handleFileUpload = () => {
         // Simulate file upload
         const fileName = `document-${Date.now()}.pdf`
@@ -1056,7 +1225,55 @@ export function CalendarPage({
         currentDate.getMonth() === today.getMonth() &&
         currentDate.getFullYear() === today.getFullYear()
 
-    const monthHolidays = holidays.filter(holiday => {
+    const countryOptions = Array.from(
+        new Set(
+            holidays
+                .map(holiday => holiday.countryCode)
+                .filter((value): value is string => Boolean(value))
+        )
+    ).sort()
+
+    const subdivisionOptions = Array.from(
+        new Set(
+            holidays
+                .filter(holiday =>
+                    holidayCountryFilter === 'ALL'
+                        ? true
+                        : holiday.countryCode === holidayCountryFilter
+                )
+                .map(holiday => holiday.subdivisionCode)
+                .filter((value): value is string => Boolean(value))
+        )
+    ).sort()
+
+    const filteredHolidays = holidays.filter(holiday => {
+        const scopeMatch =
+            holidayScopeFilter === 'ALL'
+                ? true
+                : (holiday.scope ?? 'national') === holidayScopeFilter
+        const countryMatch =
+            holidayCountryFilter === 'ALL'
+                ? true
+                : holiday.countryCode === holidayCountryFilter
+        const subdivisionMatch =
+            holidaySubdivisionFilter === 'ALL'
+                ? true
+                : holiday.subdivisionCode === holidaySubdivisionFilter
+
+        return scopeMatch && countryMatch && subdivisionMatch
+    })
+
+    useEffect(() => {
+        if (holidaySubdivisionFilter === 'ALL') {
+            return
+        }
+
+        if (!subdivisionOptions.includes(holidaySubdivisionFilter)) {
+            setHolidaySubdivisionFilter('ALL')
+        }
+    }, [holidaySubdivisionFilter, subdivisionOptions])
+
+    const monthHolidays = filteredHolidays.filter(holiday => {
         const holidayDate = new Date(holiday.date)
         return (
             holidayDate.getMonth() === currentDate.getMonth() &&
@@ -1269,9 +1486,12 @@ export function CalendarPage({
                                                 isCurrentMonth &&
                                                 day === today.getDate()
                                             const status = getDayStatus(day)
-                                            const holiday = holidays.find(
-                                                h => h.date === getDateKey(day)
-                                            )
+                                            const holiday =
+                                                filteredHolidays.find(
+                                                    h =>
+                                                        h.date ===
+                                                        getDateKey(day)
+                                                )
                                             const dateKey = getDateKey(day)
 
                                             return (
@@ -1335,54 +1555,209 @@ export function CalendarPage({
                                                 Holidays This Month
                                             </h3>
                                             <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                                                {bulkMode === 'none' && (
-                                                    <>
-                                                        <Button
-                                                            size="sm"
-                                                            className="bg-vibrant-purple hover:bg-vibrant-purple/90 text-vibrant-purple-foreground flex-1 sm:flex-none"
-                                                            onClick={() => {
-                                                                setEditingHoliday(
-                                                                    null
-                                                                )
-                                                                setHolidayForm({
-                                                                    name: '',
-                                                                    date: '',
-                                                                    type: 'personal',
-                                                                })
-                                                                setIsHolidayDialogOpen(
-                                                                    true
-                                                                )
-                                                            }}
-                                                        >
-                                                            <Plus className="h-4 w-4 mr-2" />
-                                                            <span className="hidden xs:inline">
-                                                                Add Holiday
-                                                            </span>
-                                                            <span className="xs:hidden">
-                                                                Add
-                                                            </span>
-                                                        </Button>
+                                                {canManageHolidays &&
+                                                    bulkMode === 'none' && (
+                                                        <>
+                                                            <Button
+                                                                size="sm"
+                                                                className="bg-vibrant-purple hover:bg-vibrant-purple/90 text-vibrant-purple-foreground flex-1 sm:flex-none"
+                                                                onClick={() => {
+                                                                    setEditingHoliday(
+                                                                        null
+                                                                    )
+                                                                    setHolidayForm(
+                                                                        {
+                                                                            name: '',
+                                                                            date: '',
+                                                                            type: 'personal',
+                                                                            scope: 'national',
+                                                                            countryCode:
+                                                                                'PH',
+                                                                            countryName:
+                                                                                'Philippines',
+                                                                            subdivisionCode:
+                                                                                '',
+                                                                            subdivisionName:
+                                                                                '',
+                                                                        }
+                                                                    )
+                                                                    setIsHolidayDialogOpen(
+                                                                        true
+                                                                    )
+                                                                }}
+                                                            >
+                                                                <Plus className="h-4 w-4 mr-2" />
+                                                                <span className="hidden xs:inline">
+                                                                    Add Holiday
+                                                                </span>
+                                                                <span className="xs:hidden">
+                                                                    Add
+                                                                </span>
+                                                            </Button>
 
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            className="border-vibrant-pink text-vibrant-pink hover:bg-vibrant-pink hover:text-vibrant-pink-foreground flex-1 sm:flex-none"
-                                                            onClick={() =>
-                                                                setBulkMode(
-                                                                    'range'
-                                                                )
-                                                            }
-                                                        >
-                                                            <CalendarRange className="h-4 w-4 mr-2" />
-                                                            <span className="hidden xs:inline">
-                                                                Add Multiple
-                                                            </span>
-                                                            <span className="xs:hidden">
-                                                                Multiple
-                                                            </span>
-                                                        </Button>
-                                                    </>
-                                                )}
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                className="border-vibrant-pink text-vibrant-pink hover:bg-vibrant-pink hover:text-vibrant-pink-foreground flex-1 sm:flex-none"
+                                                                onClick={() =>
+                                                                    setBulkMode(
+                                                                        'range'
+                                                                    )
+                                                                }
+                                                            >
+                                                                <CalendarRange className="h-4 w-4 mr-2" />
+                                                                <span className="hidden xs:inline">
+                                                                    Add Multiple
+                                                                </span>
+                                                                <span className="xs:hidden">
+                                                                    Multiple
+                                                                </span>
+                                                            </Button>
+                                                        </>
+                                                    )}
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                                            <div className="sm:col-span-2">
+                                                <Label className="text-xs text-muted-foreground mb-1 block">
+                                                    Scope
+                                                </Label>
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() =>
+                                                            setHolidayScopeFilter(
+                                                                'ALL'
+                                                            )
+                                                        }
+                                                        className={
+                                                            holidayScopeFilter ===
+                                                            'ALL'
+                                                                ? 'ring-2 ring-vibrant-blue/40 bg-vibrant-blue/10'
+                                                                : ''
+                                                        }
+                                                    >
+                                                        All
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() =>
+                                                            setHolidayScopeFilter(
+                                                                'national'
+                                                            )
+                                                        }
+                                                        className={
+                                                            holidayScopeFilter ===
+                                                            'national'
+                                                                ? 'ring-2 ring-vibrant-blue/40 bg-vibrant-blue/10'
+                                                                : ''
+                                                        }
+                                                    >
+                                                        National
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() =>
+                                                            setHolidayScopeFilter(
+                                                                'subdivision'
+                                                            )
+                                                        }
+                                                        className={
+                                                            holidayScopeFilter ===
+                                                            'subdivision'
+                                                                ? 'ring-2 ring-vibrant-blue/40 bg-vibrant-blue/10'
+                                                                : ''
+                                                        }
+                                                    >
+                                                        Region/State
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <Label className="text-xs text-muted-foreground mb-1 block">
+                                                    Country Filter
+                                                </Label>
+                                                <Select
+                                                    value={holidayCountryFilter}
+                                                    onValueChange={value => {
+                                                        setHolidayCountryFilter(
+                                                            value
+                                                        )
+                                                        setHolidaySubdivisionFilter(
+                                                            'ALL'
+                                                        )
+                                                    }}
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="ALL">
+                                                            All Countries
+                                                        </SelectItem>
+                                                        {countryOptions.map(
+                                                            countryCode => (
+                                                                <SelectItem
+                                                                    key={
+                                                                        countryCode
+                                                                    }
+                                                                    value={
+                                                                        countryCode
+                                                                    }
+                                                                >
+                                                                    {
+                                                                        countryCode
+                                                                    }
+                                                                </SelectItem>
+                                                            )
+                                                        )}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                            <div>
+                                                <Label className="text-xs text-muted-foreground mb-1 block">
+                                                    Region/State Filter
+                                                </Label>
+                                                <Select
+                                                    value={
+                                                        holidaySubdivisionFilter
+                                                    }
+                                                    onValueChange={
+                                                        setHolidaySubdivisionFilter
+                                                    }
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="ALL">
+                                                            All Regions
+                                                        </SelectItem>
+                                                        {subdivisionOptions.map(
+                                                            subdivisionCode => (
+                                                                <SelectItem
+                                                                    key={
+                                                                        subdivisionCode
+                                                                    }
+                                                                    value={
+                                                                        subdivisionCode
+                                                                    }
+                                                                >
+                                                                    {
+                                                                        subdivisionCode
+                                                                    }
+                                                                </SelectItem>
+                                                            )
+                                                        )}
+                                                    </SelectContent>
+                                                </Select>
                                             </div>
                                         </div>
 
@@ -1397,6 +1772,12 @@ export function CalendarPage({
                                                         key={holiday.id}
                                                         className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
                                                         onClick={() => {
+                                                            if (
+                                                                !canManageHolidays
+                                                            ) {
+                                                                return
+                                                            }
+
                                                             setEditingHoliday(
                                                                 holiday
                                                             )
@@ -1404,6 +1785,21 @@ export function CalendarPage({
                                                                 name: holiday.name,
                                                                 date: holiday.date,
                                                                 type: holiday.type,
+                                                                scope:
+                                                                    holiday.scope ??
+                                                                    'national',
+                                                                countryCode:
+                                                                    holiday.countryCode ??
+                                                                    'PH',
+                                                                countryName:
+                                                                    holiday.countryName ??
+                                                                    'Philippines',
+                                                                subdivisionCode:
+                                                                    holiday.subdivisionCode ??
+                                                                    '',
+                                                                subdivisionName:
+                                                                    holiday.subdivisionName ??
+                                                                    '',
                                                             })
                                                             setIsHolidayDialogOpen(
                                                                 true
@@ -1424,6 +1820,13 @@ export function CalendarPage({
                                                                         day: 'numeric',
                                                                     }
                                                                 )}
+                                                            </p>
+                                                            <p className="text-xs text-muted-foreground">
+                                                                {holiday.countryCode ??
+                                                                    'PH'}
+                                                                {holiday.subdivisionCode
+                                                                    ? ` - ${holiday.subdivisionCode}`
+                                                                    : ''}
                                                             </p>
                                                         </div>
                                                         <Badge
@@ -1716,7 +2119,7 @@ export function CalendarPage({
                 </Card>
 
                 {/* Bulk Mode Controls */}
-                {bulkMode !== 'none' && (
+                {canManageHolidays && bulkMode !== 'none' && (
                     <Card className="border-vibrant-pink/30 bg-vibrant-pink/5">
                         <CardContent className="pt-4">
                             <div className="flex items-center justify-between mb-3">
@@ -1855,6 +2258,102 @@ export function CalendarPage({
                                     </SelectContent>
                                 </Select>
                             </div>
+                            <div>
+                                <Label htmlFor="holiday-country">Country</Label>
+                                <Select
+                                    value={holidayForm.countryCode}
+                                    onValueChange={value =>
+                                        setHolidayForm(prev => ({
+                                            ...prev,
+                                            countryCode: value,
+                                            countryName:
+                                                getCountryNameFromCode(value),
+                                        }))
+                                    }
+                                >
+                                    <SelectTrigger id="holiday-country">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="PH">
+                                            Philippines (PH)
+                                        </SelectItem>
+                                        <SelectItem value="AU">
+                                            Australia (AU)
+                                        </SelectItem>
+                                        <SelectItem value="US">
+                                            United States (US)
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div>
+                                <Label htmlFor="holiday-scope">Scope</Label>
+                                <Select
+                                    value={holidayForm.scope}
+                                    onValueChange={value =>
+                                        setHolidayForm(prev => ({
+                                            ...prev,
+                                            scope:
+                                                value === 'subdivision'
+                                                    ? 'subdivision'
+                                                    : 'national',
+                                        }))
+                                    }
+                                >
+                                    <SelectTrigger id="holiday-scope">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="national">
+                                            National
+                                        </SelectItem>
+                                        <SelectItem value="subdivision">
+                                            Region / State
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            {holidayForm.scope === 'subdivision' && (
+                                <>
+                                    <div>
+                                        <Label htmlFor="holiday-subdivision-code">
+                                            Subdivision Code
+                                        </Label>
+                                        <Input
+                                            id="holiday-subdivision-code"
+                                            value={holidayForm.subdivisionCode}
+                                            onChange={e =>
+                                                setHolidayForm(prev => ({
+                                                    ...prev,
+                                                    subdivisionCode:
+                                                        e.target.value
+                                                            .toUpperCase()
+                                                            .trim(),
+                                                }))
+                                            }
+                                            placeholder="ex: AU-NSW or US-CA"
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label htmlFor="holiday-subdivision-name">
+                                            Subdivision Name
+                                        </Label>
+                                        <Input
+                                            id="holiday-subdivision-name"
+                                            value={holidayForm.subdivisionName}
+                                            onChange={e =>
+                                                setHolidayForm(prev => ({
+                                                    ...prev,
+                                                    subdivisionName:
+                                                        e.target.value,
+                                                }))
+                                            }
+                                            placeholder="ex: New South Wales"
+                                        />
+                                    </div>
+                                </>
+                            )}
                             <div className="flex gap-2">
                                 <Button
                                     onClick={handleSaveHoliday}
@@ -1933,6 +2432,110 @@ export function CalendarPage({
                                     </SelectContent>
                                 </Select>
                             </div>
+                            <div>
+                                <Label htmlFor="bulk-holiday-country">
+                                    Country
+                                </Label>
+                                <Select
+                                    value={bulkHolidayForm.countryCode}
+                                    onValueChange={value =>
+                                        setBulkHolidayForm(prev => ({
+                                            ...prev,
+                                            countryCode: value,
+                                            countryName:
+                                                getCountryNameFromCode(value),
+                                        }))
+                                    }
+                                >
+                                    <SelectTrigger id="bulk-holiday-country">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="PH">
+                                            Philippines (PH)
+                                        </SelectItem>
+                                        <SelectItem value="AU">
+                                            Australia (AU)
+                                        </SelectItem>
+                                        <SelectItem value="US">
+                                            United States (US)
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div>
+                                <Label htmlFor="bulk-holiday-scope">
+                                    Scope
+                                </Label>
+                                <Select
+                                    value={bulkHolidayForm.scope}
+                                    onValueChange={value =>
+                                        setBulkHolidayForm(prev => ({
+                                            ...prev,
+                                            scope:
+                                                value === 'subdivision'
+                                                    ? 'subdivision'
+                                                    : 'national',
+                                        }))
+                                    }
+                                >
+                                    <SelectTrigger id="bulk-holiday-scope">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="national">
+                                            National
+                                        </SelectItem>
+                                        <SelectItem value="subdivision">
+                                            Region / State
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            {bulkHolidayForm.scope === 'subdivision' && (
+                                <>
+                                    <div>
+                                        <Label htmlFor="bulk-holiday-subdivision-code">
+                                            Subdivision Code
+                                        </Label>
+                                        <Input
+                                            id="bulk-holiday-subdivision-code"
+                                            value={
+                                                bulkHolidayForm.subdivisionCode
+                                            }
+                                            onChange={e =>
+                                                setBulkHolidayForm(prev => ({
+                                                    ...prev,
+                                                    subdivisionCode:
+                                                        e.target.value
+                                                            .toUpperCase()
+                                                            .trim(),
+                                                }))
+                                            }
+                                            placeholder="ex: AU-NSW or US-CA"
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label htmlFor="bulk-holiday-subdivision-name">
+                                            Subdivision Name
+                                        </Label>
+                                        <Input
+                                            id="bulk-holiday-subdivision-name"
+                                            value={
+                                                bulkHolidayForm.subdivisionName
+                                            }
+                                            onChange={e =>
+                                                setBulkHolidayForm(prev => ({
+                                                    ...prev,
+                                                    subdivisionName:
+                                                        e.target.value,
+                                                }))
+                                            }
+                                            placeholder="ex: New South Wales"
+                                        />
+                                    </div>
+                                </>
+                            )}
 
                             <div className="bg-muted/30 p-3 rounded-lg">
                                 <p className="text-sm font-medium mb-2">

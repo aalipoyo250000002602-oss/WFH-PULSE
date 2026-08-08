@@ -775,38 +775,38 @@ export function registerEmployeeCoreRoutes(app, deps) {
         }
     )
 
-        app.get(
-                '/hr/overtime-requests',
-                requireAuth,
-                requireRole('admin', 'hr_manager'),
-                async (req, res) => {
-                        const status =
-                                typeof req.query.status === 'string'
-                                        ? req.query.status.trim().toLowerCase()
-                                        : null
+    app.get(
+        '/hr/overtime-requests',
+        requireAuth,
+        requireRole('admin', 'hr_manager'),
+        async (req, res) => {
+            const status =
+                typeof req.query.status === 'string'
+                    ? req.query.status.trim().toLowerCase()
+                    : null
 
-                        if (status && !leaveRequestStatusOptions.has(status)) {
-                                return res.status(400).json({
-                                        error: 'Invalid status filter. Use pending, approved, denied, or cancelled.',
-                                })
-                        }
+            if (status && !leaveRequestStatusOptions.has(status)) {
+                return res.status(400).json({
+                    error: 'Invalid status filter. Use pending, approved, denied, or cancelled.',
+                })
+            }
 
-                        try {
-                                const rows = await withRlsContext(req.auth, async client => {
-                                        const params = []
-                                        const where = ["r.source_page = 'home-overtime'"]
+            try {
+                const rows = await withRlsContext(req.auth, async client => {
+                    const params = []
+                    const where = ["r.source_page = 'home-overtime'"]
 
-                                        if (status) {
-                                                params.push(status)
-                                                where.push(
-                                                        `r.status = $${params.length}::app.request_status`
-                                                )
-                                        }
+                    if (status) {
+                        params.push(status)
+                        where.push(
+                            `r.status = $${params.length}::app.request_status`
+                        )
+                    }
 
-                                        const filterSql = `WHERE ${where.join(' AND ')}`
+                    const filterSql = `WHERE ${where.join(' AND ')}`
 
-                                        const result = await client.query(
-                                                `
+                    const result = await client.query(
+                        `
                                                 SELECT
                                                     r.request_id,
                                                     r.employee_id,
@@ -860,18 +860,18 @@ export function registerEmployeeCoreRoutes(app, deps) {
                                                 ORDER BY r.submitted_at DESC, r.request_id DESC
                                                 LIMIT 500
                                                 `,
-                                                params
-                                        )
+                        params
+                    )
 
-                                        return result.rows
-                                })
+                    return result.rows
+                })
 
-                                return res.json({ requests: rows })
-                        } catch (error) {
-                                return res.status(400).json({ error: error.message })
-                        }
-                }
-        )
+                return res.json({ requests: rows })
+            } catch (error) {
+                return res.status(400).json({ error: error.message })
+            }
+        }
+    )
 
     app.post(
         '/hr/adjustment-requests/:requestId/approve',

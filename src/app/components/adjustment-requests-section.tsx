@@ -139,15 +139,20 @@ export function AdjustmentRequestsSection({
 
         setIsLoadingAdjustmentRequests(true)
         try {
-            const response = await fetch(`${requestEndpointBase}?sourcePage=all`, {
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                },
-            })
+            const response = await fetch(
+                `${requestEndpointBase}?sourcePage=all`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                    },
+                }
+            )
 
             const body = await response.json().catch(() => null)
             if (!response.ok) {
-                throw new Error(body?.error ?? `Failed to load ${requestLabel}s`)
+                throw new Error(
+                    body?.error ?? `Failed to load ${requestLabel}s`
+                )
             }
 
             const rows = Array.isArray(body?.requests)
@@ -254,7 +259,9 @@ export function AdjustmentRequestsSection({
 
             const body = await response.json().catch(() => null)
             if (!response.ok) {
-                throw new Error(body?.error ?? `Failed to approve ${requestLabel}`)
+                throw new Error(
+                    body?.error ?? `Failed to approve ${requestLabel}`
+                )
             }
 
             await loadAdjustmentRequests()
@@ -358,7 +365,9 @@ export function AdjustmentRequestsSection({
 
             const body = await response.json().catch(() => null)
             if (!response.ok) {
-                throw new Error(body?.error ?? `Failed to cancel ${requestLabel}`)
+                throw new Error(
+                    body?.error ?? `Failed to cancel ${requestLabel}`
+                )
             }
 
             await loadAdjustmentRequests()
