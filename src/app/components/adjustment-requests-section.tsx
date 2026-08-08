@@ -77,6 +77,7 @@ interface AdjustmentRequestApiRow {
 interface AdjustmentRequestsSectionProps {
     apiBaseUrl: string
     accessToken: string
+    requestKind?: 'adjustment' | 'overtime'
     onFilteredCountChange?: (count: number) => void
     filterStatus?: 'all' | 'pending' | 'approved' | 'denied' | 'cancelled'
     onFilterStatusChange?: (
@@ -87,6 +88,7 @@ interface AdjustmentRequestsSectionProps {
 export function AdjustmentRequestsSection({
     apiBaseUrl,
     accessToken,
+    requestKind = 'adjustment',
     onFilteredCountChange,
     filterStatus = 'pending',
     onFilterStatusChange,
@@ -110,6 +112,12 @@ export function AdjustmentRequestsSection({
     const [adjustmentDenyReason, setAdjustmentDenyReason] = useState('')
     const [adjustmentCancelReason, setAdjustmentCancelReason] = useState('')
     const [isSubmittingAction, setIsSubmittingAction] = useState(false)
+    const requestLabel =
+        requestKind === 'overtime' ? 'overtime request' : 'adjustment request'
+    const requestLabelTitle =
+        requestKind === 'overtime' ? 'Overtime Request' : 'Adjustment Request'
+    const requestEndpointBase = `${apiBaseUrl}/hr/${requestKind}-requests`
+    const requestActionEndpointBase = `${apiBaseUrl}/hr/adjustment-requests`
 
     const toSafeDate = (value: unknown, fallbackDate?: Date) => {
         if (typeof value !== 'string') {
@@ -131,20 +139,15 @@ export function AdjustmentRequestsSection({
 
         setIsLoadingAdjustmentRequests(true)
         try {
-            const response = await fetch(
-                `${apiBaseUrl}/hr/adjustment-requests?sourcePage=all`,
-                {
-                    headers: {
-                        Authorization: `Bearer ${accessToken}`,
-                    },
-                }
-            )
+            const response = await fetch(`${requestEndpointBase}?sourcePage=all`, {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                },
+            })
 
             const body = await response.json().catch(() => null)
             if (!response.ok) {
-                throw new Error(
-                    body?.error ?? 'Failed to load adjustment requests'
-                )
+                throw new Error(body?.error ?? `Failed to load ${requestLabel}s`)
             }
 
             const rows = Array.isArray(body?.requests)
@@ -195,13 +198,13 @@ export function AdjustmentRequestsSection({
             const message =
                 error instanceof Error
                     ? error.message
-                    : 'Failed to load adjustment requests'
+                    : `Failed to load ${requestLabel}s`
             toast.error(message)
             setAdjustmentRequests([])
         } finally {
             setIsLoadingAdjustmentRequests(false)
         }
-    }, [accessToken, apiBaseUrl])
+    }, [accessToken, requestEndpointBase, requestLabel])
 
     React.useEffect(() => {
         loadAdjustmentRequests()
@@ -240,7 +243,7 @@ export function AdjustmentRequestsSection({
         setIsSubmittingAction(true)
         try {
             const response = await fetch(
-                `${apiBaseUrl}/hr/adjustment-requests/${selectedAdjustmentRequest.id}/approve`,
+                `${requestActionEndpointBase}/${selectedAdjustmentRequest.id}/approve`,
                 {
                     method: 'POST',
                     headers: {
@@ -251,13 +254,11 @@ export function AdjustmentRequestsSection({
 
             const body = await response.json().catch(() => null)
             if (!response.ok) {
-                throw new Error(
-                    body?.error ?? 'Failed to approve adjustment request'
-                )
+                throw new Error(body?.error ?? `Failed to approve ${requestLabel}`)
             }
 
             await loadAdjustmentRequests()
-            toast.success('Adjustment request approved successfully')
+            toast.success(`${requestLabelTitle} approved successfully`)
             setShowAdjustmentApproveDialog(false)
             setShowAdjustmentDetailsDialog(false)
             setSelectedAdjustmentRequest(null)
@@ -265,7 +266,7 @@ export function AdjustmentRequestsSection({
             const message =
                 error instanceof Error
                     ? error.message
-                    : 'Failed to approve adjustment request'
+                    : `Failed to approve ${requestLabel}`
             if (isMissingAdjustmentRequestError(message)) {
                 await loadAdjustmentRequests()
                 setShowAdjustmentApproveDialog(false)
@@ -289,7 +290,7 @@ export function AdjustmentRequestsSection({
         setIsSubmittingAction(true)
         try {
             const response = await fetch(
-                `${apiBaseUrl}/hr/adjustment-requests/${selectedAdjustmentRequest.id}/deny`,
+                `${requestActionEndpointBase}/${selectedAdjustmentRequest.id}/deny`,
                 {
                     method: 'POST',
                     headers: {
@@ -304,13 +305,11 @@ export function AdjustmentRequestsSection({
 
             const body = await response.json().catch(() => null)
             if (!response.ok) {
-                throw new Error(
-                    body?.error ?? 'Failed to deny adjustment request'
-                )
+                throw new Error(body?.error ?? `Failed to deny ${requestLabel}`)
             }
 
             await loadAdjustmentRequests()
-            toast.success('Adjustment request denied')
+            toast.success(`${requestLabelTitle} denied`)
             setShowAdjustmentDenyDialog(false)
             setShowAdjustmentDetailsDialog(false)
             setSelectedAdjustmentRequest(null)
@@ -319,7 +318,7 @@ export function AdjustmentRequestsSection({
             const message =
                 error instanceof Error
                     ? error.message
-                    : 'Failed to deny adjustment request'
+                    : `Failed to deny ${requestLabel}`
             if (isMissingAdjustmentRequestError(message)) {
                 await loadAdjustmentRequests()
                 setShowAdjustmentDenyDialog(false)
@@ -344,7 +343,7 @@ export function AdjustmentRequestsSection({
         setIsSubmittingAction(true)
         try {
             const response = await fetch(
-                `${apiBaseUrl}/hr/adjustment-requests/${selectedAdjustmentRequest.id}/cancel`,
+                `${requestActionEndpointBase}/${selectedAdjustmentRequest.id}/cancel`,
                 {
                     method: 'POST',
                     headers: {
@@ -359,13 +358,11 @@ export function AdjustmentRequestsSection({
 
             const body = await response.json().catch(() => null)
             if (!response.ok) {
-                throw new Error(
-                    body?.error ?? 'Failed to cancel adjustment request'
-                )
+                throw new Error(body?.error ?? `Failed to cancel ${requestLabel}`)
             }
 
             await loadAdjustmentRequests()
-            toast.success('Adjustment request cancelled')
+            toast.success(`${requestLabelTitle} cancelled`)
             setShowAdjustmentCancelDialog(false)
             setShowAdjustmentDetailsDialog(false)
             setSelectedAdjustmentRequest(null)
@@ -374,7 +371,7 @@ export function AdjustmentRequestsSection({
             const message =
                 error instanceof Error
                     ? error.message
-                    : 'Failed to cancel adjustment request'
+                    : `Failed to cancel ${requestLabel}`
             if (isMissingAdjustmentRequestError(message)) {
                 await loadAdjustmentRequests()
                 setShowAdjustmentCancelDialog(false)
@@ -436,7 +433,7 @@ export function AdjustmentRequestsSection({
                 {isLoadingAdjustmentRequests ? (
                     <div className="text-center py-8 text-muted-foreground">
                         <Settings className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                        <p>Loading adjustment requests...</p>
+                        <p>{`Loading ${requestLabel}s...`}</p>
                     </div>
                 ) : filteredAdjustmentRequests.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
@@ -446,7 +443,7 @@ export function AdjustmentRequestsSection({
                             {adjustmentFilterStatus !== 'all'
                                 ? adjustmentFilterStatus
                                 : ''}{' '}
-                            adjustment requests found
+                            {requestLabel}s found
                         </p>
                     </div>
                 ) : (
@@ -495,7 +492,7 @@ export function AdjustmentRequestsSection({
                 <DialogContent className="max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle className="flex items-center justify-between">
-                            <span>Adjustment Request Details</span>
+                            <span>{requestLabelTitle} Details</span>
                             {selectedAdjustmentRequest && (
                                 <Badge
                                     className={`${getAdjustmentStatusBadge(selectedAdjustmentRequest.status)}`}
@@ -756,11 +753,10 @@ export function AdjustmentRequestsSection({
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle>
-                            Approve Adjustment Request?
+                            {`Approve ${requestLabelTitle}?`}
                         </AlertDialogTitle>
                         <AlertDialogDescription>
-                            Are you sure you want to approve this adjustment
-                            request?
+                            {`Are you sure you want to approve this ${requestLabel}?`}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -784,10 +780,9 @@ export function AdjustmentRequestsSection({
             >
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Deny Adjustment Request</DialogTitle>
+                        <DialogTitle>{`Deny ${requestLabelTitle}`}</DialogTitle>
                         <DialogDescription>
-                            Please provide a reason for denying this adjustment
-                            request.
+                            {`Please provide a reason for denying this ${requestLabel}.`}
                         </DialogDescription>
                     </DialogHeader>
                     <div>
@@ -834,11 +829,10 @@ export function AdjustmentRequestsSection({
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>
-                            Cancel Approved Adjustment Request
+                            {`Cancel Approved ${requestLabelTitle}`}
                         </DialogTitle>
                         <DialogDescription>
-                            Please provide a reason for cancelling this approved
-                            adjustment request.
+                            {`Please provide a reason for cancelling this approved ${requestLabel}.`}
                         </DialogDescription>
                     </DialogHeader>
                     <div>
@@ -872,7 +866,7 @@ export function AdjustmentRequestsSection({
                             disabled={isSubmittingAction}
                             onClick={handleCancelApprovedAdjustment}
                         >
-                            Cancel Adjustment Request
+                            {`Cancel ${requestLabelTitle}`}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

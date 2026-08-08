@@ -775,6 +775,104 @@ export function registerEmployeeCoreRoutes(app, deps) {
         }
     )
 
+        app.get(
+                '/hr/overtime-requests',
+                requireAuth,
+                requireRole('admin', 'hr_manager'),
+                async (req, res) => {
+                        const status =
+                                typeof req.query.status === 'string'
+                                        ? req.query.status.trim().toLowerCase()
+                                        : null
+
+                        if (status && !leaveRequestStatusOptions.has(status)) {
+                                return res.status(400).json({
+                                        error: 'Invalid status filter. Use pending, approved, denied, or cancelled.',
+                                })
+                        }
+
+                        try {
+                                const rows = await withRlsContext(req.auth, async client => {
+                                        const params = []
+                                        const where = ["r.source_page = 'home-overtime'"]
+
+                                        if (status) {
+                                                params.push(status)
+                                                where.push(
+                                                        `r.status = $${params.length}::app.request_status`
+                                                )
+                                        }
+
+                                        const filterSql = `WHERE ${where.join(' AND ')}`
+
+                                        const result = await client.query(
+                                                `
+                                                SELECT
+                                                    r.request_id,
+                                                    r.employee_id,
+                                                    r.employee_name,
+                                                    r.position,
+                                                    r.department,
+                                                    r.request_date::text AS request_date,
+                                                    r.shift_date_from::text AS shift_date_from,
+                                                    r.shift_date_to::text AS shift_date_to,
+                                                    r.clock_in_time,
+                                                    r.clock_out_time,
+                                                    r.reason,
+                                                    r.break_duration_minutes,
+                                                    r.total_work_duration_minutes,
+                                                    r.message,
+                                                    r.status,
+                                                    r.submitted_at,
+                                                    r.approved_by,
+                                                    r.approved_at,
+                                                    r.denied_reason,
+                                                    r.source_page,
+                                                    COALESCE(a.items, '[]'::jsonb) AS attachments,
+                                                    COALESCE(l.items, '[]'::jsonb) AS logs
+                                                FROM app.attendance_adjustment_requests r
+                                                LEFT JOIN LATERAL (
+                                                    SELECT jsonb_agg(
+                                                        jsonb_build_object(
+                                                            'attachmentId', att.attachment_id,
+                                                            'fileName', att.file_name
+                                                        )
+                                                        ORDER BY att.attachment_id
+                                                    ) AS items
+                                                    FROM app.adjustment_request_attachments att
+                                                    WHERE att.request_id = r.request_id
+                                                ) a ON TRUE
+                                                LEFT JOIN LATERAL (
+                                                    SELECT jsonb_agg(
+                                                        jsonb_build_object(
+                                                            'logId', lg.log_id,
+                                                            'status', lg.status,
+                                                            'loggedAt', lg.logged_at,
+                                                            'approvedBy', lg.approved_by,
+                                                            'reason', lg.reason
+                                                        )
+                                                        ORDER BY lg.logged_at ASC, lg.log_id ASC
+                                                    ) AS items
+                                                    FROM app.adjustment_request_logs lg
+                                                    WHERE lg.request_id = r.request_id
+                                                ) l ON TRUE
+                                                ${filterSql}
+                                                ORDER BY r.submitted_at DESC, r.request_id DESC
+                                                LIMIT 500
+                                                `,
+                                                params
+                                        )
+
+                                        return result.rows
+                                })
+
+                                return res.json({ requests: rows })
+                        } catch (error) {
+                                return res.status(400).json({ error: error.message })
+                        }
+                }
+        )
+
     app.post(
         '/hr/adjustment-requests/:requestId/approve',
         requireAuth,
