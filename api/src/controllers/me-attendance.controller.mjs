@@ -2925,8 +2925,21 @@ export function registerMeAttendanceRoutes(app, deps) {
                         THEN 'public'::app.holiday_type
                       ELSE 'personal'::app.holiday_type
                     END AS holiday_type
-                  FROM app.holidays h1
-                  WHERE h1.holiday_date = ar.attendance_date
+                                    FROM (
+                                        SELECT
+                                            h.name,
+                                            h.country_code,
+                                            h.holiday_type
+                                        FROM app.holidays h
+                                        WHERE h.holiday_date = ar.attendance_date
+                                        UNION ALL
+                                        SELECT
+                                            sh.name,
+                                            sh.country_code,
+                                            sh.holiday_type
+                                        FROM app.holiday_subdivision_holidays sh
+                                        WHERE sh.holiday_date = ar.attendance_date
+                                    ) h1
                 ) h ON TRUE
                 ORDER BY ar.attendance_date DESC
                 LIMIT 365
@@ -2942,10 +2955,37 @@ export function registerMeAttendanceRoutes(app, deps) {
                   h.holiday_date::text AS holiday_date,
                   h.holiday_type,
                   h.country_code,
-                  h.country_name
-                FROM app.holidays h
+                                    h.country_name,
+                                    h.subdivision_code,
+                                    h.subdivision_name,
+                                    h.scope
+                                FROM (
+                                    SELECT
+                                        h.holiday_id,
+                                        h.name,
+                                        h.holiday_date,
+                                        h.holiday_type,
+                                        h.country_code,
+                                        h.country_name,
+                                        NULL::text AS subdivision_code,
+                                        NULL::text AS subdivision_name,
+                                        'national'::text AS scope
+                                    FROM app.holidays h
+                                    UNION ALL
+                                    SELECT
+                                        sh.subdivision_holiday_id AS holiday_id,
+                                        sh.name,
+                                        sh.holiday_date,
+                                        sh.holiday_type,
+                                        sh.country_code,
+                                        sh.country_name,
+                                        sh.subdivision_code,
+                                        sh.subdivision_name,
+                                        'subdivision'::text AS scope
+                                    FROM app.holiday_subdivision_holidays sh
+                                ) h
                 ${holidaysFilterSql}
-                ORDER BY h.holiday_date ASC, h.country_code ASC
+                                ORDER BY h.holiday_date ASC, h.country_code ASC, h.subdivision_code ASC NULLS FIRST
                 LIMIT 365
                 `,
                         holidaysParams
@@ -2999,6 +3039,9 @@ export function registerMeAttendanceRoutes(app, deps) {
                     type: row.holiday_type,
                     countryCode: row.country_code,
                     countryName: row.country_name,
+                    subdivisionCode: row.subdivision_code,
+                    subdivisionName: row.subdivision_name,
+                    scope: row.scope,
                     daysUntil,
                 }
             })

@@ -16,6 +16,7 @@ interface AuthSession {
     accessToken: string
     refreshToken: string
     sessionId: string
+    role: 'admin' | 'hr_manager' | 'employee'
 }
 
 interface UserProfileState {
@@ -86,6 +87,9 @@ interface HolidayState {
     type: 'public' | 'personal'
     countryCode?: string
     countryName?: string
+    subdivisionCode?: string
+    subdivisionName?: string
+    scope?: 'national' | 'subdivision'
     daysUntil: number
 }
 
@@ -122,6 +126,7 @@ interface LoginResponsePayload {
     accessToken: string
     refreshToken: string
     sessionId: string
+    role?: 'admin' | 'hr_manager' | 'employee' | null
     user?: {
         fullName?: string | null
         email?: string | null
@@ -991,6 +996,16 @@ export default function App() {
                             countryName: holiday?.countryName
                                 ? String(holiday.countryName)
                                 : undefined,
+                            subdivisionCode: holiday?.subdivisionCode
+                                ? String(holiday.subdivisionCode)
+                                : undefined,
+                            subdivisionName: holiday?.subdivisionName
+                                ? String(holiday.subdivisionName)
+                                : undefined,
+                            scope:
+                                holiday?.scope === 'subdivision'
+                                    ? 'subdivision'
+                                    : 'national',
                             daysUntil:
                                 typeof holiday?.daysUntil === 'number'
                                     ? holiday.daysUntil
@@ -1468,6 +1483,10 @@ export default function App() {
             accessToken: payload.accessToken,
             refreshToken: payload.refreshToken,
             sessionId: payload.sessionId,
+            role:
+                payload.role === 'admin' || payload.role === 'hr_manager'
+                    ? payload.role
+                    : 'employee',
         })
 
         if (payload.user?.email) {
@@ -1824,41 +1843,121 @@ export default function App() {
         }
     }
 
-    const handleAddHoliday = (
+    const handleAddHoliday = async (
         holiday: Omit<HolidayState, 'id' | 'daysUntil'>
-    ) => {
-        const today = new Date()
-        const holidayDate = new Date(holiday.date)
-        const daysUntil = Math.ceil(
-            (holidayDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-        )
-
-        const newHoliday = {
-            ...holiday,
-            id: Date.now().toString(),
-            daysUntil,
+    ): Promise<boolean> => {
+        if (!authSession?.accessToken) {
+            toast.error('Session expired. Please log in again.')
+            return false
         }
 
-        setHolidays(prev => [...prev, newHoliday])
+        try {
+            const response = await fetch(`${apiBaseUrl}/settings/holidays`, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${authSession.accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    name: holiday.name,
+                    date: holiday.date,
+                    type: holiday.type,
+                    scope: holiday.scope ?? 'national',
+                    countryCode: holiday.countryCode ?? 'PH',
+                    countryName: holiday.countryName ?? 'Philippines',
+                    subdivisionCode: holiday.subdivisionCode ?? null,
+                    subdivisionName: holiday.subdivisionName ?? null,
+                }),
+            })
+
+            const payload = await response.json().catch(() => null)
+            if (!response.ok) {
+                toast.error(payload?.error ?? 'Unable to add holiday')
+                return false
+            }
+
+            await loadCalendarData(authSession.accessToken)
+            return true
+        } catch {
+            toast.error('Unable to reach the API server.')
+            return false
+        }
     }
 
-    const handleEditHoliday = (
+    const handleEditHoliday = async (
         id: string,
         holiday: Omit<HolidayState, 'id' | 'daysUntil'>
-    ) => {
-        const today = new Date()
-        const holidayDate = new Date(holiday.date)
-        const daysUntil = Math.ceil(
-            (holidayDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-        )
+    ): Promise<boolean> => {
+        if (!authSession?.accessToken) {
+            toast.error('Session expired. Please log in again.')
+            return false
+        }
 
-        setHolidays(prev =>
-            prev.map(h => (h.id === id ? { ...holiday, id, daysUntil } : h))
-        )
+        try {
+            const response = await fetch(
+                `${apiBaseUrl}/settings/holidays/${encodeURIComponent(id)}`,
+                {
+                    method: 'PUT',
+                    headers: {
+                        Authorization: `Bearer ${authSession.accessToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: holiday.name,
+                        date: holiday.date,
+                        type: holiday.type,
+                        scope: holiday.scope ?? 'national',
+                        countryCode: holiday.countryCode ?? 'PH',
+                        countryName: holiday.countryName ?? 'Philippines',
+                        subdivisionCode: holiday.subdivisionCode ?? null,
+                        subdivisionName: holiday.subdivisionName ?? null,
+                    }),
+                }
+            )
+
+            const payload = await response.json().catch(() => null)
+            if (!response.ok) {
+                toast.error(payload?.error ?? 'Unable to update holiday')
+                return false
+            }
+
+            await loadCalendarData(authSession.accessToken)
+            return true
+        } catch {
+            toast.error('Unable to reach the API server.')
+            return false
+        }
     }
 
-    const handleDeleteHoliday = (id: string) => {
-        setHolidays(prev => prev.filter(h => h.id !== id))
+    const handleDeleteHoliday = async (id: string): Promise<boolean> => {
+        if (!authSession?.accessToken) {
+            toast.error('Session expired. Please log in again.')
+            return false
+        }
+
+        try {
+            const response = await fetch(
+                `${apiBaseUrl}/settings/holidays/${encodeURIComponent(id)}`,
+                {
+                    method: 'DELETE',
+                    headers: {
+                        Authorization: `Bearer ${authSession.accessToken}`,
+                    },
+                }
+            )
+
+            const payload = await response.json().catch(() => null)
+            if (!response.ok) {
+                toast.error(payload?.error ?? 'Unable to delete holiday')
+                return false
+            }
+
+            await loadCalendarData(authSession.accessToken)
+            return true
+        } catch {
+            toast.error('Unable to reach the API server.')
+            return false
+        }
     }
 
     const formatWorkingHours = () => {
@@ -1932,6 +2031,7 @@ export default function App() {
                     <CalendarPage
                         apiBaseUrl={apiBaseUrl}
                         accessToken={authSession?.accessToken ?? ''}
+                        currentUserRole={authSession?.role ?? 'employee'}
                         attendanceData={Object.fromEntries(
                             Object.entries(attendanceData).filter(
                                 ([, status]) => status !== 'on-leave'

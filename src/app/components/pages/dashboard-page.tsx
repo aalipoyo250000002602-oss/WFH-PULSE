@@ -183,8 +183,7 @@ export function DashboardPage({
     const [isLeaveRequestsOpen, setIsLeaveRequestsOpen] = useState(false)
     const [isAdjustmentRequestsOpen, setIsAdjustmentRequestsOpen] =
         useState(false)
-    const [isOvertimeRequestsOpen, setIsOvertimeRequestsOpen] =
-        useState(false)
+    const [isOvertimeRequestsOpen, setIsOvertimeRequestsOpen] = useState(false)
 
     // Adjustment requests counter
     const [adjustmentRequestsCount, setAdjustmentRequestsCount] = useState(0)
@@ -2166,7 +2165,9 @@ export function DashboardPage({
                                 </span>
                                 <motion.div
                                     animate={{
-                                        rotate: isOvertimeRequestsOpen ? 180 : 0,
+                                        rotate: isOvertimeRequestsOpen
+                                            ? 180
+                                            : 0,
                                     }}
                                     transition={{
                                         duration: 0.3,
