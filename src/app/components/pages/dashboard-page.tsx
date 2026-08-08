@@ -60,7 +60,6 @@ import { Label } from '../ui/label'
 import { Textarea } from '../ui/textarea'
 import { format } from 'date-fns'
 import { AdjustmentRequestsSection } from '../adjustment-requests-section'
-import { getInitialAdjustmentRequests } from '../adjustment-requests-data'
 
 const ITEMS_PER_PAGE = 10
 
@@ -85,6 +84,33 @@ interface LeaveRequest {
     submittedDate: Date
     attachments: string[]
     logTrail: LogEntry[]
+}
+
+interface LeaveRequestApiLog {
+    status: 'pending' | 'approved' | 'denied' | 'cancelled'
+    loggedAt: string
+    approvedBy?: string | null
+    reason?: string | null
+}
+
+interface LeaveRequestApiAttachment {
+    fileName: string
+}
+
+interface LeaveRequestApiRow {
+    request_id: string
+    employee_id: string
+    employee_name: string
+    position: string
+    department: string
+    leave_type_name: string
+    start_date: string
+    end_date: string
+    message: string
+    status: 'pending' | 'approved' | 'denied' | 'cancelled'
+    submitted_at: string
+    attachments?: LeaveRequestApiAttachment[]
+    logs?: LeaveRequestApiLog[]
 }
 
 interface DashboardPageProps {
@@ -162,18 +188,79 @@ export function DashboardPage({
     const [adjustmentRequestsCount, setAdjustmentRequestsCount] = useState(0)
     const [adjustmentFilterStatus, setAdjustmentFilterStatus] = useState<
         'all' | 'pending' | 'approved' | 'denied' | 'cancelled'
-    >('pending')
+    >(() => {
+        const fallbackValue:
+            'all' | 'pending' | 'approved' | 'denied' | 'cancelled' = 'pending'
+        if (typeof window === 'undefined') {
+            return fallbackValue
+        }
 
-    // Calculate initial adjustment requests count
+        const saved = window.localStorage.getItem(
+            'wfh-pulse:dashboard:adjustment-filter-status'
+        )
+        if (
+            saved === 'all' ||
+            saved === 'pending' ||
+            saved === 'approved' ||
+            saved === 'denied' ||
+            saved === 'cancelled'
+        ) {
+            return saved
+        }
+
+        return fallbackValue
+    })
+
     useEffect(() => {
-        const allRequests = getInitialAdjustmentRequests()
-        const filteredCount = allRequests.filter(req =>
-            adjustmentFilterStatus === 'all'
-                ? true
-                : req.status === adjustmentFilterStatus
-        ).length
-        setAdjustmentRequestsCount(filteredCount)
+        if (typeof window === 'undefined') {
+            return
+        }
+
+        window.localStorage.setItem(
+            'wfh-pulse:dashboard:adjustment-filter-status',
+            adjustmentFilterStatus
+        )
     }, [adjustmentFilterStatus])
+
+    useEffect(() => {
+        const loadAdjustmentRequestCount = async () => {
+            if (!accessToken) {
+                setAdjustmentRequestsCount(0)
+                return
+            }
+
+            try {
+                const queryParams = new URLSearchParams({
+                    sourcePage: 'all',
+                })
+                if (adjustmentFilterStatus !== 'all') {
+                    queryParams.set('status', adjustmentFilterStatus)
+                }
+
+                const response = await fetch(
+                    `${apiBaseUrl}/hr/adjustment-requests?${queryParams.toString()}`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${accessToken}`,
+                        },
+                    }
+                )
+
+                if (!response.ok) {
+                    setAdjustmentRequestsCount(0)
+                    return
+                }
+
+                const body = await response.json().catch(() => null)
+                const rows = Array.isArray(body?.requests) ? body.requests : []
+                setAdjustmentRequestsCount(rows.length)
+            } catch {
+                setAdjustmentRequestsCount(0)
+            }
+        }
+
+        void loadAdjustmentRequestCount()
+    }, [accessToken, adjustmentFilterStatus, apiBaseUrl])
 
     // Convert logo to base64 for PDF embedding
     useEffect(() => {
@@ -698,7 +785,28 @@ export function DashboardPage({
 
     const [leaveFilterStatus, setLeaveFilterStatus] = useState<
         'all' | 'pending' | 'approved' | 'denied' | 'cancelled'
-    >('pending')
+    >(() => {
+        const fallbackValue:
+            'all' | 'pending' | 'approved' | 'denied' | 'cancelled' = 'pending'
+        if (typeof window === 'undefined') {
+            return fallbackValue
+        }
+
+        const saved = window.localStorage.getItem(
+            'wfh-pulse:dashboard:leave-filter-status'
+        )
+        if (
+            saved === 'all' ||
+            saved === 'pending' ||
+            saved === 'approved' ||
+            saved === 'denied' ||
+            saved === 'cancelled'
+        ) {
+            return saved
+        }
+
+        return fallbackValue
+    })
     const [selectedLeaveRequest, setSelectedLeaveRequest] =
         useState<LeaveRequest | null>(null)
     const [showLeaveDetailsDialog, setShowLeaveDetailsDialog] = useState(false)
@@ -709,6 +817,7 @@ export function DashboardPage({
     const [denyReason, setDenyReason] = useState('')
     const [cancelReason, setCancelReason] = useState('')
     const [cancelAttachments, setCancelAttachments] = useState<string[]>([])
+    const [isLeaveRequestsLoading, setIsLeaveRequestsLoading] = useState(false)
 
     // Filter employees
     const filteredEmployees = employeesWithSyncedMeta.filter(emp =>
@@ -987,6 +1096,122 @@ export function DashboardPage({
     }
 
     // Leave request handlers
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            return
+        }
+
+        window.localStorage.setItem(
+            'wfh-pulse:dashboard:leave-filter-status',
+            leaveFilterStatus
+        )
+    }, [leaveFilterStatus])
+
+    useEffect(() => {
+        const toSafeDate = (value: unknown, fallbackDate?: Date) => {
+            if (typeof value !== 'string') {
+                return fallbackDate ?? new Date()
+            }
+
+            const parsed = new Date(value)
+            if (Number.isNaN(parsed.getTime())) {
+                return fallbackDate ?? new Date()
+            }
+
+            return parsed
+        }
+
+        const isMissingLeaveRequestError = (message: string) =>
+            /no existing request|request not found|leave request not found|not found/i.test(
+                message
+            )
+
+        const loadLeaveRequests = async () => {
+            if (!accessToken) {
+                return
+            }
+
+            setIsLeaveRequestsLoading(true)
+
+            try {
+                const response = await fetch(
+                    `${apiBaseUrl}/hr/leave-requests?sourcePage=dashboard`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${accessToken}`,
+                        },
+                    }
+                )
+
+                const body = await response.json().catch(() => null)
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        setLeaveRequests([])
+                        return
+                    }
+
+                    throw new Error(
+                        body?.error ?? 'Failed to load leave requests'
+                    )
+                }
+
+                const rows = Array.isArray(body?.requests)
+                    ? (body.requests as LeaveRequestApiRow[])
+                    : []
+
+                const mapped = rows.map(row => {
+                    const submittedDate = toSafeDate(row.submitted_at)
+                    const startDate = toSafeDate(row.start_date, submittedDate)
+                    const endDate = toSafeDate(row.end_date, startDate)
+
+                    return {
+                        id: String(row.request_id),
+                        employeeId: String(row.employee_id ?? ''),
+                        employeeName: String(row.employee_name ?? ''),
+                        position: String(row.position ?? ''),
+                        department: String(row.department ?? ''),
+                        leaveType: String(row.leave_type_name ?? ''),
+                        startDate,
+                        endDate,
+                        message: String(row.message ?? ''),
+                        status: row.status,
+                        submittedDate,
+                        attachments: Array.isArray(row.attachments)
+                            ? row.attachments
+                                  .map(item => String(item?.fileName ?? ''))
+                                  .filter(Boolean)
+                            : [],
+                        logTrail: Array.isArray(row.logs)
+                            ? row.logs.map(log => ({
+                                  status: log.status,
+                                  date: toSafeDate(log.loggedAt, submittedDate),
+                                  approvedBy: log.approvedBy ?? undefined,
+                                  reason: log.reason ?? undefined,
+                              }))
+                            : [],
+                    } as LeaveRequest
+                })
+
+                setLeaveRequests(mapped)
+            } catch (error) {
+                const message =
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to load leave requests'
+                if (isMissingLeaveRequestError(message)) {
+                    setLeaveRequests([])
+                    return
+                }
+                toast.error(message)
+                setLeaveRequests([])
+            } finally {
+                setIsLeaveRequestsLoading(false)
+            }
+        }
+
+        loadLeaveRequests()
+    }, [accessToken, apiBaseUrl])
+
     const filteredLeaveRequests = leaveRequests
         .filter(req =>
             leaveFilterStatus === 'all'
@@ -1635,7 +1860,13 @@ export function DashboardPage({
 
                                     {/* Leave Requests List */}
                                     <div className="space-y-2">
-                                        {filteredLeaveRequests.length === 0 ? (
+                                        {isLeaveRequestsLoading ? (
+                                            <div className="text-center py-8 text-muted-foreground">
+                                                <CalendarIcon className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                                                <p>Loading leave requests...</p>
+                                            </div>
+                                        ) : filteredLeaveRequests.length ===
+                                          0 ? (
                                             <div className="text-center py-8 text-muted-foreground">
                                                 <CalendarIcon className="h-12 w-12 mx-auto mb-2 opacity-20" />
                                                 <p>
@@ -1807,6 +2038,8 @@ export function DashboardPage({
                             >
                                 <CardContent className="space-y-3 pt-0">
                                     <AdjustmentRequestsSection
+                                        apiBaseUrl={apiBaseUrl}
+                                        accessToken={accessToken}
                                         onFilteredCountChange={
                                             setAdjustmentRequestsCount
                                         }
@@ -2001,8 +2234,7 @@ export function DashboardPage({
                                                         {log.approvedBy && (
                                                             <p className="text-xs text-muted-foreground mt-1">
                                                                 By:{' '}
-                                                                {log.approvedBy}{' '}
-                                                                (HR)
+                                                                {log.approvedBy}
                                                             </p>
                                                         )}
                                                         {log.reason && (
@@ -2030,37 +2262,6 @@ export function DashboardPage({
                             >
                                 Close
                             </Button>
-                            {selectedLeaveRequest?.status === 'pending' && (
-                                <>
-                                    <Button
-                                        variant="destructive"
-                                        onClick={() => setShowDenyDialog(true)}
-                                    >
-                                        <XCircle className="h-4 w-4 mr-2" />
-                                        Deny
-                                    </Button>
-                                    <Button
-                                        className="bg-vibrant-green hover:bg-vibrant-green/90 text-vibrant-green-foreground"
-                                        onClick={() =>
-                                            setShowApproveDialog(true)
-                                        }
-                                    >
-                                        <CheckCircle className="h-4 w-4 mr-2" />
-                                        Approve
-                                    </Button>
-                                </>
-                            )}
-                            {selectedLeaveRequest?.status === 'approved' && (
-                                <Button
-                                    variant="destructive"
-                                    onClick={() =>
-                                        setShowCancelApprovedDialog(true)
-                                    }
-                                >
-                                    <AlertCircle className="h-4 w-4 mr-2" />
-                                    Cancel Request
-                                </Button>
-                            )}
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>

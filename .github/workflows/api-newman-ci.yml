@@ -1,108 +1,125 @@
 name: API Newman CI
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'api/**'
-      - 'database/**'
-      - '.github/workflows/api-newman-ci.yml'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-  pull_request:
-    paths:
-      - 'api/**'
-      - 'database/**'
-      - '.github/workflows/api-newman-ci.yml'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-  workflow_dispatch:
+    push:
+        branches:
+            - main
+        paths:
+            - 'api/**'
+            - 'database/**'
+            - '.github/workflows/api-newman-ci.yml'
+            - 'package.json'
+            - 'pnpm-lock.yaml'
+    pull_request:
+        paths:
+            - 'api/**'
+            - 'database/**'
+            - '.github/workflows/api-newman-ci.yml'
+            - 'package.json'
+            - 'pnpm-lock.yaml'
+    workflow_dispatch:
+        inputs:
+            run_strict_adjustment_smoke:
+                description: 'Run strict adjustment smoke (fails when sample states are missing)'
+                required: false
+                default: false
+                type: boolean
 
 jobs:
-  api-tests:
-    runs-on: ubuntu-latest
+    api-tests:
+        runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_DB: wfh_pulse
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d wfh_pulse"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
+        services:
+            postgres:
+                image: postgres:18
+                env:
+                    POSTGRES_DB: wfh_pulse
+                    POSTGRES_USER: postgres
+                    POSTGRES_PASSWORD: postgres
+                ports:
+                    - 5432:5432
+                options: >-
+                    --health-cmd "pg_isready -U postgres -d wfh_pulse"
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 10
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
+            - name: Setup Node
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 22
 
-      - name: Enable Corepack
-        run: corepack enable
+            - name: Enable Corepack
+              run: corepack enable
 
-      - name: Install dependencies
-        run: corepack pnpm install
+            - name: Install dependencies
+              run: corepack pnpm install
 
-      - name: Prepare local env files
-        run: |
-          cat > database/.env.local.postgres <<'EOF'
-          PGHOST=127.0.0.1
-          PGPORT=5432
-          PGDATABASE=wfh_pulse
-          PGUSER=postgres
-          PGPASSWORD=postgres
-          PGSSL=false
-          EOF
+            - name: Prepare local env files
+              run: |
+                  cat > database/.env.local.postgres <<'EOF'
+                  PGHOST=127.0.0.1
+                  PGPORT=5432
+                  PGDATABASE=wfh_pulse
+                  PGUSER=postgres
+                  PGPASSWORD=postgres
+                  PGSSL=false
+                  EOF
 
-          cat > api/.env.local <<'EOF'
-          API_PORT=8787
-          API_JWT_SECRET=ci-secret-change-me
-          EOF
+                  cat > api/.env.local <<'EOF'
+                  API_PORT=8787
+                  API_JWT_SECRET=ci-secret-change-me
+                  EOF
 
-      - name: Run migrations
-        run: corepack pnpm run db:migrate
+            - name: Run migrations
+              run: corepack pnpm run db:migrate
 
-      - name: Start API
-        run: |
-          corepack pnpm run api:dev > /tmp/wfh-api.log 2>&1 &
-          echo $! > /tmp/wfh-api.pid
+            - name: Start API
+              run: |
+                  corepack pnpm run api:dev > /tmp/wfh-api.log 2>&1 &
+                  echo $! > /tmp/wfh-api.pid
 
-      - name: Wait for API health
-        run: |
-          for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:8787/health > /dev/null; then
-              echo "API is healthy."
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "API did not become healthy in time."
-          exit 1
+            - name: Wait for API health
+              run: |
+                  for i in {1..30}; do
+                    if curl -fsS http://127.0.0.1:8787/health > /dev/null; then
+                      echo "API is healthy."
+                      exit 0
+                    fi
+                    sleep 2
+                  done
+                  echo "API did not become healthy in time."
+                  exit 1
 
-      - name: Run Newman collection
-        run: corepack pnpm run api:newman:ci
+            - name: Run Newman collection
+              run: corepack pnpm run api:newman:ci
 
-      - name: Print API logs
-        if: always()
-        run: |
-          echo "--- API LOG START ---"
-          cat /tmp/wfh-api.log || true
-          echo "--- API LOG END ---"
+            - name: Run adjustment action smoke (standard)
+              if: ${{ github.event_name != 'workflow_dispatch' || !inputs.run_strict_adjustment_smoke }}
+              env:
+                  API_BASE_URL: http://127.0.0.1:8787
+              run: corepack pnpm run api:smoke:adjustments
 
-      - name: Stop API
-        if: always()
-        run: |
-          if [ -f /tmp/wfh-api.pid ]; then
-            kill "$(cat /tmp/wfh-api.pid)" || true
-          fi
+            - name: Run adjustment action smoke (strict)
+              if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_strict_adjustment_smoke }}
+              env:
+                  API_BASE_URL: http://127.0.0.1:8787
+              run: corepack pnpm run api:smoke:adjustments:strict
 
+            - name: Print API logs
+              if: always()
+              run: |
+                  echo "--- API LOG START ---"
+                  cat /tmp/wfh-api.log || true
+                  echo "--- API LOG END ---"
+
+            - name: Stop API
+              if: always()
+              run: |
+                  if [ -f /tmp/wfh-api.pid ]; then
+                    kill "$(cat /tmp/wfh-api.pid)" || true
+                  fi
