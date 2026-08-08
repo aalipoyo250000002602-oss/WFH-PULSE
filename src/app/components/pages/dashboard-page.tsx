@@ -183,6 +183,8 @@ export function DashboardPage({
     const [isLeaveRequestsOpen, setIsLeaveRequestsOpen] = useState(false)
     const [isAdjustmentRequestsOpen, setIsAdjustmentRequestsOpen] =
         useState(false)
+    const [isOvertimeRequestsOpen, setIsOvertimeRequestsOpen] =
+        useState(false)
 
     // Adjustment requests counter
     const [adjustmentRequestsCount, setAdjustmentRequestsCount] = useState(0)
@@ -211,6 +213,32 @@ export function DashboardPage({
         return fallbackValue
     })
 
+    const [overtimeRequestsCount, setOvertimeRequestsCount] = useState(0)
+    const [overtimeFilterStatus, setOvertimeFilterStatus] = useState<
+        'all' | 'pending' | 'approved' | 'denied' | 'cancelled'
+    >(() => {
+        const fallbackValue:
+            'all' | 'pending' | 'approved' | 'denied' | 'cancelled' = 'pending'
+        if (typeof window === 'undefined') {
+            return fallbackValue
+        }
+
+        const saved = window.localStorage.getItem(
+            'wfh-pulse:dashboard:overtime-filter-status'
+        )
+        if (
+            saved === 'all' ||
+            saved === 'pending' ||
+            saved === 'approved' ||
+            saved === 'denied' ||
+            saved === 'cancelled'
+        ) {
+            return saved
+        }
+
+        return fallbackValue
+    })
+
     useEffect(() => {
         if (typeof window === 'undefined') {
             return
@@ -221,6 +249,17 @@ export function DashboardPage({
             adjustmentFilterStatus
         )
     }, [adjustmentFilterStatus])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            return
+        }
+
+        window.localStorage.setItem(
+            'wfh-pulse:dashboard:overtime-filter-status',
+            overtimeFilterStatus
+        )
+    }, [overtimeFilterStatus])
 
     useEffect(() => {
         const loadAdjustmentRequestCount = async () => {
@@ -261,6 +300,44 @@ export function DashboardPage({
 
         void loadAdjustmentRequestCount()
     }, [accessToken, adjustmentFilterStatus, apiBaseUrl])
+
+    useEffect(() => {
+        const loadOvertimeRequestCount = async () => {
+            if (!accessToken) {
+                setOvertimeRequestsCount(0)
+                return
+            }
+
+            try {
+                const queryParams = new URLSearchParams()
+                if (overtimeFilterStatus !== 'all') {
+                    queryParams.set('status', overtimeFilterStatus)
+                }
+
+                const response = await fetch(
+                    `${apiBaseUrl}/hr/overtime-requests?${queryParams.toString()}`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${accessToken}`,
+                        },
+                    }
+                )
+
+                if (!response.ok) {
+                    setOvertimeRequestsCount(0)
+                    return
+                }
+
+                const body = await response.json().catch(() => null)
+                const rows = Array.isArray(body?.requests) ? body.requests : []
+                setOvertimeRequestsCount(rows.length)
+            } catch {
+                setOvertimeRequestsCount(0)
+            }
+        }
+
+        void loadOvertimeRequestCount()
+    }, [accessToken, overtimeFilterStatus, apiBaseUrl])
 
     // Convert logo to base64 for PDF embedding
     useEffect(() => {
@@ -2046,6 +2123,119 @@ export function DashboardPage({
                                         filterStatus={adjustmentFilterStatus}
                                         onFilterStatusChange={
                                             setAdjustmentFilterStatus
+                                        }
+                                    />
+                                </CardContent>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </Card>
+
+                {/* Overtime Requests Section - Collapsible */}
+                <Card>
+                    <CardHeader
+                        className="pb-3 cursor-pointer hover:bg-accent/50 transition-colors"
+                        onClick={() =>
+                            setIsOvertimeRequestsOpen(!isOvertimeRequestsOpen)
+                        }
+                    >
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="flex items-center gap-2">
+                                <Clock className="h-5 w-5 text-vibrant-blue" />
+                                Overtime Requests
+                            </CardTitle>
+                            <div className="flex items-center gap-2">
+                                <span
+                                    className={`text-sm font-medium ${
+                                        overtimeFilterStatus === 'pending'
+                                            ? 'text-vibrant-orange'
+                                            : overtimeFilterStatus ===
+                                                'approved'
+                                              ? 'text-vibrant-green'
+                                              : overtimeFilterStatus ===
+                                                  'denied'
+                                                ? 'text-red-600'
+                                                : overtimeFilterStatus ===
+                                                    'cancelled'
+                                                  ? 'text-muted-foreground'
+                                                  : 'text-muted-foreground'
+                                    }`}
+                                >
+                                    {overtimeRequestsCount} Request
+                                    {overtimeRequestsCount !== 1 ? 's' : ''}
+                                </span>
+                                <motion.div
+                                    animate={{
+                                        rotate: isOvertimeRequestsOpen ? 180 : 0,
+                                    }}
+                                    transition={{
+                                        duration: 0.3,
+                                        ease: 'easeInOut',
+                                    }}
+                                >
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0"
+                                        onClick={e => {
+                                            e.stopPropagation()
+                                            setIsOvertimeRequestsOpen(
+                                                !isOvertimeRequestsOpen
+                                            )
+                                        }}
+                                    >
+                                        <ChevronDown className="h-4 w-4" />
+                                    </Button>
+                                </motion.div>
+                            </div>
+                        </div>
+                    </CardHeader>
+                    <AnimatePresence initial={false}>
+                        {isOvertimeRequestsOpen && (
+                            <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{
+                                    height: 'auto',
+                                    opacity: 1,
+                                    transition: {
+                                        height: {
+                                            duration: 0.4,
+                                            ease: [0.4, 0, 0.2, 1],
+                                        },
+                                        opacity: {
+                                            duration: 0.3,
+                                            delay: 0.1,
+                                            ease: 'easeOut',
+                                        },
+                                    },
+                                }}
+                                exit={{
+                                    height: 0,
+                                    opacity: 0,
+                                    transition: {
+                                        height: {
+                                            duration: 0.3,
+                                            ease: [0.4, 0, 0.2, 1],
+                                        },
+                                        opacity: {
+                                            duration: 0.2,
+                                            ease: 'easeIn',
+                                        },
+                                    },
+                                }}
+                                style={{ overflow: 'hidden' }}
+                            >
+                                <CardContent className="space-y-3 pt-0">
+                                    <AdjustmentRequestsSection
+                                        apiBaseUrl={apiBaseUrl}
+                                        accessToken={accessToken}
+                                        requestKind="overtime"
+                                        onFilteredCountChange={
+                                            setOvertimeRequestsCount
+                                        }
+                                        filterStatus={overtimeFilterStatus}
+                                        onFilterStatusChange={
+                                            setOvertimeFilterStatus
                                         }
                                     />
                                 </CardContent>
