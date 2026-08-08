@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from 'react'
+﻿import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
@@ -26,7 +26,6 @@ import {
     CheckCircle,
     XCircle,
     AlertCircle,
-    Paperclip,
     Download,
     UserCheck,
 } from 'lucide-react'
@@ -565,299 +564,8 @@ export function DashboardPage({
         }
     }
 
-    // Leave requests state
-    const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([
-        // Pending requests (5)
-        {
-            id: 'lr-001',
-            employeeId: 'emp-1',
-            employeeName: 'Sarah Johnson',
-            position: 'Marketing Manager',
-            department: 'Marketing',
-            leaveType: 'Vacation Leave',
-            startDate: new Date(2025, 9, 20),
-            endDate: new Date(2025, 9, 24),
-            message: 'Family vacation to Hawaii',
-            status: 'pending',
-            submittedDate: new Date(2025, 9, 15),
-            attachments: ['flight-tickets.pdf'],
-            logTrail: [{ status: 'pending', date: new Date(2025, 9, 15) }],
-        },
-        {
-            id: 'lr-002',
-            employeeId: 'emp-5',
-            employeeName: 'Michael Chen',
-            position: 'Financial Analyst',
-            department: 'Finance',
-            leaveType: 'Sick Leave',
-            startDate: new Date(2025, 9, 18),
-            endDate: new Date(2025, 9, 18),
-            message: 'Medical appointment for regular checkup',
-            status: 'pending',
-            submittedDate: new Date(2025, 9, 16),
-            attachments: ['medical-certificate.pdf'],
-            logTrail: [{ status: 'pending', date: new Date(2025, 9, 16) }],
-        },
-        {
-            id: 'lr-003',
-            employeeId: 'emp-8',
-            employeeName: 'Emily Rodriguez',
-            position: 'UI/UX Designer',
-            department: 'Design',
-            leaveType: 'Emergency Leave',
-            startDate: new Date(2025, 9, 19),
-            endDate: new Date(2025, 9, 21),
-            message: 'Family emergency - urgent matter',
-            status: 'pending',
-            submittedDate: new Date(2025, 9, 17),
-            attachments: [],
-            logTrail: [{ status: 'pending', date: new Date(2025, 9, 17) }],
-        },
-        {
-            id: 'lr-004',
-            employeeId: 'emp-12',
-            employeeName: 'David Kim',
-            position: 'Sales Representative',
-            department: 'Sales',
-            leaveType: 'Paternity Leave',
-            startDate: new Date(2025, 9, 25),
-            endDate: new Date(2025, 9, 30),
-            message: 'Welcoming our new baby',
-            status: 'pending',
-            submittedDate: new Date(2025, 9, 14),
-            attachments: ['birth-certificate.pdf'],
-            logTrail: [{ status: 'pending', date: new Date(2025, 9, 14) }],
-        },
-        {
-            id: 'lr-005',
-            employeeId: 'emp-15',
-            employeeName: 'Jessica Taylor',
-            position: 'HR Specialist',
-            department: 'HR',
-            leaveType: 'Compensatory Time Off',
-            startDate: new Date(2025, 9, 22),
-            endDate: new Date(2025, 9, 23),
-            message: 'Overtime compensation for weekend work',
-            status: 'pending',
-            submittedDate: new Date(2025, 9, 16),
-            attachments: ['overtime-log.pdf'],
-            logTrail: [{ status: 'pending', date: new Date(2025, 9, 16) }],
-        },
-        // Approved requests (3)
-        {
-            id: 'lr-006',
-            employeeId: 'emp-3',
-            employeeName: 'James Wilson',
-            position: 'Senior Developer',
-            department: 'Engineering',
-            leaveType: 'Vacation Leave',
-            startDate: new Date(2025, 8, 25),
-            endDate: new Date(2025, 8, 29),
-            message: 'Annual family reunion',
-            status: 'approved',
-            submittedDate: new Date(2025, 8, 10),
-            attachments: ['itinerary.pdf'],
-            logTrail: [
-                { status: 'pending', date: new Date(2025, 8, 10) },
-                {
-                    status: 'approved',
-                    date: new Date(2025, 8, 12),
-                    approvedBy: 'Sarah Martinez',
-                },
-            ],
-        },
-        {
-            id: 'lr-007',
-            employeeId: 'emp-7',
-            employeeName: 'Lisa Anderson',
-            position: 'Support Agent',
-            department: 'Customer Support',
-            leaveType: 'Sick Leave',
-            startDate: new Date(2025, 9, 10),
-            endDate: new Date(2025, 9, 12),
-            message: 'Recovering from flu',
-            status: 'approved',
-            submittedDate: new Date(2025, 9, 9),
-            attachments: ['medical-cert.pdf'],
-            logTrail: [
-                { status: 'pending', date: new Date(2025, 9, 9) },
-                {
-                    status: 'approved',
-                    date: new Date(2025, 9, 9),
-                    approvedBy: 'Michael Chen',
-                },
-            ],
-        },
-        {
-            id: 'lr-008',
-            employeeId: 'emp-10',
-            employeeName: 'Robert Martinez',
-            position: 'Product Manager',
-            department: 'Product',
-            leaveType: 'Bereavement Leave',
-            startDate: new Date(2025, 8, 20),
-            endDate: new Date(2025, 8, 22),
-            message: 'Funeral arrangements for family member',
-            status: 'approved',
-            submittedDate: new Date(2025, 8, 18),
-            attachments: ['death-certificate.pdf'],
-            logTrail: [
-                { status: 'pending', date: new Date(2025, 8, 18) },
-                {
-                    status: 'approved',
-                    date: new Date(2025, 8, 18),
-                    approvedBy: 'Sarah Martinez',
-                },
-            ],
-        },
-        // Denied requests (3)
-        {
-            id: 'lr-009',
-            employeeId: 'emp-4',
-            employeeName: 'Jennifer Lee',
-            position: 'Marketing Manager',
-            department: 'Marketing',
-            leaveType: 'Vacation Leave',
-            startDate: new Date(2025, 9, 20),
-            endDate: new Date(2025, 9, 27),
-            message: 'Extended vacation trip',
-            status: 'denied',
-            submittedDate: new Date(2025, 9, 5),
-            attachments: [],
-            logTrail: [
-                { status: 'pending', date: new Date(2025, 9, 5) },
-                {
-                    status: 'denied',
-                    date: new Date(2025, 9, 7),
-                    approvedBy: 'Michael Chen',
-                    reason: 'Insufficient leave credits. Only 5 days available, 8 days requested.',
-                },
-            ],
-        },
-        {
-            id: 'lr-010',
-            employeeId: 'emp-9',
-            employeeName: 'Daniel Thompson',
-            position: 'Product Manager',
-            department: 'Product',
-            leaveType: 'Emergency Leave',
-            startDate: new Date(2025, 8, 15),
-            endDate: new Date(2025, 8, 18),
-            message: 'Personal matter',
-            status: 'denied',
-            submittedDate: new Date(2025, 8, 14),
-            attachments: [],
-            logTrail: [
-                { status: 'pending', date: new Date(2025, 8, 14) },
-                {
-                    status: 'denied',
-                    date: new Date(2025, 8, 14),
-                    approvedBy: 'Sarah Martinez',
-                    reason: 'Emergency leave requires supporting documentation. Please provide necessary documents.',
-                },
-            ],
-        },
-        {
-            id: 'lr-011',
-            employeeId: 'emp-13',
-            employeeName: 'Amanda White',
-            position: 'HR Specialist',
-            department: 'HR',
-            leaveType: 'Compensatory Time Off',
-            startDate: new Date(2025, 9, 8),
-            endDate: new Date(2025, 9, 9),
-            message: 'Overtime compensation request',
-            status: 'denied',
-            submittedDate: new Date(2025, 9, 1),
-            attachments: [],
-            logTrail: [
-                { status: 'pending', date: new Date(2025, 9, 1) },
-                {
-                    status: 'denied',
-                    date: new Date(2025, 9, 2),
-                    approvedBy: 'Michael Chen',
-                    reason: 'No overtime records found for the requested period. Please verify with your supervisor.',
-                },
-            ],
-        },
-        // Cancelled requests (3)
-        {
-            id: 'lr-012',
-            employeeId: 'emp-2',
-            employeeName: 'John Smith',
-            position: 'Senior Developer',
-            department: 'Engineering',
-            leaveType: 'Vacation Leave',
-            startDate: new Date(2025, 9, 15),
-            endDate: new Date(2025, 9, 17),
-            message: 'Short vacation trip',
-            status: 'cancelled',
-            submittedDate: new Date(2025, 8, 25),
-            attachments: [],
-            logTrail: [
-                { status: 'pending', date: new Date(2025, 8, 25) },
-                {
-                    status: 'approved',
-                    date: new Date(2025, 8, 26),
-                    approvedBy: 'Sarah Martinez',
-                },
-                {
-                    status: 'cancelled',
-                    date: new Date(2025, 9, 10),
-                    reason: 'Plans changed - unable to proceed with leave',
-                },
-            ],
-        },
-        {
-            id: 'lr-013',
-            employeeId: 'emp-6',
-            employeeName: 'Karen Brown',
-            position: 'Operations Coordinator',
-            department: 'Operations',
-            leaveType: 'Sick Leave',
-            startDate: new Date(2025, 8, 30),
-            endDate: new Date(2025, 8, 30),
-            message: 'Medical appointment',
-            status: 'cancelled',
-            submittedDate: new Date(2025, 8, 20),
-            attachments: [],
-            logTrail: [
-                { status: 'pending', date: new Date(2025, 8, 20) },
-                {
-                    status: 'cancelled',
-                    date: new Date(2025, 8, 28),
-                    reason: 'Appointment rescheduled to a later date',
-                },
-            ],
-        },
-        {
-            id: 'lr-014',
-            employeeId: 'emp-11',
-            employeeName: 'Christopher Davis',
-            position: 'Sales Representative',
-            department: 'Sales',
-            leaveType: 'Emergency Leave',
-            startDate: new Date(2025, 8, 12),
-            endDate: new Date(2025, 8, 13),
-            message: 'Urgent personal matter',
-            status: 'cancelled',
-            submittedDate: new Date(2025, 8, 8),
-            attachments: [],
-            logTrail: [
-                { status: 'pending', date: new Date(2025, 8, 8) },
-                {
-                    status: 'approved',
-                    date: new Date(2025, 8, 9),
-                    approvedBy: 'Michael Chen',
-                },
-                {
-                    status: 'cancelled',
-                    date: new Date(2025, 8, 11),
-                    reason: 'Matter resolved - no longer need leave',
-                },
-            ],
-        },
-    ])
+    // Leave requests state (loaded from API)
+    const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([])
 
     const [leaveFilterStatus, setLeaveFilterStatus] = useState<
         'all' | 'pending' | 'approved' | 'denied' | 'cancelled'
@@ -892,8 +600,106 @@ export function DashboardPage({
         useState(false)
     const [denyReason, setDenyReason] = useState('')
     const [cancelReason, setCancelReason] = useState('')
-    const [cancelAttachments, setCancelAttachments] = useState<string[]>([])
     const [isLeaveRequestsLoading, setIsLeaveRequestsLoading] = useState(false)
+
+    const toSafeDate = (value: unknown, fallbackDate?: Date) => {
+        if (typeof value !== 'string') {
+            return fallbackDate ?? new Date()
+        }
+
+        const parsed = new Date(value)
+        if (Number.isNaN(parsed.getTime())) {
+            return fallbackDate ?? new Date()
+        }
+
+        return parsed
+    }
+
+    const isMissingLeaveRequestError = (message: string) =>
+        /no existing request|request not found|leave request not found|not found/i.test(
+            message
+        )
+
+    const mapLeaveRequestRow = (row: LeaveRequestApiRow): LeaveRequest => {
+        const submittedDate = toSafeDate(row.submitted_at)
+        const startDate = toSafeDate(row.start_date, submittedDate)
+        const endDate = toSafeDate(row.end_date, startDate)
+
+        return {
+            id: String(row.request_id),
+            employeeId: String(row.employee_id ?? ''),
+            employeeName: String(row.employee_name ?? ''),
+            position: String(row.position ?? ''),
+            department: String(row.department ?? ''),
+            leaveType: String(row.leave_type_name ?? ''),
+            startDate,
+            endDate,
+            message: String(row.message ?? ''),
+            status: row.status,
+            submittedDate,
+            attachments: Array.isArray(row.attachments)
+                ? row.attachments
+                      .map(item => String(item?.fileName ?? ''))
+                      .filter(Boolean)
+                : [],
+            logTrail: Array.isArray(row.logs)
+                ? row.logs.map(log => ({
+                      status: log.status,
+                      date: toSafeDate(log.loggedAt, submittedDate),
+                      approvedBy: log.approvedBy ?? undefined,
+                      reason: log.reason ?? undefined,
+                  }))
+                : [],
+        }
+    }
+
+    const loadLeaveRequests = useCallback(async () => {
+        if (!accessToken) {
+            return
+        }
+
+        setIsLeaveRequestsLoading(true)
+
+        try {
+            const response = await fetch(
+                `${apiBaseUrl}/hr/leave-requests?sourcePage=all`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                    },
+                }
+            )
+
+            const body = await response.json().catch(() => null)
+            if (!response.ok) {
+                if (response.status === 404) {
+                    setLeaveRequests([])
+                    return
+                }
+
+                throw new Error(body?.error ?? 'Failed to load leave requests')
+            }
+
+            const rows = Array.isArray(body?.requests)
+                ? (body.requests as LeaveRequestApiRow[])
+                : []
+
+            setLeaveRequests(rows.map(mapLeaveRequestRow))
+        } catch (error) {
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to load leave requests'
+            if (isMissingLeaveRequestError(message)) {
+                setLeaveRequests([])
+                return
+            }
+            toast.error(message)
+            setLeaveRequests([])
+        } finally {
+            setIsLeaveRequestsLoading(false)
+        }
+    }, [accessToken, apiBaseUrl])
 
     // Filter employees
     const filteredEmployees = employeesWithSyncedMeta.filter(emp =>
@@ -1184,109 +990,8 @@ export function DashboardPage({
     }, [leaveFilterStatus])
 
     useEffect(() => {
-        const toSafeDate = (value: unknown, fallbackDate?: Date) => {
-            if (typeof value !== 'string') {
-                return fallbackDate ?? new Date()
-            }
-
-            const parsed = new Date(value)
-            if (Number.isNaN(parsed.getTime())) {
-                return fallbackDate ?? new Date()
-            }
-
-            return parsed
-        }
-
-        const isMissingLeaveRequestError = (message: string) =>
-            /no existing request|request not found|leave request not found|not found/i.test(
-                message
-            )
-
-        const loadLeaveRequests = async () => {
-            if (!accessToken) {
-                return
-            }
-
-            setIsLeaveRequestsLoading(true)
-
-            try {
-                const response = await fetch(
-                    `${apiBaseUrl}/hr/leave-requests?sourcePage=dashboard`,
-                    {
-                        headers: {
-                            Authorization: `Bearer ${accessToken}`,
-                        },
-                    }
-                )
-
-                const body = await response.json().catch(() => null)
-                if (!response.ok) {
-                    if (response.status === 404) {
-                        setLeaveRequests([])
-                        return
-                    }
-
-                    throw new Error(
-                        body?.error ?? 'Failed to load leave requests'
-                    )
-                }
-
-                const rows = Array.isArray(body?.requests)
-                    ? (body.requests as LeaveRequestApiRow[])
-                    : []
-
-                const mapped = rows.map(row => {
-                    const submittedDate = toSafeDate(row.submitted_at)
-                    const startDate = toSafeDate(row.start_date, submittedDate)
-                    const endDate = toSafeDate(row.end_date, startDate)
-
-                    return {
-                        id: String(row.request_id),
-                        employeeId: String(row.employee_id ?? ''),
-                        employeeName: String(row.employee_name ?? ''),
-                        position: String(row.position ?? ''),
-                        department: String(row.department ?? ''),
-                        leaveType: String(row.leave_type_name ?? ''),
-                        startDate,
-                        endDate,
-                        message: String(row.message ?? ''),
-                        status: row.status,
-                        submittedDate,
-                        attachments: Array.isArray(row.attachments)
-                            ? row.attachments
-                                  .map(item => String(item?.fileName ?? ''))
-                                  .filter(Boolean)
-                            : [],
-                        logTrail: Array.isArray(row.logs)
-                            ? row.logs.map(log => ({
-                                  status: log.status,
-                                  date: toSafeDate(log.loggedAt, submittedDate),
-                                  approvedBy: log.approvedBy ?? undefined,
-                                  reason: log.reason ?? undefined,
-                              }))
-                            : [],
-                    } as LeaveRequest
-                })
-
-                setLeaveRequests(mapped)
-            } catch (error) {
-                const message =
-                    error instanceof Error
-                        ? error.message
-                        : 'Failed to load leave requests'
-                if (isMissingLeaveRequestError(message)) {
-                    setLeaveRequests([])
-                    return
-                }
-                toast.error(message)
-                setLeaveRequests([])
-            } finally {
-                setIsLeaveRequestsLoading(false)
-            }
-        }
-
-        loadLeaveRequests()
-    }, [accessToken, apiBaseUrl])
+        void loadLeaveRequests()
+    }, [loadLeaveRequests])
 
     const filteredLeaveRequests = leaveRequests
         .filter(req =>
@@ -1301,35 +1006,49 @@ export function DashboardPage({
         setShowLeaveDetailsDialog(true)
     }
 
-    const handleApproveLeave = () => {
+    const handleApproveLeave = async () => {
         if (!selectedLeaveRequest) return
 
-        setLeaveRequests(prev =>
-            prev.map(req =>
-                req.id === selectedLeaveRequest.id
-                    ? {
-                          ...req,
-                          status: 'approved' as const,
-                          logTrail: [
-                              ...req.logTrail,
-                              {
-                                  status: 'approved' as const,
-                                  date: new Date(),
-                                  approvedBy: 'Sarah Martinez',
-                              },
-                          ],
-                      }
-                    : req
+        try {
+            const response = await fetch(
+                `${apiBaseUrl}/hr/leave-requests/${selectedLeaveRequest.id}/approve`,
+                {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                    },
+                }
             )
-        )
 
-        toast.success('Leave request approved successfully')
-        setShowApproveDialog(false)
-        setShowLeaveDetailsDialog(false)
-        setSelectedLeaveRequest(null)
+            const body = await response.json().catch(() => null)
+            if (!response.ok) {
+                throw new Error(
+                    body?.error ?? 'Failed to approve leave request'
+                )
+            }
+
+            await loadLeaveRequests()
+            toast.success('Leave request approved successfully')
+            setShowApproveDialog(false)
+            setShowLeaveDetailsDialog(false)
+            setSelectedLeaveRequest(null)
+        } catch (error) {
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to approve leave request'
+            if (isMissingLeaveRequestError(message)) {
+                await loadLeaveRequests()
+                setShowApproveDialog(false)
+                setShowLeaveDetailsDialog(false)
+                setSelectedLeaveRequest(null)
+                return
+            }
+            toast.error(message)
+        }
     }
 
-    const handleDenyLeave = () => {
+    const handleDenyLeave = async () => {
         if (!selectedLeaveRequest) return
 
         if (!denyReason.trim()) {
@@ -1337,34 +1056,48 @@ export function DashboardPage({
             return
         }
 
-        setLeaveRequests(prev =>
-            prev.map(req =>
-                req.id === selectedLeaveRequest.id
-                    ? {
-                          ...req,
-                          status: 'denied' as const,
-                          logTrail: [
-                              ...req.logTrail,
-                              {
-                                  status: 'denied' as const,
-                                  date: new Date(),
-                                  approvedBy: 'Sarah Martinez',
-                                  reason: denyReason,
-                              },
-                          ],
-                      }
-                    : req
+        try {
+            const response = await fetch(
+                `${apiBaseUrl}/hr/leave-requests/${selectedLeaveRequest.id}/deny`,
+                {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ reason: denyReason.trim() }),
+                }
             )
-        )
 
-        toast.success('Leave request denied')
-        setShowDenyDialog(false)
-        setShowLeaveDetailsDialog(false)
-        setSelectedLeaveRequest(null)
-        setDenyReason('')
+            const body = await response.json().catch(() => null)
+            if (!response.ok) {
+                throw new Error(body?.error ?? 'Failed to deny leave request')
+            }
+
+            await loadLeaveRequests()
+            toast.success('Leave request denied')
+            setShowDenyDialog(false)
+            setShowLeaveDetailsDialog(false)
+            setSelectedLeaveRequest(null)
+            setDenyReason('')
+        } catch (error) {
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to deny leave request'
+            if (isMissingLeaveRequestError(message)) {
+                await loadLeaveRequests()
+                setShowDenyDialog(false)
+                setShowLeaveDetailsDialog(false)
+                setSelectedLeaveRequest(null)
+                setDenyReason('')
+                return
+            }
+            toast.error(message)
+        }
     }
 
-    const handleCancelApprovedLeave = () => {
+    const handleCancelApprovedLeave = async () => {
         if (!selectedLeaveRequest) return
 
         if (!cancelReason.trim()) {
@@ -1372,34 +1105,45 @@ export function DashboardPage({
             return
         }
 
-        setLeaveRequests(prev =>
-            prev.map(req =>
-                req.id === selectedLeaveRequest.id
-                    ? {
-                          ...req,
-                          status: 'cancelled' as const,
-                          logTrail: [
-                              ...req.logTrail,
-                              {
-                                  status: 'cancelled' as const,
-                                  date: new Date(),
-                                  reason: cancelReason,
-                                  ...(cancelAttachments.length > 0
-                                      ? { attachments: cancelAttachments }
-                                      : {}),
-                              },
-                          ],
-                      }
-                    : req
+        try {
+            const response = await fetch(
+                `${apiBaseUrl}/hr/leave-requests/${selectedLeaveRequest.id}/cancel`,
+                {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ reason: cancelReason.trim() }),
+                }
             )
-        )
 
-        toast.success('Leave request cancelled')
-        setShowCancelApprovedDialog(false)
-        setShowLeaveDetailsDialog(false)
-        setSelectedLeaveRequest(null)
-        setCancelReason('')
-        setCancelAttachments([])
+            const body = await response.json().catch(() => null)
+            if (!response.ok) {
+                throw new Error(body?.error ?? 'Failed to cancel leave request')
+            }
+
+            await loadLeaveRequests()
+            toast.success('Leave request cancelled')
+            setShowCancelApprovedDialog(false)
+            setShowLeaveDetailsDialog(false)
+            setSelectedLeaveRequest(null)
+            setCancelReason('')
+        } catch (error) {
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to cancel leave request'
+            if (isMissingLeaveRequestError(message)) {
+                await loadLeaveRequests()
+                setShowCancelApprovedDialog(false)
+                setShowLeaveDetailsDialog(false)
+                setSelectedLeaveRequest(null)
+                setCancelReason('')
+                return
+            }
+            toast.error(message)
+        }
     }
 
     const getLeaveStatusBadge = (status: LeaveRequest['status']) => {
@@ -1413,14 +1157,6 @@ export function DashboardPage({
             case 'cancelled':
                 return 'bg-muted-foreground/20 text-muted-foreground'
         }
-    }
-
-    const handleAddCancelAttachment = (fileName: string) => {
-        setCancelAttachments(prev => [...prev, fileName])
-    }
-
-    const handleRemoveCancelAttachment = (index: number) => {
-        setCancelAttachments(prev => prev.filter((_, i) => i !== index))
     }
 
     return (
@@ -2456,6 +2192,37 @@ export function DashboardPage({
                             >
                                 Close
                             </Button>
+                            {selectedLeaveRequest?.status === 'pending' && (
+                                <>
+                                    <Button
+                                        variant="destructive"
+                                        onClick={() => setShowDenyDialog(true)}
+                                    >
+                                        <XCircle className="h-4 w-4 mr-2" />
+                                        Deny
+                                    </Button>
+                                    <Button
+                                        className="bg-vibrant-green hover:bg-vibrant-green/90 text-vibrant-green-foreground"
+                                        onClick={() =>
+                                            setShowApproveDialog(true)
+                                        }
+                                    >
+                                        <CheckCircle className="h-4 w-4 mr-2" />
+                                        Approve
+                                    </Button>
+                                </>
+                            )}
+                            {selectedLeaveRequest?.status === 'approved' && (
+                                <Button
+                                    variant="destructive"
+                                    onClick={() =>
+                                        setShowCancelApprovedDialog(true)
+                                    }
+                                >
+                                    <AlertCircle className="h-4 w-4 mr-2" />
+                                    Cancel Request
+                                </Button>
+                            )}
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
@@ -2628,56 +2395,6 @@ export function DashboardPage({
                                         className="mt-2"
                                     />
                                 </div>
-
-                                <div>
-                                    <Label>Attachments (Optional)</Label>
-                                    <div className="mt-2 space-y-2">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => {
-                                                const fileName = prompt(
-                                                    'Enter attachment filename:'
-                                                )
-                                                if (fileName)
-                                                    handleAddCancelAttachment(
-                                                        fileName
-                                                    )
-                                            }}
-                                            className="w-full"
-                                        >
-                                            <Paperclip className="h-4 w-4 mr-2" />
-                                            Add Attachment
-                                        </Button>
-                                        {cancelAttachments.map(
-                                            (file, index) => (
-                                                <div
-                                                    key={index}
-                                                    className="flex items-center justify-between gap-2 p-2 bg-muted rounded"
-                                                >
-                                                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                                                        <FileText className="h-4 w-4 text-vibrant-blue flex-shrink-0" />
-                                                        <span className="text-sm truncate">
-                                                            {file}
-                                                        </span>
-                                                    </div>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() =>
-                                                            handleRemoveCancelAttachment(
-                                                                index
-                                                            )
-                                                        }
-                                                        className="h-6 w-6 p-0"
-                                                    >
-                                                        <XCircle className="h-4 w-4" />
-                                                    </Button>
-                                                </div>
-                                            )
-                                        )}
-                                    </div>
-                                </div>
                             </div>
                         )}
 
@@ -2687,7 +2404,6 @@ export function DashboardPage({
                                 onClick={() => {
                                     setShowCancelApprovedDialog(false)
                                     setCancelReason('')
-                                    setCancelAttachments([])
                                 }}
                             >
                                 Close

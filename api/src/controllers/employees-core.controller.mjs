@@ -80,6 +80,71 @@ export function registerEmployeeCoreRoutes(app, deps) {
         return result.rows[0] ?? null
     }
 
+    const getLeaveRequestByIdForHrApi = async (client, requestId) => {
+        const result = await client.query(
+            `
+            SELECT
+                lr.request_id,
+                lr.employee_id,
+                CASE
+                    WHEN e.employee_id IS NULL THEN lr.employee_id
+                    ELSE TRIM(CONCAT(COALESCE(e.first_name, ''), ' ', COALESCE(e.last_name, '')))
+                END AS employee_name,
+                COALESCE(jp.name, e.position, '') AS position,
+                COALESCE(d.name, '') AS department,
+                COALESCE(lr.leave_type_name, lt.name, '') AS leave_type_name,
+                lr.leave_type_id,
+                lr.start_date::text AS start_date,
+                lr.end_date::text AS end_date,
+                lr.message,
+                lr.status,
+                lr.submitted_at,
+                lr.source_page,
+                COALESCE(a.items, '[]'::jsonb) AS attachments,
+                COALESCE(l.items, '[]'::jsonb) AS logs
+            FROM app.leave_requests lr
+            LEFT JOIN app.leave_types lt
+                ON lt.leave_type_id = lr.leave_type_id
+            LEFT JOIN app.employees e
+                ON e.employee_id = lr.employee_id
+            LEFT JOIN app.departments d
+                ON d.department_id = e.department_id
+            LEFT JOIN app.job_positions jp
+                ON jp.position_id = e.position_id
+            LEFT JOIN LATERAL (
+                SELECT jsonb_agg(
+                    jsonb_build_object(
+                        'attachmentId', att.attachment_id,
+                        'fileName', att.file_name
+                    )
+                    ORDER BY att.attachment_id
+                ) AS items
+                FROM app.leave_request_attachments att
+                WHERE att.request_id = lr.request_id
+            ) a ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT jsonb_agg(
+                    jsonb_build_object(
+                        'logId', lg.log_id,
+                        'status', lg.status,
+                        'loggedAt', lg.logged_at,
+                        'approvedBy', lg.approved_by,
+                        'reason', lg.reason
+                    )
+                    ORDER BY lg.logged_at ASC, lg.log_id ASC
+                ) AS items
+                FROM app.leave_request_logs lg
+                WHERE lg.request_id = lr.request_id
+            ) l ON TRUE
+            WHERE lr.request_id = $1::text
+            LIMIT 1
+            `,
+            [requestId]
+        )
+
+        return result.rows[0] ?? null
+    }
+
     const getHrActorName = auth =>
         auth?.role === 'admin' ? 'Admin' : 'HR Manager'
 
@@ -769,6 +834,233 @@ export function registerEmployeeCoreRoutes(app, deps) {
                 })
 
                 return res.json({ requests: rows })
+            } catch (error) {
+                return res.status(400).json({ error: error.message })
+            }
+        }
+    )
+
+    app.post(
+        '/hr/leave-requests/:requestId/approve',
+        requireAuth,
+        requireRole('admin', 'hr_manager'),
+        async (req, res) => {
+            const requestId = String(req.params.requestId || '').trim()
+            if (!requestId) {
+                return res.status(400).json({ error: 'Invalid requestId' })
+            }
+
+            try {
+                const request = await withRlsContext(req.auth, async client => {
+                    const existingResult = await client.query(
+                        `
+                        SELECT request_id, status
+                        FROM app.leave_requests
+                        WHERE request_id = $1::text
+                        LIMIT 1
+                        FOR UPDATE
+                        `,
+                        [requestId]
+                    )
+
+                    if (existingResult.rowCount === 0) {
+                        throw new Error('Leave request not found')
+                    }
+
+                    const existing = existingResult.rows[0]
+                    if (existing.status !== 'pending') {
+                        throw new Error(
+                            'Only pending leave requests can be approved'
+                        )
+                    }
+
+                    const actorName = getHrActorName(req.auth)
+
+                    await client.query(
+                        `
+                        UPDATE app.leave_requests
+                        SET status = 'approved'::app.request_status
+                        WHERE request_id = $1::text
+                        `,
+                        [requestId]
+                    )
+
+                    await client.query(
+                        `
+                        INSERT INTO app.leave_request_logs (request_id, status, logged_at, approved_by, reason)
+                        VALUES (
+                          $1::text,
+                          'approved'::app.request_status,
+                          NOW(),
+                          $2::text,
+                          'Approved by HR'
+                        )
+                        `,
+                        [requestId, actorName]
+                    )
+
+                    return getLeaveRequestByIdForHrApi(client, requestId)
+                })
+
+                return res.json({ request })
+            } catch (error) {
+                return res.status(400).json({ error: error.message })
+            }
+        }
+    )
+
+    app.post(
+        '/hr/leave-requests/:requestId/deny',
+        requireAuth,
+        requireRole('admin', 'hr_manager'),
+        async (req, res) => {
+            const requestId = String(req.params.requestId || '').trim()
+            if (!requestId) {
+                return res.status(400).json({ error: 'Invalid requestId' })
+            }
+
+            const reason =
+                typeof req.body?.reason === 'string'
+                    ? req.body.reason.trim()
+                    : ''
+            if (reason.length < 3) {
+                return res.status(400).json({
+                    error: 'A denial reason with at least 3 characters is required.',
+                })
+            }
+
+            try {
+                const request = await withRlsContext(req.auth, async client => {
+                    const existingResult = await client.query(
+                        `
+                        SELECT request_id, status
+                        FROM app.leave_requests
+                        WHERE request_id = $1::text
+                        LIMIT 1
+                        FOR UPDATE
+                        `,
+                        [requestId]
+                    )
+
+                    if (existingResult.rowCount === 0) {
+                        throw new Error('Leave request not found')
+                    }
+
+                    const existing = existingResult.rows[0]
+                    if (existing.status !== 'pending') {
+                        throw new Error(
+                            'Only pending leave requests can be denied'
+                        )
+                    }
+
+                    const actorName = getHrActorName(req.auth)
+
+                    await client.query(
+                        `
+                        UPDATE app.leave_requests
+                        SET status = 'denied'::app.request_status
+                        WHERE request_id = $1::text
+                        `,
+                        [requestId]
+                    )
+
+                    await client.query(
+                        `
+                        INSERT INTO app.leave_request_logs (request_id, status, logged_at, approved_by, reason)
+                        VALUES (
+                          $1::text,
+                          'denied'::app.request_status,
+                          NOW(),
+                          $2::text,
+                          $3::text
+                        )
+                        `,
+                        [requestId, actorName, reason]
+                    )
+
+                    return getLeaveRequestByIdForHrApi(client, requestId)
+                })
+
+                return res.json({ request })
+            } catch (error) {
+                return res.status(400).json({ error: error.message })
+            }
+        }
+    )
+
+    app.post(
+        '/hr/leave-requests/:requestId/cancel',
+        requireAuth,
+        requireRole('admin', 'hr_manager'),
+        async (req, res) => {
+            const requestId = String(req.params.requestId || '').trim()
+            if (!requestId) {
+                return res.status(400).json({ error: 'Invalid requestId' })
+            }
+
+            const reason =
+                typeof req.body?.reason === 'string'
+                    ? req.body.reason.trim()
+                    : ''
+            if (reason.length < 3) {
+                return res.status(400).json({
+                    error: 'A cancellation reason with at least 3 characters is required.',
+                })
+            }
+
+            try {
+                const request = await withRlsContext(req.auth, async client => {
+                    const existingResult = await client.query(
+                        `
+                        SELECT request_id, status
+                        FROM app.leave_requests
+                        WHERE request_id = $1::text
+                        LIMIT 1
+                        FOR UPDATE
+                        `,
+                        [requestId]
+                    )
+
+                    if (existingResult.rowCount === 0) {
+                        throw new Error('Leave request not found')
+                    }
+
+                    const existing = existingResult.rows[0]
+                    if (existing.status !== 'approved') {
+                        throw new Error(
+                            'Only approved leave requests can be cancelled'
+                        )
+                    }
+
+                    const actorName = getHrActorName(req.auth)
+
+                    await client.query(
+                        `
+                        UPDATE app.leave_requests
+                        SET status = 'cancelled'::app.request_status
+                        WHERE request_id = $1::text
+                        `,
+                        [requestId]
+                    )
+
+                    await client.query(
+                        `
+                        INSERT INTO app.leave_request_logs (request_id, status, logged_at, approved_by, reason)
+                        VALUES (
+                          $1::text,
+                          'cancelled'::app.request_status,
+                          NOW(),
+                          $2::text,
+                          $3::text
+                        )
+                        `,
+                        [requestId, actorName, reason]
+                    )
+
+                    return getLeaveRequestByIdForHrApi(client, requestId)
+                })
+
+                return res.json({ request })
             } catch (error) {
                 return res.status(400).json({ error: error.message })
             }
