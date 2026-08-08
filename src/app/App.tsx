@@ -77,6 +77,12 @@ interface PasswordActivityState {
     userAgent?: string | null
 }
 
+interface LeaveCreditTypeState {
+    leaveTypeId: string
+    name: string
+    defaultLimitDays: number
+}
+
 type AttendanceStatusState =
     'present' | 'absent' | 'holiday' | 'late' | 'on-leave'
 
@@ -291,6 +297,9 @@ export default function App() {
             departments: [],
             positions: [],
         })
+    const [leaveCreditTypes, setLeaveCreditTypes] = useState<
+        LeaveCreditTypeState[]
+    >([])
 
     const mapApiProfileToState = (
         profile: Record<string, any> | null,
@@ -604,6 +613,103 @@ export default function App() {
             return true
         } catch {
             toast.error('Work schedule update failed', {
+                description: 'Unable to reach the API server.',
+            })
+            return false
+        }
+    }
+
+    const loadLeaveCreditTypes = async (accessToken: string) => {
+        try {
+            const response = await fetch(
+                `${apiBaseUrl}/settings/leave-credit-types`,
+                {
+                    method: 'GET',
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                    },
+                }
+            )
+
+            if (!response.ok) {
+                return
+            }
+
+            const payload = await response.json().catch(() => ({}))
+            const rows = Array.isArray(payload?.leaveTypes)
+                ? payload.leaveTypes
+                : []
+
+            setLeaveCreditTypes(
+                rows
+                    .map((row: Record<string, unknown>) => ({
+                        leaveTypeId: String(row?.leaveTypeId ?? ''),
+                        name: String(row?.name ?? ''),
+                        defaultLimitDays: Number(row?.defaultLimitDays ?? 0),
+                    }))
+                    .filter(
+                        (row: LeaveCreditTypeState) =>
+                            row.leaveTypeId && row.name
+                    )
+            )
+        } catch {
+            // Leave credit settings are optional for non-admin sessions.
+        }
+    }
+
+    const updateLeaveCreditTypes = async (
+        updates: Array<{ leaveTypeId: string; defaultLimitDays: number }>
+    ) => {
+        if (!authSession?.accessToken) {
+            toast.error('Unable to update leave credits', {
+                description: 'Your session is missing. Please sign in again.',
+            })
+            return false
+        }
+
+        try {
+            const response = await fetch(
+                `${apiBaseUrl}/settings/leave-credit-types`,
+                {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${authSession.accessToken}`,
+                    },
+                    body: JSON.stringify({ leaveTypes: updates }),
+                }
+            )
+
+            const payload = await response.json().catch(() => ({}))
+            if (!response.ok) {
+                toast.error('Leave credits update failed', {
+                    description:
+                        payload?.error ||
+                        'Please review leave credit values and try again.',
+                })
+                return false
+            }
+
+            const rows = Array.isArray(payload?.leaveTypes)
+                ? payload.leaveTypes
+                : []
+
+            setLeaveCreditTypes(
+                rows
+                    .map((row: Record<string, unknown>) => ({
+                        leaveTypeId: String(row?.leaveTypeId ?? ''),
+                        name: String(row?.name ?? ''),
+                        defaultLimitDays: Number(row?.defaultLimitDays ?? 0),
+                    }))
+                    .filter(
+                        (row: LeaveCreditTypeState) =>
+                            row.leaveTypeId && row.name
+                    )
+            )
+
+            return true
+        } catch {
+            toast.error('Leave credits update failed', {
                 description: 'Unable to reach the API server.',
             })
             return false
@@ -1522,6 +1628,7 @@ export default function App() {
                 email: payload.user?.email,
             })
             await loadEmploymentOptions(payload.accessToken)
+            await loadLeaveCreditTypes(payload.accessToken)
             await loadCompanyWorkingHours(payload.accessToken)
             await loadSecurityPreferences(payload.accessToken)
             await loadCalendarData(payload.accessToken)
@@ -2102,6 +2209,9 @@ export default function App() {
                         userProfile={userProfile}
                         employmentOptions={employmentOptions}
                         onUpdateProfile={updateSelfProfile}
+                        leaveCreditTypes={leaveCreditTypes}
+                        canEditLeaveCreditTypes={authSession?.role === 'admin'}
+                        onUpdateLeaveCreditTypes={updateLeaveCreditTypes}
                     />
                 )
             case 'employee-details':
@@ -2110,6 +2220,7 @@ export default function App() {
                         employeeId={selectedEmployeeId}
                         apiBaseUrl={apiBaseUrl}
                         accessToken={authSession?.accessToken ?? ''}
+                        currentUserRole={authSession?.role ?? 'employee'}
                         employmentOptions={employmentOptions}
                         onBack={handleBackFromEmployeeDetails}
                     />

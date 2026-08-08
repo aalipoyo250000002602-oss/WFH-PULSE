@@ -19,6 +19,64 @@ export function registerSettingsRoutes(app, deps) {
         AU: 'Australia',
         US: 'United States',
     }
+    const defaultLeaveCreditDays = 5
+    const managedLeaveTypes = [
+        {
+            leaveTypeId: 'bereavement',
+            name: 'Bereavement Leave',
+        },
+        {
+            leaveTypeId: 'compensatory',
+            name: 'Compensatory Time Off',
+        },
+        {
+            leaveTypeId: 'emergency',
+            name: 'Emergency Leave',
+        },
+        {
+            leaveTypeId: 'paternity',
+            name: 'Paternity Leave',
+        },
+        {
+            leaveTypeId: 'sick',
+            name: 'Sick Leave',
+        },
+        {
+            leaveTypeId: 'solo-parent',
+            name: 'Solo Parent Leave',
+        },
+        {
+            leaveTypeId: 'vacation',
+            name: 'Vacation Leave',
+        },
+    ]
+    const managedLeaveTypeIds = managedLeaveTypes.map(
+        leaveType => leaveType.leaveTypeId
+    )
+
+    const ensureManagedLeaveTypes = async client => {
+        for (const leaveType of managedLeaveTypes) {
+            await client.query(
+                `
+                INSERT INTO app.leave_types (leave_type_id, name, default_limit_days)
+                VALUES ($1::text, $2::text, $3::integer)
+                ON CONFLICT (leave_type_id) DO UPDATE
+                SET
+                    name = EXCLUDED.name,
+                    default_limit_days = COALESCE(app.leave_types.default_limit_days, EXCLUDED.default_limit_days)
+                `,
+                [leaveType.leaveTypeId, leaveType.name, defaultLeaveCreditDays]
+            )
+        }
+    }
+
+    const mapLeaveTypeRow = row => ({
+        leaveTypeId: String(row.leave_type_id ?? ''),
+        name: String(row.name ?? ''),
+        defaultLimitDays: Number(
+            row.default_limit_days ?? defaultLeaveCreditDays
+        ),
+    })
 
     const mapHolidayRow = row => ({
         id: row.holiday_id,
@@ -134,6 +192,162 @@ export function registerSettingsRoutes(app, deps) {
         'subdivision'::text AS scope
       FROM app.holiday_subdivision_holidays sh
     `
+
+    app.get('/settings/leave-credit-types', requireAuth, async (req, res) => {
+        try {
+            const client = await pool.connect()
+            try {
+                await client.query(
+                    "SELECT set_config('app.user_id', $1, true)",
+                    [String(req.auth.userId)]
+                )
+                await client.query(
+                    "SELECT set_config('app.user_role', $1, true)",
+                    [String(req.auth.role)]
+                )
+
+                await ensureManagedLeaveTypes(client)
+
+                const result = await client.query(
+                    `
+                        SELECT leave_type_id, name, default_limit_days
+                        FROM app.leave_types
+                        WHERE leave_type_id = ANY($1::text[])
+                        ORDER BY array_position($1::text[], leave_type_id)
+                        `,
+                    [managedLeaveTypeIds]
+                )
+
+                return res.json({
+                    leaveTypes: result.rows.map(mapLeaveTypeRow),
+                })
+            } finally {
+                client.release()
+            }
+        } catch (error) {
+            return res.status(400).json({ error: error.message })
+        }
+    })
+
+    app.put(
+        '/settings/leave-credit-types',
+        requireAuth,
+        requireRole('admin'),
+        async (req, res) => {
+            const rows = Array.isArray(req.body?.leaveTypes)
+                ? req.body.leaveTypes
+                : []
+
+            if (rows.length === 0) {
+                return res.status(400).json({
+                    error: 'leaveTypes must be a non-empty array',
+                })
+            }
+
+            const normalized = []
+            const seen = new Set()
+            for (const row of rows) {
+                const leaveTypeId = String(row?.leaveTypeId ?? '').trim()
+                const defaultLimitDays = Number(row?.defaultLimitDays)
+                if (!managedLeaveTypeIds.includes(leaveTypeId)) {
+                    return res.status(400).json({
+                        error: `Unsupported leaveTypeId: ${leaveTypeId || '(empty)'}`,
+                    })
+                }
+
+                if (
+                    !Number.isInteger(defaultLimitDays) ||
+                    defaultLimitDays < 0
+                ) {
+                    return res.status(400).json({
+                        error: `defaultLimitDays for ${leaveTypeId} must be a non-negative integer`,
+                    })
+                }
+
+                if (seen.has(leaveTypeId)) {
+                    return res.status(400).json({
+                        error: `Duplicate leaveTypeId: ${leaveTypeId}`,
+                    })
+                }
+
+                seen.add(leaveTypeId)
+                normalized.push({ leaveTypeId, defaultLimitDays })
+            }
+
+            const client = await pool.connect()
+            try {
+                await client.query('BEGIN')
+                await client.query(
+                    "SELECT set_config('app.user_id', $1, true)",
+                    [String(req.auth.userId)]
+                )
+                await client.query(
+                    "SELECT set_config('app.user_role', $1, true)",
+                    [String(req.auth.role)]
+                )
+
+                await ensureManagedLeaveTypes(client)
+
+                for (const row of normalized) {
+                    await client.query(
+                        `
+                        UPDATE app.leave_types
+                        SET default_limit_days = $2::integer
+                        WHERE leave_type_id = $1::text
+                        `,
+                        [row.leaveTypeId, row.defaultLimitDays]
+                    )
+                }
+
+                await client.query(
+                    `
+                    INSERT INTO app.leave_balances (
+                        employee_id,
+                        leave_type_id,
+                        credits,
+                        accrued,
+                        limit_days
+                    )
+                    SELECT
+                        e.employee_id,
+                        lt.leave_type_id,
+                        lt.default_limit_days,
+                        lt.default_limit_days,
+                        lt.default_limit_days
+                    FROM app.employees e
+                    CROSS JOIN app.leave_types lt
+                    WHERE lt.leave_type_id = ANY($1::text[])
+                    ON CONFLICT (employee_id, leave_type_id) DO UPDATE
+                    SET
+                        credits = EXCLUDED.credits,
+                        accrued = EXCLUDED.accrued,
+                        limit_days = EXCLUDED.limit_days
+                    `,
+                    [managedLeaveTypeIds]
+                )
+
+                const result = await client.query(
+                    `
+                    SELECT leave_type_id, name, default_limit_days
+                    FROM app.leave_types
+                    WHERE leave_type_id = ANY($1::text[])
+                    ORDER BY array_position($1::text[], leave_type_id)
+                    `,
+                    [managedLeaveTypeIds]
+                )
+
+                await client.query('COMMIT')
+                return res.json({
+                    leaveTypes: result.rows.map(mapLeaveTypeRow),
+                })
+            } catch (error) {
+                await client.query('ROLLBACK')
+                return res.status(400).json({ error: error.message })
+            } finally {
+                client.release()
+            }
+        }
+    )
 
     app.get(
         '/settings/company-working-hours',

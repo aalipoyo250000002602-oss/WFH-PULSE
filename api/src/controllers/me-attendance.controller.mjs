@@ -92,6 +92,60 @@ export function registerMeAttendanceRoutes(app, deps) {
         return result.rows[0] ?? null
     }
 
+    const getLeaveDaysInclusive = (startDateValue, endDateValue) => {
+        const startIso = String(startDateValue ?? '').slice(0, 10)
+        const endIso = String(endDateValue ?? '').slice(0, 10)
+        const start = new Date(`${startIso}T00:00:00Z`)
+        const end = new Date(`${endIso}T00:00:00Z`)
+
+        if (
+            Number.isNaN(start.getTime()) ||
+            Number.isNaN(end.getTime()) ||
+            end < start
+        ) {
+            throw new Error('Invalid leave date range')
+        }
+
+        return Math.floor((end.getTime() - start.getTime()) / 86400000) + 1
+    }
+
+    const applyLeaveCreditsDelta = async (
+        client,
+        employeeId,
+        leaveTypeId,
+        daysDelta
+    ) => {
+        if (!Number.isFinite(daysDelta) || daysDelta === 0) {
+            return
+        }
+
+        await client.query(
+            `
+            INSERT INTO app.leave_balances (
+                employee_id,
+                leave_type_id,
+                credits,
+                accrued,
+                limit_days
+            )
+            SELECT
+                $1::text,
+                lt.leave_type_id,
+                GREATEST(0, COALESCE(lt.default_limit_days, 0) + $3::integer),
+                COALESCE(lt.default_limit_days, 0),
+                COALESCE(lt.default_limit_days, 0)
+            FROM app.leave_types lt
+            WHERE lt.leave_type_id = $2::text
+            ON CONFLICT (employee_id, leave_type_id) DO UPDATE
+            SET
+                credits = GREATEST(0, COALESCE(app.leave_balances.credits, 0) + $3::integer),
+                accrued = COALESCE(app.leave_balances.accrued, EXCLUDED.accrued),
+                limit_days = COALESCE(app.leave_balances.limit_days, EXCLUDED.limit_days)
+            `,
+            [employeeId, leaveTypeId, Math.trunc(daysDelta)]
+        )
+    }
+
     const autoCloseMissedClockOuts = async (
         authContext,
         employeeId,
@@ -2290,8 +2344,8 @@ export function registerMeAttendanceRoutes(app, deps) {
                     SELECT
                       lt.leave_type_id,
                       lt.name,
-                      COALESCE(lb.credits, 0)::integer AS credits,
-                      COALESCE(lb.accrued, 0)::integer AS accrued,
+                                            COALESCE(lb.credits, lt.default_limit_days)::integer AS credits,
+                                            COALESCE(lb.accrued, lt.default_limit_days)::integer AS accrued,
                       COALESCE(lb.limit_days, lt.default_limit_days)::integer AS limit_days
                     FROM app.leave_types lt
                     LEFT JOIN app.leave_balances lb
@@ -2560,7 +2614,12 @@ export function registerMeAttendanceRoutes(app, deps) {
                 const request = await withRlsContext(req.auth, async client => {
                     const existingResult = await client.query(
                         `
-                    SELECT request_id, status
+                                        SELECT
+                                                request_id,
+                                                status,
+                                                leave_type_id,
+                                                start_date::text AS start_date,
+                                                end_date::text AS end_date
                     FROM app.leave_requests
                     WHERE request_id = $1::text
                       AND employee_id = $2::text
@@ -2581,6 +2640,19 @@ export function registerMeAttendanceRoutes(app, deps) {
                     }
                     if (existing.status === 'cancelled') {
                         throw new Error('Leave request is already cancelled')
+                    }
+
+                    if (existing.status === 'approved') {
+                        const leaveDays = getLeaveDaysInclusive(
+                            existing.start_date,
+                            existing.end_date
+                        )
+                        await applyLeaveCreditsDelta(
+                            client,
+                            resolvedEmployeeId,
+                            String(existing.leave_type_id),
+                            leaveDays
+                        )
                     }
 
                     await client.query(

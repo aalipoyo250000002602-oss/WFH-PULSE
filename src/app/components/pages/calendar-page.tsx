@@ -220,198 +220,7 @@ export function CalendarPage({
     })
 
     // Leave management state
-    const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([
-        {
-            id: 'bereavement',
-            name: 'Bereavement Leave',
-            credits: 5,
-            accrued: 5,
-            limit: 10,
-            requests: [
-                {
-                    id: 'req1',
-                    startDate: new Date(2025, 8, 15),
-                    endDate: new Date(2025, 8, 17),
-                    message: 'Family emergency',
-                    status: 'approved',
-                    submittedDate: new Date(2025, 8, 10),
-                    attachments: ['certificate.pdf'],
-                    logTrail: [
-                        { status: 'pending', date: new Date(2025, 8, 10) },
-                        {
-                            status: 'approved',
-                            date: new Date(2025, 8, 11),
-                            approvedBy: 'Sarah Martinez',
-                        },
-                    ],
-                },
-            ],
-        },
-        {
-            id: 'compensatory',
-            name: 'Compensatory Time Off',
-            credits: 3,
-            accrued: 3,
-            limit: 10,
-            requests: [
-                {
-                    id: 'req-cto-1',
-                    startDate: new Date(2026, 6, 28),
-                    endDate: new Date(2026, 6, 28),
-                    message:
-                        'Using compensatory time off earned from overtime work during the June product launch.',
-                    status: 'pending',
-                    submittedDate: new Date(2026, 6, 21),
-                    attachments: [],
-                    logTrail: [
-                        { status: 'pending', date: new Date(2026, 6, 21) },
-                    ],
-                },
-            ],
-        },
-        {
-            id: 'emergency',
-            name: 'Emergency Leave',
-            credits: 4,
-            accrued: 4,
-            limit: 10,
-            requests: [
-                {
-                    id: 'req2',
-                    startDate: new Date(2025, 7, 20),
-                    endDate: new Date(2025, 7, 20),
-                    message: 'Medical emergency',
-                    status: 'denied',
-                    submittedDate: new Date(2025, 7, 18),
-                    attachments: [],
-                    logTrail: [
-                        { status: 'pending', date: new Date(2025, 7, 18) },
-                        {
-                            status: 'denied',
-                            date: new Date(2025, 7, 19),
-                            approvedBy: 'Michael Chen',
-                        },
-                    ],
-                },
-                {
-                    id: 'req-em-2',
-                    startDate: new Date(2026, 6, 15),
-                    endDate: new Date(2026, 6, 15),
-                    message:
-                        'Pipe burst at home - needed to wait for the repair crew. Unable to report to work.',
-                    status: 'approved',
-                    submittedDate: new Date(2026, 6, 15),
-                    attachments: ['repair-receipt.pdf'],
-                    logTrail: [
-                        { status: 'pending', date: new Date(2026, 6, 15) },
-                        {
-                            status: 'approved',
-                            date: new Date(2026, 6, 16),
-                            approvedBy: 'Sarah Martinez',
-                        },
-                    ],
-                },
-            ],
-        },
-        {
-            id: 'paternity',
-            name: 'Paternity Leave',
-            credits: 5,
-            accrued: 5,
-            limit: 10,
-            requests: [],
-        },
-        {
-            id: 'sick',
-            name: 'Sick Leave',
-            credits: 3,
-            accrued: 2,
-            limit: 10,
-            requests: [
-                {
-                    id: 'req-sl-1',
-                    startDate: new Date(2026, 5, 11),
-                    endDate: new Date(2026, 5, 11),
-                    message:
-                        'Flu symptoms - high fever and body aches. Doctor advised rest.',
-                    status: 'approved',
-                    submittedDate: new Date(2026, 5, 11),
-                    attachments: ['medical-cert.pdf'],
-                    logTrail: [
-                        { status: 'pending', date: new Date(2026, 5, 11) },
-                        {
-                            status: 'approved',
-                            date: new Date(2026, 5, 11),
-                            approvedBy: 'Sarah Martinez',
-                        },
-                    ],
-                },
-            ],
-        },
-        {
-            id: 'solo-parent',
-            name: 'Solo Parent Leave',
-            credits: 4,
-            accrued: 4,
-            limit: 10,
-            requests: [],
-        },
-        {
-            id: 'vacation',
-            name: 'Vacation Leave',
-            credits: 5,
-            accrued: 5,
-            limit: 10,
-            requests: [
-                {
-                    id: 'req3',
-                    startDate: new Date(2025, 9, 1),
-                    endDate: new Date(2025, 9, 5),
-                    message: 'Family vacation',
-                    status: 'approved',
-                    submittedDate: new Date(2025, 8, 15),
-                    attachments: ['itinerary.pdf'],
-                    logTrail: [
-                        { status: 'pending', date: new Date(2025, 8, 15) },
-                        {
-                            status: 'approved',
-                            date: new Date(2025, 8, 16),
-                            approvedBy: 'Sarah Martinez',
-                        },
-                    ],
-                },
-                {
-                    id: 'req-vl-2',
-                    startDate: new Date(2026, 6, 14),
-                    endDate: new Date(2026, 6, 14),
-                    message: 'Annual medical check-up and personal errands.',
-                    status: 'approved',
-                    submittedDate: new Date(2026, 6, 9),
-                    attachments: ['appointment-slip.pdf'],
-                    logTrail: [
-                        { status: 'pending', date: new Date(2026, 6, 9) },
-                        {
-                            status: 'approved',
-                            date: new Date(2026, 6, 10),
-                            approvedBy: 'Sarah Martinez',
-                        },
-                    ],
-                },
-                {
-                    id: 'req-vl-3',
-                    startDate: new Date(2026, 7, 4),
-                    endDate: new Date(2026, 7, 7),
-                    message: 'Summer vacation with family.',
-                    status: 'pending',
-                    submittedDate: new Date(2026, 6, 21),
-                    attachments: ['travel-itinerary.pdf'],
-                    logTrail: [
-                        { status: 'pending', date: new Date(2026, 6, 21) },
-                    ],
-                },
-            ],
-        },
-    ])
+    const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([])
 
     // Leave request state
     const [isLeaveMode, setIsLeaveMode] = useState(false)
@@ -436,7 +245,7 @@ export function CalendarPage({
     const [showLeaveDetailsDialog, setShowLeaveDetailsDialog] = useState(false)
     const [showCancelConfirmDialog, setShowCancelConfirmDialog] =
         useState(false)
-    const [isLeaveDataLoading, setIsLeaveDataLoading] = useState(false)
+    const [isLeaveDataLoading, setIsLeaveDataLoading] = useState(true)
     const [leaveRequestFilterStatus, setLeaveRequestFilterStatus] = useState<
         'all' | LeaveRequest['status']
     >(() => {
@@ -1089,8 +898,9 @@ export function CalendarPage({
         setIsLeaveDataLoading(true)
         try {
             const response = await fetch(
-                `${apiBaseUrl}/me/leave-requests?sourcePage=calendar`,
+                `${apiBaseUrl}/me/leave-requests?sourcePage=all&t=${Date.now()}`,
                 {
+                    cache: 'no-store',
                     headers: {
                         Authorization: `Bearer ${accessToken}`,
                     },
@@ -1176,6 +986,30 @@ export function CalendarPage({
     }, [accessToken, apiBaseUrl])
 
     useEffect(() => {
+        if (!isFullCalendarOpen) {
+            return
+        }
+
+        void loadLeaveData()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isFullCalendarOpen])
+
+    useEffect(() => {
+        if (!isFullCalendarOpen || !accessToken) {
+            return
+        }
+
+        const intervalId = window.setInterval(() => {
+            void loadLeaveData()
+        }, 30000)
+
+        return () => {
+            window.clearInterval(intervalId)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isFullCalendarOpen, accessToken])
+
+    useEffect(() => {
         if (typeof window === 'undefined') {
             return
         }
@@ -1218,6 +1052,13 @@ export function CalendarPage({
         month: 'long',
         year: 'numeric',
     })
+    const currentYear = new Date().getFullYear()
+
+    const formatDayCountLabel = (count: number, suffix: string) => {
+        const safeCount = Math.max(0, Math.trunc(count))
+        const dayLabel = safeCount === 1 ? 'day' : 'days'
+        return `${safeCount} ${dayLabel} ${suffix}`
+    }
 
     const days = getDaysInMonth(currentDate)
     const today = new Date()
@@ -1880,20 +1721,17 @@ export function CalendarPage({
                                                                         }
                                                                     </p>
                                                                     <p className="text-xs text-muted-foreground">
-                                                                        {
-                                                                            leaveType.accrued
-                                                                        }{' '}
-                                                                        accrued
-                                                                        so far
-                                                                        this
-                                                                        year
+                                                                        {formatDayCountLabel(
+                                                                            leaveType.accrued,
+                                                                            `accrued in ${currentYear}`
+                                                                        )}
                                                                     </p>
                                                                 </div>
                                                                 <Badge className="bg-vibrant-blue/20 text-vibrant-blue">
-                                                                    {
-                                                                        leaveType.credits
-                                                                    }{' '}
-                                                                    left
+                                                                    {formatDayCountLabel(
+                                                                        leaveType.credits,
+                                                                        'left'
+                                                                    )}
                                                                 </Badge>
                                                             </div>
                                                         )

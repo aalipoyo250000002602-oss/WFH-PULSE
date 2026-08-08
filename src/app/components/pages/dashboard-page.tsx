@@ -620,6 +620,9 @@ export function DashboardPage({
             message
         )
 
+    const getErrorMessage = (error: unknown, fallbackMessage: string) =>
+        error instanceof Error ? error.message : fallbackMessage
+
     const mapLeaveRequestRow = (row: LeaveRequestApiRow): LeaveRequest => {
         const submittedDate = toSafeDate(row.submitted_at)
         const startDate = toSafeDate(row.start_date, submittedDate)
@@ -686,10 +689,10 @@ export function DashboardPage({
 
             setLeaveRequests(rows.map(mapLeaveRequestRow))
         } catch (error) {
-            const message =
-                error instanceof Error
-                    ? error.message
-                    : 'Failed to load leave requests'
+            const message = getErrorMessage(
+                error,
+                'Failed to load leave requests'
+            )
             if (isMissingLeaveRequestError(message)) {
                 setLeaveRequests([])
                 return
@@ -1033,10 +1036,10 @@ export function DashboardPage({
             setShowLeaveDetailsDialog(false)
             setSelectedLeaveRequest(null)
         } catch (error) {
-            const message =
-                error instanceof Error
-                    ? error.message
-                    : 'Failed to approve leave request'
+            const message = getErrorMessage(
+                error,
+                'Failed to approve leave request'
+            )
             if (isMissingLeaveRequestError(message)) {
                 await loadLeaveRequests()
                 setShowApproveDialog(false)
@@ -1081,10 +1084,10 @@ export function DashboardPage({
             setSelectedLeaveRequest(null)
             setDenyReason('')
         } catch (error) {
-            const message =
-                error instanceof Error
-                    ? error.message
-                    : 'Failed to deny leave request'
+            const message = getErrorMessage(
+                error,
+                'Failed to deny leave request'
+            )
             if (isMissingLeaveRequestError(message)) {
                 await loadLeaveRequests()
                 setShowDenyDialog(false)
@@ -1130,10 +1133,10 @@ export function DashboardPage({
             setSelectedLeaveRequest(null)
             setCancelReason('')
         } catch (error) {
-            const message =
-                error instanceof Error
-                    ? error.message
-                    : 'Failed to cancel leave request'
+            const message = getErrorMessage(
+                error,
+                'Failed to cancel leave request'
+            )
             if (isMissingLeaveRequestError(message)) {
                 await loadLeaveRequests()
                 setShowCancelApprovedDialog(false)

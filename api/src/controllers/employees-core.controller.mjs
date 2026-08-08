@@ -18,6 +18,167 @@ export function registerEmployeeCoreRoutes(app, deps) {
         'denied',
         'cancelled',
     ])
+    const defaultLeaveCreditDays = 5
+    const managedLeaveTypes = [
+        {
+            leaveTypeId: 'bereavement',
+            name: 'Bereavement Leave',
+        },
+        {
+            leaveTypeId: 'compensatory',
+            name: 'Compensatory Time Off',
+        },
+        {
+            leaveTypeId: 'emergency',
+            name: 'Emergency Leave',
+        },
+        {
+            leaveTypeId: 'paternity',
+            name: 'Paternity Leave',
+        },
+        {
+            leaveTypeId: 'sick',
+            name: 'Sick Leave',
+        },
+        {
+            leaveTypeId: 'solo-parent',
+            name: 'Solo Parent Leave',
+        },
+        {
+            leaveTypeId: 'vacation',
+            name: 'Vacation Leave',
+        },
+    ]
+    const managedLeaveTypeIds = managedLeaveTypes.map(
+        leaveType => leaveType.leaveTypeId
+    )
+
+    const ensureManagedLeaveTypes = async client => {
+        for (const leaveType of managedLeaveTypes) {
+            await client.query(
+                `
+                INSERT INTO app.leave_types (leave_type_id, name, default_limit_days)
+                VALUES ($1::text, $2::text, $3::integer)
+                ON CONFLICT (leave_type_id) DO UPDATE
+                SET
+                    name = EXCLUDED.name,
+                    default_limit_days = COALESCE(app.leave_types.default_limit_days, EXCLUDED.default_limit_days)
+                `,
+                [leaveType.leaveTypeId, leaveType.name, defaultLeaveCreditDays]
+            )
+        }
+    }
+
+    const ensureLeaveBalancesForEmployee = async (client, employeeId) => {
+        await ensureManagedLeaveTypes(client)
+        await client.query(
+            `
+            INSERT INTO app.leave_balances (
+                employee_id,
+                leave_type_id,
+                credits,
+                accrued,
+                limit_days
+            )
+            SELECT
+                $1::text,
+                lt.leave_type_id,
+                lt.default_limit_days,
+                lt.default_limit_days,
+                lt.default_limit_days
+            FROM app.leave_types lt
+            WHERE lt.leave_type_id = ANY($2::text[])
+            ON CONFLICT (employee_id, leave_type_id) DO NOTHING
+            `,
+            [employeeId, managedLeaveTypeIds]
+        )
+    }
+
+    const getLeaveCreditsForEmployee = async (client, employeeId) => {
+        const result = await client.query(
+            `
+            SELECT
+              lt.leave_type_id,
+              lt.name,
+              COALESCE(lb.credits, lt.default_limit_days)::integer AS credits,
+              COALESCE(lb.accrued, lt.default_limit_days)::integer AS accrued,
+              COALESCE(lb.limit_days, lt.default_limit_days)::integer AS limit_days,
+              lt.default_limit_days::integer AS default_limit_days
+            FROM app.leave_types lt
+            LEFT JOIN app.leave_balances lb
+              ON lb.leave_type_id = lt.leave_type_id
+             AND lb.employee_id = $1::text
+            WHERE lt.leave_type_id = ANY($2::text[])
+            ORDER BY array_position($2::text[], lt.leave_type_id)
+            `,
+            [employeeId, managedLeaveTypeIds]
+        )
+
+        return result.rows.map(row => ({
+            leaveTypeId: String(row.leave_type_id ?? ''),
+            name: String(row.name ?? ''),
+            credits: Number(row.credits ?? 0),
+            accrued: Number(row.accrued ?? 0),
+            limitDays: Number(row.limit_days ?? 0),
+            defaultLimitDays: Number(
+                row.default_limit_days ?? defaultLeaveCreditDays
+            ),
+        }))
+    }
+
+    const getLeaveDaysInclusive = (startDateValue, endDateValue) => {
+        const startIso = String(startDateValue ?? '').slice(0, 10)
+        const endIso = String(endDateValue ?? '').slice(0, 10)
+        const start = new Date(`${startIso}T00:00:00Z`)
+        const end = new Date(`${endIso}T00:00:00Z`)
+
+        if (
+            Number.isNaN(start.getTime()) ||
+            Number.isNaN(end.getTime()) ||
+            end < start
+        ) {
+            throw new Error('Invalid leave date range')
+        }
+
+        return Math.floor((end.getTime() - start.getTime()) / 86400000) + 1
+    }
+
+    const applyLeaveCreditsDelta = async (
+        client,
+        employeeId,
+        leaveTypeId,
+        daysDelta
+    ) => {
+        if (!Number.isFinite(daysDelta) || daysDelta === 0) {
+            return
+        }
+
+        await client.query(
+            `
+            INSERT INTO app.leave_balances (
+                employee_id,
+                leave_type_id,
+                credits,
+                accrued,
+                limit_days
+            )
+            SELECT
+                $1::text,
+                lt.leave_type_id,
+                GREATEST(0, COALESCE(lt.default_limit_days, 0) + $3::integer),
+                COALESCE(lt.default_limit_days, 0),
+                COALESCE(lt.default_limit_days, 0)
+            FROM app.leave_types lt
+            WHERE lt.leave_type_id = $2::text
+            ON CONFLICT (employee_id, leave_type_id) DO UPDATE
+            SET
+                credits = GREATEST(0, COALESCE(app.leave_balances.credits, 0) + $3::integer),
+                accrued = COALESCE(app.leave_balances.accrued, EXCLUDED.accrued),
+                limit_days = COALESCE(app.leave_balances.limit_days, EXCLUDED.limit_days)
+            `,
+            [employeeId, leaveTypeId, Math.trunc(daysDelta)]
+        )
+    }
 
     const getAdjustmentRequestByIdForHrApi = async (client, requestId) => {
         const result = await client.query(
@@ -445,6 +606,8 @@ export function registerEmployeeCoreRoutes(app, deps) {
                             [employeeId]
                         )
 
+                        await ensureLeaveBalancesForEmployee(client, employeeId)
+
                         return getEmployeeRowForApi(client, employeeId)
                     }
                 )
@@ -590,6 +753,154 @@ export function registerEmployeeCoreRoutes(app, deps) {
                 }
 
                 return res.json({ employee })
+            } catch (error) {
+                return res.status(400).json({ error: error.message })
+            }
+        }
+    )
+
+    app.get(
+        '/employees/:employeeId/leave-credits',
+        requireAuth,
+        requireRole('admin', 'hr_manager'),
+        async (req, res) => {
+            const employeeId = String(req.params.employeeId || '').trim()
+            if (!employeeId) {
+                return res.status(400).json({ error: 'Invalid employeeId' })
+            }
+
+            try {
+                const leaveCredits = await withRlsContext(
+                    req.auth,
+                    async client => {
+                        const resolvedEmployeeId = await resolveEmployeeId(
+                            client,
+                            employeeId
+                        )
+                        if (!resolvedEmployeeId) {
+                            return null
+                        }
+
+                        await ensureLeaveBalancesForEmployee(
+                            client,
+                            resolvedEmployeeId
+                        )
+                        return getLeaveCreditsForEmployee(
+                            client,
+                            resolvedEmployeeId
+                        )
+                    }
+                )
+
+                if (!leaveCredits) {
+                    return res.status(404).json({ error: 'Employee not found' })
+                }
+
+                return res.json({ leaveCredits })
+            } catch (error) {
+                return res.status(400).json({ error: error.message })
+            }
+        }
+    )
+
+    app.put(
+        '/employees/:employeeId/leave-credits',
+        requireAuth,
+        requireRole('admin'),
+        async (req, res) => {
+            const employeeId = String(req.params.employeeId || '').trim()
+            if (!employeeId) {
+                return res.status(400).json({ error: 'Invalid employeeId' })
+            }
+
+            const rows = Array.isArray(req.body?.leaveCredits)
+                ? req.body.leaveCredits
+                : []
+            if (rows.length === 0) {
+                return res.status(400).json({
+                    error: 'leaveCredits must be a non-empty array',
+                })
+            }
+
+            const normalized = []
+            const seen = new Set()
+            for (const row of rows) {
+                const leaveTypeId = String(row?.leaveTypeId ?? '').trim()
+                const credits = Number(row?.credits)
+
+                if (!managedLeaveTypeIds.includes(leaveTypeId)) {
+                    return res.status(400).json({
+                        error: `Unsupported leaveTypeId: ${leaveTypeId || '(empty)'}`,
+                    })
+                }
+
+                if (!Number.isInteger(credits) || credits < 0) {
+                    return res.status(400).json({
+                        error: `credits for ${leaveTypeId} must be a non-negative integer`,
+                    })
+                }
+
+                if (seen.has(leaveTypeId)) {
+                    return res.status(400).json({
+                        error: `Duplicate leaveTypeId: ${leaveTypeId}`,
+                    })
+                }
+
+                seen.add(leaveTypeId)
+                normalized.push({ leaveTypeId, credits })
+            }
+
+            try {
+                const leaveCredits = await withRlsContext(
+                    req.auth,
+                    async client => {
+                        const resolvedEmployeeId = await resolveEmployeeId(
+                            client,
+                            employeeId
+                        )
+                        if (!resolvedEmployeeId) {
+                            return null
+                        }
+
+                        await ensureLeaveBalancesForEmployee(
+                            client,
+                            resolvedEmployeeId
+                        )
+
+                        for (const row of normalized) {
+                            await client.query(
+                                `
+                                INSERT INTO app.leave_balances (
+                                    employee_id,
+                                    leave_type_id,
+                                    credits,
+                                    accrued,
+                                    limit_days
+                                )
+                                VALUES ($1::text, $2::text, $3::integer, $3::integer, $3::integer)
+                                ON CONFLICT (employee_id, leave_type_id) DO UPDATE
+                                SET credits = EXCLUDED.credits
+                                `,
+                                [
+                                    resolvedEmployeeId,
+                                    row.leaveTypeId,
+                                    row.credits,
+                                ]
+                            )
+                        }
+
+                        return getLeaveCreditsForEmployee(
+                            client,
+                            resolvedEmployeeId
+                        )
+                    }
+                )
+
+                if (!leaveCredits) {
+                    return res.status(404).json({ error: 'Employee not found' })
+                }
+
+                return res.json({ leaveCredits })
             } catch (error) {
                 return res.status(400).json({ error: error.message })
             }
@@ -854,7 +1165,13 @@ export function registerEmployeeCoreRoutes(app, deps) {
                 const request = await withRlsContext(req.auth, async client => {
                     const existingResult = await client.query(
                         `
-                        SELECT request_id, status
+                        SELECT
+                            request_id,
+                            status,
+                            employee_id,
+                            leave_type_id,
+                            start_date::text AS start_date,
+                            end_date::text AS end_date
                         FROM app.leave_requests
                         WHERE request_id = $1::text
                         LIMIT 1
@@ -874,7 +1191,19 @@ export function registerEmployeeCoreRoutes(app, deps) {
                         )
                     }
 
+                    const leaveDays = getLeaveDaysInclusive(
+                        existing.start_date,
+                        existing.end_date
+                    )
+
                     const actorName = getHrActorName(req.auth)
+
+                    await applyLeaveCreditsDelta(
+                        client,
+                        String(existing.employee_id),
+                        String(existing.leave_type_id),
+                        -leaveDays
+                    )
 
                     await client.query(
                         `
@@ -933,7 +1262,13 @@ export function registerEmployeeCoreRoutes(app, deps) {
                 const request = await withRlsContext(req.auth, async client => {
                     const existingResult = await client.query(
                         `
-                        SELECT request_id, status
+                        SELECT
+                            request_id,
+                            status,
+                            employee_id,
+                            leave_type_id,
+                            start_date::text AS start_date,
+                            end_date::text AS end_date
                         FROM app.leave_requests
                         WHERE request_id = $1::text
                         LIMIT 1
@@ -1032,7 +1367,19 @@ export function registerEmployeeCoreRoutes(app, deps) {
                         )
                     }
 
+                    const leaveDays = getLeaveDaysInclusive(
+                        existing.start_date,
+                        existing.end_date
+                    )
+
                     const actorName = getHrActorName(req.auth)
+
+                    await applyLeaveCreditsDelta(
+                        client,
+                        String(existing.employee_id),
+                        String(existing.leave_type_id),
+                        leaveDays
+                    )
 
                     await client.query(
                         `

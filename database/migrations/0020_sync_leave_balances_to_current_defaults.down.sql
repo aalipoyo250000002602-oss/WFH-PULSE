@@ -1,0 +1,1 @@
+-- One-time data alignment migration; rollback intentionally left as no-op.
