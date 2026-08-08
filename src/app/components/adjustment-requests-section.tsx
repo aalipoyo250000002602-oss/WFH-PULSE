@@ -116,6 +116,8 @@ export function AdjustmentRequestsSection({
         requestKind === 'overtime' ? 'overtime request' : 'adjustment request'
     const requestLabelTitle =
         requestKind === 'overtime' ? 'Overtime Request' : 'Adjustment Request'
+    const requestTypeLabel =
+        requestKind === 'overtime' ? 'Overtime' : 'Time Adjustment'
     const requestEndpointBase = `${apiBaseUrl}/hr/${requestKind}-requests`
     const requestActionEndpointBase = `${apiBaseUrl}/hr/adjustment-requests`
 
@@ -699,6 +701,10 @@ export function AdjustmentRequestsSection({
                                                             Reason: {log.reason}
                                                         </p>
                                                     )}
+                                                    <p className="text-xs text-muted-foreground mt-1">
+                                                        Request Type:{' '}
+                                                        {requestTypeLabel}
+                                                    </p>
                                                 </div>
                                             </div>
                                         )

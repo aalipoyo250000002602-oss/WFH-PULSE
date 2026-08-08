@@ -2434,6 +2434,9 @@ export function DashboardPage({
                                                                 {log.reason}
                                                             </p>
                                                         )}
+                                                        <p className="text-xs text-muted-foreground mt-1">
+                                                            Request Type: Leave
+                                                        </p>
                                                     </div>
                                                 </div>
                                             )

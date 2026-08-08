@@ -509,6 +509,10 @@ export function HomePage({
             } else {
                 await loadAdjustmentRequests()
             }
+
+            if (onCalendarRefresh) {
+                await onCalendarRefresh()
+            }
             return true
         } catch {
             toast.error('Unable to reach API for adjustment request')
@@ -544,6 +548,10 @@ export function HomePage({
 
             removeAdjustmentRequest(requestId)
             setEditingRequest(null)
+
+            if (onCalendarRefresh) {
+                await onCalendarRefresh()
+            }
             return true
         } catch {
             toast.error('Unable to reach API for deletion')
@@ -628,6 +636,10 @@ export function HomePage({
             } else {
                 await loadOvertimeRequests()
             }
+
+            if (onCalendarRefresh) {
+                await onCalendarRefresh()
+            }
             return true
         } catch {
             toast.error('Unable to reach API for overtime request')
@@ -662,6 +674,10 @@ export function HomePage({
 
             removeOvertimeRequest(requestId)
             setEditingOvertimeRequest(null)
+
+            if (onCalendarRefresh) {
+                await onCalendarRefresh()
+            }
             return true
         } catch {
             toast.error('Unable to reach API for overtime deletion')
@@ -715,27 +731,38 @@ export function HomePage({
     // Calculate monthly stats
     const currentMonth = new Date().getMonth()
     const currentYear = new Date().getFullYear()
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate()
+    const today = new Date()
+    today.setHours(23, 59, 59, 999)
 
     const monthlyStats = Object.entries(attendanceData).reduce(
         (stats, [date, status]) => {
             const entryDate = new Date(date)
             if (
                 entryDate.getMonth() === currentMonth &&
-                entryDate.getFullYear() === currentYear
+                entryDate.getFullYear() === currentYear &&
+                entryDate <= today
             ) {
-                if (status === 'present' || status === 'late') stats.present++
-                if (status === 'absent') stats.absent++
+                if (status === 'present' || status === 'late') {
+                    stats.present++
+                    stats.trackedDays++
+                }
+                if (status === 'absent') {
+                    stats.absent++
+                    stats.trackedDays++
+                }
                 if (status === 'late') stats.late++
             }
             return stats
         },
-        { present: 0, absent: 0, late: 0 }
+        { present: 0, absent: 0, late: 0, trackedDays: 0 }
     )
 
-    const attendancePercentage = Math.round(
-        (monthlyStats.present / daysInMonth) * 100
-    )
+    const attendancePercentage =
+        monthlyStats.trackedDays > 0
+            ? Math.round(
+                  (monthlyStats.present / monthlyStats.trackedDays) * 100
+              )
+            : 0
 
     return (
         <div className="space-y-6 pb-20">
@@ -1120,9 +1147,7 @@ export function HomePage({
                         ? ({
                               ...editingRequest,
                               status: editingRequest.status as
-                                  | 'approved'
-                                  | 'denied'
-                                  | 'pending',
+                                  'approved' | 'denied' | 'pending',
                           } as const)
                         : null
                 }

@@ -213,6 +213,19 @@ export function registerMeAttendanceRoutes(app, deps) {
                     AND ar.record_type = 'adjusted'::app.attendance_record_type
                     AND ar.approval_status = 'approved'::app.request_status
                 ),
+                                approved_adjustment_requests AS (
+                                    SELECT DISTINCT ON (r.request_date)
+                                        r.request_date AS attendance_date,
+                                        NULLIF(r.clock_in_time, '')::time AS clock_in,
+                                        NULLIF(r.clock_out_time, '')::time AS clock_out,
+                                        COALESCE(r.total_work_duration_minutes, 0)::integer AS work_duration_minutes,
+                                        COALESCE(r.break_duration_minutes, 0)::integer AS total_break_duration_minutes
+                                    FROM app.attendance_adjustment_requests r
+                                    WHERE r.employee_id = $1::text
+                                        AND r.source_page = 'home'
+                                        AND r.status = 'approved'::app.request_status
+                                    ORDER BY r.request_date, r.approved_at DESC NULLS LAST, r.submitted_at DESC, r.request_id DESC
+                                ),
                 overtime_rows AS (
                   SELECT
                     ar.attendance_date,
@@ -222,24 +235,63 @@ export function registerMeAttendanceRoutes(app, deps) {
                   WHERE ar.employee_id = $1::text
                     AND ar.record_type = 'overtime'::app.attendance_record_type
                     AND ar.approval_status = 'approved'::app.request_status
+                                ),
+                                approved_overtime_requests AS (
+                                    SELECT DISTINCT ON (r.request_date)
+                                        r.request_date AS attendance_date,
+                                        COALESCE(r.total_work_duration_minutes, 0)::integer AS work_duration_minutes
+                                    FROM app.attendance_adjustment_requests r
+                                    WHERE r.employee_id = $1::text
+                                        AND r.source_page = 'home-overtime'
+                                        AND r.status = 'approved'::app.request_status
+                                    ORDER BY r.request_date, r.approved_at DESC NULLS LAST, r.submitted_at DESC, r.request_id DESC
                 )
                 SELECT
                   COALESCE(actual_rows.attendance_id, adjusted_rows.attendance_id, overtime_rows.attendance_id) AS attendance_id,
                   d.attendance_date,
                   'actual'::app.attendance_record_type AS record_type,
-                  COALESCE(adjusted_rows.status, actual_rows.status, 'absent'::app.attendance_status) AS status,
-                  COALESCE(adjusted_rows.clock_in, actual_rows.clock_in) AS clock_in,
-                  COALESCE(adjusted_rows.clock_out, actual_rows.clock_out) AS clock_out,
-                  (COALESCE(adjusted_rows.work_duration_minutes, actual_rows.work_duration_minutes, 0)
-                    + COALESCE(overtime_rows.work_duration_minutes, 0))::integer AS work_duration_minutes,
+                                    COALESCE(
+                                        adjusted_rows.status,
+                                        CASE
+                                            WHEN approved_adjustment_requests.attendance_date IS NOT NULL
+                                                THEN 'present'::app.attendance_status
+                                            ELSE NULL
+                                        END,
+                                        actual_rows.status,
+                                        'absent'::app.attendance_status
+                                    ) AS status,
+                                    COALESCE(
+                                        adjusted_rows.clock_in,
+                                        approved_adjustment_requests.clock_in,
+                                        actual_rows.clock_in
+                                    ) AS clock_in,
+                                    COALESCE(
+                                        adjusted_rows.clock_out,
+                                        approved_adjustment_requests.clock_out,
+                                        actual_rows.clock_out
+                                    ) AS clock_out,
+                                    (COALESCE(
+                                            adjusted_rows.work_duration_minutes,
+                                            approved_adjustment_requests.work_duration_minutes,
+                                            actual_rows.work_duration_minutes,
+                                            0
+                                        )
+                                        + COALESCE(overtime_rows.work_duration_minutes, approved_overtime_requests.work_duration_minutes, 0))::integer AS work_duration_minutes,
                   COALESCE(adjusted_rows.late_minutes, actual_rows.late_minutes, 0) AS late_minutes,
-                  COALESCE(adjusted_rows.total_break_duration_minutes, actual_rows.total_break_duration_minutes, 0)
+                                    COALESCE(
+                                        adjusted_rows.total_break_duration_minutes,
+                                        approved_adjustment_requests.total_break_duration_minutes,
+                                        actual_rows.total_break_duration_minutes,
+                                        0
+                                    )
                     AS total_break_duration_minutes,
                   actual_rows.active_break_started_at
                 FROM attendance_dates d
                 LEFT JOIN actual_rows ON actual_rows.attendance_date = d.attendance_date
                 LEFT JOIN adjusted_rows ON adjusted_rows.attendance_date = d.attendance_date
+                                LEFT JOIN approved_adjustment_requests ON approved_adjustment_requests.attendance_date = d.attendance_date
                 LEFT JOIN overtime_rows ON overtime_rows.attendance_date = d.attendance_date
+                LEFT JOIN approved_overtime_requests ON approved_overtime_requests.attendance_date = d.attendance_date
                 ORDER BY d.attendance_date DESC
                 LIMIT 90
                 `,
@@ -2848,6 +2900,19 @@ export function registerMeAttendanceRoutes(app, deps) {
                     AND ar.record_type = 'adjusted'::app.attendance_record_type
                     AND ar.approval_status = 'approved'::app.request_status
                 ),
+                                approved_adjustment_requests AS (
+                                    SELECT DISTINCT ON (r.request_date)
+                                        r.request_date AS attendance_date,
+                                        NULLIF(r.clock_in_time, '')::time AS clock_in,
+                                        NULLIF(r.clock_out_time, '')::time AS clock_out,
+                                        COALESCE(r.total_work_duration_minutes, 0)::integer AS work_duration_minutes,
+                                        COALESCE(r.break_duration_minutes, 0)::integer AS total_break_duration_minutes
+                                    FROM app.attendance_adjustment_requests r
+                                    WHERE r.employee_id = $1::text
+                                        AND r.source_page = 'home'
+                                        AND r.status = 'approved'::app.request_status
+                                    ORDER BY r.request_date, r.approved_at DESC NULLS LAST, r.submitted_at DESC, r.request_id DESC
+                                ),
                 overtime_rows AS (
                   SELECT
                     ar.attendance_date,
@@ -2856,6 +2921,16 @@ export function registerMeAttendanceRoutes(app, deps) {
                   WHERE ar.employee_id = $1::text
                     AND ar.record_type = 'overtime'::app.attendance_record_type
                     AND ar.approval_status = 'approved'::app.request_status
+                                ),
+                                approved_overtime_requests AS (
+                                    SELECT DISTINCT ON (r.request_date)
+                                        r.request_date AS attendance_date,
+                                        COALESCE(r.total_work_duration_minutes, 0)::integer AS work_duration_minutes
+                                    FROM app.attendance_adjustment_requests r
+                                    WHERE r.employee_id = $1::text
+                                        AND r.source_page = 'home-overtime'
+                                        AND r.status = 'approved'::app.request_status
+                                    ORDER BY r.request_date, r.approved_at DESC NULLS LAST, r.submitted_at DESC, r.request_id DESC
                 ),
                 latest_adjustment_requests AS (
                   SELECT DISTINCT ON (r.request_date)
@@ -2878,17 +2953,46 @@ export function registerMeAttendanceRoutes(app, deps) {
                 effective_rows AS (
                   SELECT
                     d.attendance_date,
-                    COALESCE(adjusted_rows.status, actual_rows.status, 'absent'::app.attendance_status) AS status,
-                    COALESCE(adjusted_rows.clock_in, actual_rows.clock_in) AS clock_in,
-                    COALESCE(adjusted_rows.clock_out, actual_rows.clock_out) AS clock_out,
-                    (COALESCE(adjusted_rows.work_duration_minutes, actual_rows.work_duration_minutes, 0)
-                      + COALESCE(overtime_rows.work_duration_minutes, 0))::integer AS work_duration_minutes,
+                                        COALESCE(
+                                            adjusted_rows.status,
+                                            CASE
+                                                WHEN approved_adjustment_requests.attendance_date IS NOT NULL
+                                                    THEN 'present'::app.attendance_status
+                                                ELSE NULL
+                                            END,
+                                            actual_rows.status,
+                                            'absent'::app.attendance_status
+                                        ) AS status,
+                                        COALESCE(
+                                            adjusted_rows.clock_in,
+                                            approved_adjustment_requests.clock_in,
+                                            actual_rows.clock_in
+                                        ) AS clock_in,
+                                        COALESCE(
+                                            adjusted_rows.clock_out,
+                                            approved_adjustment_requests.clock_out,
+                                            actual_rows.clock_out
+                                        ) AS clock_out,
+                                        (COALESCE(
+                                                adjusted_rows.work_duration_minutes,
+                                                approved_adjustment_requests.work_duration_minutes,
+                                                actual_rows.work_duration_minutes,
+                                                0
+                                            )
+                                            + COALESCE(overtime_rows.work_duration_minutes, approved_overtime_requests.work_duration_minutes, 0))::integer AS work_duration_minutes,
                     COALESCE(adjusted_rows.late_minutes, actual_rows.late_minutes, 0) AS late_minutes,
-                    COALESCE(adjusted_rows.total_break_duration_minutes, actual_rows.total_break_duration_minutes, 0)
+                                        COALESCE(
+                                            adjusted_rows.total_break_duration_minutes,
+                                            approved_adjustment_requests.total_break_duration_minutes,
+                                            actual_rows.total_break_duration_minutes,
+                                            0
+                                        )
                       AS total_break_duration_minutes,
                     actual_rows.active_break_started_at,
                     CASE
-                      WHEN adjusted_rows.attendance_date IS NOT NULL THEN 'adjusted'
+                                            WHEN adjusted_rows.attendance_date IS NOT NULL
+                                                OR approved_adjustment_requests.attendance_date IS NOT NULL
+                                                THEN 'adjusted'
                       ELSE 'actual'
                     END AS effective_record_type,
                     lar.status AS adjustment_approval_status,
@@ -2896,7 +3000,9 @@ export function registerMeAttendanceRoutes(app, deps) {
                   FROM attendance_dates d
                   LEFT JOIN actual_rows ON actual_rows.attendance_date = d.attendance_date
                   LEFT JOIN adjusted_rows ON adjusted_rows.attendance_date = d.attendance_date
+                                    LEFT JOIN approved_adjustment_requests ON approved_adjustment_requests.attendance_date = d.attendance_date
                   LEFT JOIN overtime_rows ON overtime_rows.attendance_date = d.attendance_date
+                                    LEFT JOIN approved_overtime_requests ON approved_overtime_requests.attendance_date = d.attendance_date
                   LEFT JOIN latest_adjustment_requests lar ON lar.request_date = d.attendance_date
                   LEFT JOIN latest_overtime_requests lor ON lor.request_date = d.attendance_date
                 )

@@ -1172,6 +1172,20 @@ export default function App() {
         }
     }, [isLoggedIn, authSession?.accessToken])
 
+    useEffect(() => {
+        if (!isLoggedIn || !authSession?.accessToken) {
+            return
+        }
+
+        const intervalId = window.setInterval(() => {
+            void loadCalendarData(authSession.accessToken)
+        }, 15000)
+
+        return () => {
+            window.clearInterval(intervalId)
+        }
+    }, [isLoggedIn, authSession?.accessToken])
+
     // Mock attendance data for the calendar - October 2025 (Weekdays only, no Saturdays/Sundays)
     const [calendarAttendanceDetails, setCalendarAttendanceDetails] = useState<
         Record<string, CalendarAttendanceDetailState>
