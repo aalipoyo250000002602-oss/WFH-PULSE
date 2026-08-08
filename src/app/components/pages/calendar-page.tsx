@@ -1,4 +1,4 @@
-﻿import { useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import {
 	ChevronLeft,
 	ChevronRight,
@@ -77,10 +77,12 @@ interface LogEntry {
 	status: 'pending' | 'approved' | 'denied' | 'cancelled'
 	date: Date
 	approvedBy?: string
+	reason?: string
 }
 
 interface LeaveRequest {
 	id: string
+	leaveTypeId: string
 	startDate: Date
 	endDate: Date
 	message: string
@@ -90,7 +92,42 @@ interface LeaveRequest {
 	logTrail: LogEntry[]
 }
 
+interface LeaveTypeApiRow {
+	leave_type_id: string
+	name: string
+	credits: number
+	accrued: number
+	limit_days: number
+}
+
+interface LeaveRequestApiLog {
+	status: 'pending' | 'approved' | 'denied' | 'cancelled'
+	loggedAt: string
+	approvedBy?: string | null
+	reason?: string | null
+}
+
+interface LeaveRequestApiAttachment {
+	fileName: string
+}
+
+interface LeaveRequestApiRow {
+	request_id: string
+	employee_id: string
+	leave_type_id: string
+	leave_type_name: string
+	start_date: string
+	end_date: string
+	message: string
+	status: 'pending' | 'approved' | 'denied' | 'cancelled'
+	submitted_at: string
+	attachments?: LeaveRequestApiAttachment[]
+	logs?: LeaveRequestApiLog[]
+}
+
 interface CalendarPageProps {
+	apiBaseUrl: string
+	accessToken: string
 	attendanceData: Record<
 		string,
 		'present' | 'absent' | 'holiday' | 'late' | 'on-leave'
@@ -105,6 +142,8 @@ interface CalendarPageProps {
 }
 
 export function CalendarPage({
+	apiBaseUrl,
+	accessToken,
 	attendanceData,
 	holidays,
 	onAddHoliday,
@@ -352,6 +391,30 @@ export function CalendarPage({
 	const [showLeaveDetailsDialog, setShowLeaveDetailsDialog] = useState(false)
 	const [showCancelConfirmDialog, setShowCancelConfirmDialog] =
 		useState(false)
+	const [isLeaveDataLoading, setIsLeaveDataLoading] = useState(false)
+	const [leaveRequestFilterStatus, setLeaveRequestFilterStatus] = useState<
+		'all' | LeaveRequest['status']
+	>(() => {
+		const fallbackValue: 'all' | LeaveRequest['status'] = 'all'
+		if (typeof window === 'undefined') {
+			return fallbackValue
+		}
+
+		const saved = window.localStorage.getItem(
+			'wfh-pulse:calendar:leave-request-filter-status'
+		)
+		if (
+			saved === 'all' ||
+			saved === 'pending' ||
+			saved === 'approved' ||
+			saved === 'denied' ||
+			saved === 'cancelled'
+		) {
+			return saved
+		}
+
+		return fallbackValue
+	})
 
 	const formatLocalDateKey = (date: Date) => {
 		const year = date.getFullYear()
@@ -697,6 +760,11 @@ export function CalendarPage({
 	}
 
 	const handleSubmitLeaveRequest = () => {
+		if (!accessToken) {
+			toast.error('Session expired. Please log in again.')
+			return
+		}
+
 		if (!leaveRequestForm.leaveType) {
 			toast.error('Please select a leave type')
 			return
@@ -741,29 +809,45 @@ export function CalendarPage({
 			return
 		}
 
-		// Submit the request
-		const newRequest: LeaveRequest = {
-			id: `req-${Date.now()}`,
-			startDate: leaveRequestForm.startDate,
-			endDate: leaveRequestForm.endDate,
-			message: leaveRequestForm.message,
-			status: 'pending',
-			submittedDate: new Date(),
-			attachments: leaveRequestForm.attachments,
-			logTrail: [{ status: 'pending', date: new Date() }],
+		const submitLeaveRequest = async () => {
+			try {
+				const response = await fetch(`${apiBaseUrl}/me/leave-requests`, {
+					method: 'POST',
+					headers: {
+						Authorization: `Bearer ${accessToken}`,
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({
+						leaveTypeId: leaveRequestForm.leaveType,
+						startDate: formatLocalDateKey(leaveRequestForm.startDate),
+						endDate: formatLocalDateKey(leaveRequestForm.endDate),
+						message: leaveRequestForm.message.trim(),
+						attachments: leaveRequestForm.attachments,
+						sourcePage: 'calendar',
+					}),
+				})
+
+				const body = await response.json().catch(() => null)
+				if (!response.ok) {
+					throw new Error(
+						body?.error ?? 'Failed to submit leave request'
+					)
+				}
+
+				await loadLeaveData()
+				toast.success('Leave request submitted successfully')
+				setShowLeaveRequestDialog(false)
+				handleCancelLeaveMode()
+			} catch (error) {
+				const message =
+					error instanceof Error
+						? error.message
+						: 'Failed to submit leave request'
+				toast.error(message)
+			}
 		}
 
-		setLeaveTypes(prev =>
-			prev.map(lt =>
-				lt.id === leaveRequestForm.leaveType
-					? { ...lt, requests: [newRequest, ...lt.requests] }
-					: lt
-			)
-		)
-
-		toast.success('Leave request submitted successfully')
-		setShowLeaveRequestDialog(false)
-		handleCancelLeaveMode()
+		submitLeaveRequest()
 	}
 
 	const handleViewLeaveDetails = (
@@ -778,36 +862,164 @@ export function CalendarPage({
 	const handleCancelLeaveRequest = () => {
 		if (!selectedLeaveRequest) return
 
-		setLeaveTypes(prev =>
-			prev.map(lt =>
-				lt.id === selectedLeaveRequest.leaveTypeId
-					? {
-							...lt,
-							requests: lt.requests.map(req =>
-								req.id === selectedLeaveRequest.request.id
-									? {
-											...req,
-											status: 'cancelled' as const,
-											logTrail: [
-												...req.logTrail,
-												{
-													status: 'cancelled' as const,
-													date: new Date(),
-												},
-											],
-										}
-									: req
-							),
-						}
-					: lt
-			)
-		)
+		const cancelLeaveRequest = async () => {
+			if (!accessToken) {
+				toast.error('Session expired. Please log in again.')
+				return
+			}
 
-		toast.success('Leave request cancelled successfully')
-		setShowCancelConfirmDialog(false)
-		setShowLeaveDetailsDialog(false)
-		setSelectedLeaveRequest(null)
+			try {
+				const response = await fetch(
+					`${apiBaseUrl}/me/leave-requests/${selectedLeaveRequest.request.id}/cancel`,
+					{
+						method: 'POST',
+						headers: {
+							Authorization: `Bearer ${accessToken}`,
+						},
+					}
+				)
+
+				const body = await response.json().catch(() => null)
+				if (!response.ok) {
+					throw new Error(
+						body?.error ?? 'Failed to cancel leave request'
+					)
+				}
+
+				await loadLeaveData()
+				toast.success('Leave request cancelled successfully')
+				setShowCancelConfirmDialog(false)
+				setShowLeaveDetailsDialog(false)
+				setSelectedLeaveRequest(null)
+			} catch (error) {
+				const message =
+					error instanceof Error
+						? error.message
+						: 'Failed to cancel leave request'
+				toast.error(message)
+			}
+		}
+
+		cancelLeaveRequest()
 	}
+
+	const toSafeDate = (value: unknown, fallbackDate?: Date) => {
+		if (typeof value !== 'string') {
+			return fallbackDate ?? new Date()
+		}
+
+		const parsed = new Date(value)
+		if (Number.isNaN(parsed.getTime())) {
+			return fallbackDate ?? new Date()
+		}
+
+		return parsed
+	}
+
+	const loadLeaveData = async () => {
+		if (!accessToken) {
+			return
+		}
+
+		setIsLeaveDataLoading(true)
+		try {
+			const response = await fetch(
+				`${apiBaseUrl}/me/leave-requests?sourcePage=calendar`,
+				{
+					headers: {
+						Authorization: `Bearer ${accessToken}`,
+					},
+				}
+			)
+
+			const body = await response.json().catch(() => null)
+			if (!response.ok) {
+				throw new Error(body?.error ?? 'Failed to load leave requests')
+			}
+
+			const leaveTypeRows = Array.isArray(body?.leaveTypes)
+				? (body.leaveTypes as LeaveTypeApiRow[])
+				: []
+			const requestRows = Array.isArray(body?.requests)
+				? (body.requests as LeaveRequestApiRow[])
+				: []
+
+			const requestsByTypeId = new Map<string, LeaveRequest[]>()
+			for (const row of requestRows) {
+				const submittedDate = toSafeDate(row.submitted_at)
+				const mapped: LeaveRequest = {
+					id: String(row.request_id),
+					leaveTypeId: String(row.leave_type_id),
+					startDate: toSafeDate(row.start_date, submittedDate),
+					endDate: toSafeDate(row.end_date, submittedDate),
+					message: String(row.message ?? ''),
+					status: row.status,
+					submittedDate,
+					attachments: Array.isArray(row.attachments)
+						? row.attachments
+								.map(item => String(item?.fileName ?? ''))
+								.filter(Boolean)
+						: [],
+					logTrail: Array.isArray(row.logs)
+						? row.logs.map(log => ({
+								status: log.status,
+								date: toSafeDate(log.loggedAt, submittedDate),
+								approvedBy: log.approvedBy ?? undefined,
+								reason: log.reason ?? undefined,
+						  }))
+						: [],
+				}
+
+				if (!requestsByTypeId.has(mapped.leaveTypeId)) {
+					requestsByTypeId.set(mapped.leaveTypeId, [])
+				}
+				requestsByTypeId.get(mapped.leaveTypeId)!.push(mapped)
+			}
+
+			setLeaveTypes(
+				leaveTypeRows.map(row => ({
+					id: String(row.leave_type_id),
+					name: String(row.name),
+					credits: Number(row.credits ?? 0),
+					accrued: Number(row.accrued ?? 0),
+					limit: Number(row.limit_days ?? 0),
+					requests:
+						requestsByTypeId
+							.get(String(row.leave_type_id))
+							?.sort(
+								(a, b) =>
+									b.submittedDate.getTime() -
+									a.submittedDate.getTime()
+							) ?? [],
+				}))
+			)
+		} catch (error) {
+			const message =
+				error instanceof Error
+					? error.message
+					: 'Failed to load leave requests'
+			toast.error(message)
+			setLeaveTypes([])
+		} finally {
+			setIsLeaveDataLoading(false)
+		}
+	}
+
+	useEffect(() => {
+		loadLeaveData()
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [accessToken, apiBaseUrl])
+
+	useEffect(() => {
+		if (typeof window === 'undefined') {
+			return
+		}
+
+		window.localStorage.setItem(
+			'wfh-pulse:calendar:leave-request-filter-status',
+			leaveRequestFilterStatus
+		)
+	}, [leaveRequestFilterStatus])
 
 	const handleFileUpload = () => {
 		// Simulate file upload
@@ -844,6 +1056,70 @@ export function CalendarPage({
 			holidayDate.getFullYear() === currentDate.getFullYear()
 		)
 	})
+
+	const recentLeaveRequests = leaveTypes
+		.flatMap(lt =>
+			lt.requests.map(req => ({
+				...req,
+				leaveTypeName: lt.name,
+				leaveTypeId: lt.id,
+			}))
+		)
+
+	const leaveRequestStatusCounts = recentLeaveRequests.reduce(
+		(acc, request) => {
+			acc.all += 1
+			acc[request.status] += 1
+			return acc
+		},
+		{ all: 0, pending: 0, approved: 0, denied: 0, cancelled: 0 }
+	)
+
+	const filteredRecentLeaveRequests = recentLeaveRequests
+		.filter(request =>
+			leaveRequestFilterStatus === 'all'
+				? true
+				: request.status === leaveRequestFilterStatus
+		)
+		.sort((a, b) => b.submittedDate.getTime() - a.submittedDate.getTime())
+		.slice(0, 5)
+
+	const requestStatusChips: Array<{
+		value: 'all' | LeaveRequest['status']
+		label: string
+		count: number
+		className?: string
+	}> = [
+		{
+			value: 'all',
+			label: 'All',
+			count: leaveRequestStatusCounts.all,
+		},
+		{
+			value: 'pending',
+			label: 'Pending',
+			count: leaveRequestStatusCounts.pending,
+			className: 'border-vibrant-orange/30 text-vibrant-orange',
+		},
+		{
+			value: 'approved',
+			label: 'Approved',
+			count: leaveRequestStatusCounts.approved,
+			className: 'border-vibrant-green/30 text-vibrant-green',
+		},
+		{
+			value: 'denied',
+			label: 'Denied',
+			count: leaveRequestStatusCounts.denied,
+			className: 'border-red-500/30 text-red-600',
+		},
+		{
+			value: 'cancelled',
+			label: 'Cancelled',
+			count: leaveRequestStatusCounts.cancelled,
+			className: 'border-muted-foreground/30 text-muted-foreground col-span-2',
+		},
+	]
 
 	return (
 		<div className="space-y-6 pb-20">
@@ -1215,34 +1491,43 @@ export function CalendarPage({
 												</div>
 
 												{/* Recent Leave Requests */}
-												{leaveTypes.some(
+												{isLeaveDataLoading ? (
+													<p className="text-sm text-muted-foreground text-center py-4">
+														Loading leave requests...
+													</p>
+												) : leaveTypes.some(
 													lt => lt.requests.length > 0
-												) && (
+												) ? (
 													<div className="pt-3 border-t border-border">
-														<Label className="text-sm mb-2 block">
+														<div className="mb-2">
+															<Label className="text-sm mb-2 block">
 															Recent Requests
-														</Label>
+															</Label>
+															<div className="grid grid-cols-2 gap-2 mb-2">
+																{requestStatusChips.map(chip => (
+																	<Button
+																		key={chip.value}
+																		type="button"
+																		variant="outline"
+																		size="sm"
+																		onClick={() =>
+																			setLeaveRequestFilterStatus(chip.value)
+																		}
+																		className={`justify-between ${chip.className ?? ''} ${leaveRequestFilterStatus === chip.value ? 'ring-2 ring-vibrant-blue/40 bg-vibrant-blue/10' : ''}`}
+																	>
+																		<span>{chip.label}</span>
+																		<span>{chip.count}</span>
+																	</Button>
+																))}
+															</div>
+														</div>
 														<div className="space-y-2">
-															{leaveTypes
-																.flatMap(lt =>
-																	lt.requests.map(
-																		req => ({
-																			...req,
-																			leaveTypeName:
-																				lt.name,
-																			leaveTypeId:
-																				lt.id,
-																		})
-																	)
-																)
-																.sort(
-																	(a, b) =>
-																		b.submittedDate.getTime() -
-																		a.submittedDate.getTime()
-																)
-																.slice(0, 5)
-																.map(
-																	request => (
+															{filteredRecentLeaveRequests.length === 0 ? (
+																<p className="text-xs text-muted-foreground text-center py-3">
+																	No {leaveRequestFilterStatus !== 'all' ? leaveRequestFilterStatus : ''} leave requests found
+																</p>
+															) : (
+																filteredRecentLeaveRequests.map(request => (
 																		<div
 																			key={
 																				request.id
@@ -1307,11 +1592,11 @@ export function CalendarPage({
 																				<Eye className="h-4 w-4 text-muted-foreground" />
 																			</div>
 																		</div>
-																	)
-																)}
+																	))
+															)}
 														</div>
 													</div>
-												)}
+												) : null}
 											</div>
 										) : (
 											<div className="space-y-3">
@@ -2132,10 +2417,14 @@ export function CalendarPage({
 														{log.approvedBy && (
 															<p className="text-xs text-muted-foreground mt-1">
 																By:{' '}
-																{log.approvedBy}{' '}
-																(HR)
+																	{log.approvedBy}
 															</p>
 														)}
+															{log.reason && (
+																<p className="text-xs text-muted-foreground mt-1 p-2 bg-muted rounded">
+																	Reason: {log.reason}
+																</p>
+															)}
 													</div>
 												</div>
 											)

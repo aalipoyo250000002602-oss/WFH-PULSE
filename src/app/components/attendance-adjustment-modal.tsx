@@ -267,8 +267,14 @@ export function AttendanceAdjustmentModal({
 			return
 		}
 
-		if (!message.trim()) {
+		const trimmedMessage = message.trim()
+		if (!trimmedMessage) {
 			toast.error('Please enter a message')
+			return
+		}
+
+		if (trimmedMessage.length < 3) {
+			toast.error('Message must contain at least 3 characters')
 			return
 		}
 
@@ -284,7 +290,7 @@ export function AttendanceAdjustmentModal({
 			clockOutTime,
 			breakDuration: breakMinutes,
 			totalWorkDuration: calculateWorkDuration(),
-			message: message.trim(),
+			message: trimmedMessage,
 			attachments,
 			status: existingRequest?.status || 'pending',
 			approvedBy: existingRequest?.approvedBy,

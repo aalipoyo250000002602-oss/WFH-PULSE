@@ -23,12 +23,74 @@ export function registerMeAttendanceRoutes(app, deps) {
         mapOvertimeRequestRow,
         overtimeRequestCreateSchema,
         overtimeRequestUpdateSchema,
+                leaveRequestCreateSchema,
         getWorkingScheduleForDate,
         validateOvertimeOutsideWorkingHours,
         buildOvertimeLogReason,
         parsePurposeFromOvertimeMessage,
         seedCalendarSampleAttendanceIfEmpty,
     } = deps
+
+        const leaveRequestStatusOptions = new Set([
+                'pending',
+                'approved',
+                'denied',
+                'cancelled',
+        ])
+        const leaveRequestSourceOptions = new Set(['calendar', 'home', 'dashboard'])
+
+        const getLeaveRequestByIdForApi = async (client, requestId) => {
+                const result = await client.query(
+                        `
+                        SELECT
+                            lr.request_id,
+                            lr.employee_id,
+                            lr.leave_type_id,
+                            COALESCE(lr.leave_type_name, lt.name, '') AS leave_type_name,
+                            lr.start_date::text AS start_date,
+                            lr.end_date::text AS end_date,
+                            lr.message,
+                            lr.status,
+                            lr.submitted_at,
+                            lr.source_page,
+                            COALESCE(a.items, '[]'::jsonb) AS attachments,
+                            COALESCE(l.items, '[]'::jsonb) AS logs
+                        FROM app.leave_requests lr
+                        LEFT JOIN app.leave_types lt
+                            ON lt.leave_type_id = lr.leave_type_id
+                        LEFT JOIN LATERAL (
+                            SELECT jsonb_agg(
+                                jsonb_build_object(
+                                    'attachmentId', att.attachment_id,
+                                    'fileName', att.file_name
+                                )
+                                ORDER BY att.attachment_id
+                            ) AS items
+                            FROM app.leave_request_attachments att
+                            WHERE att.request_id = lr.request_id
+                        ) a ON TRUE
+                        LEFT JOIN LATERAL (
+                            SELECT jsonb_agg(
+                                jsonb_build_object(
+                                    'logId', lg.log_id,
+                                    'status', lg.status,
+                                    'loggedAt', lg.logged_at,
+                                    'approvedBy', lg.approved_by,
+                                    'reason', lg.reason
+                                )
+                                ORDER BY lg.logged_at ASC, lg.log_id ASC
+                            ) AS items
+                            FROM app.leave_request_logs lg
+                            WHERE lg.request_id = lr.request_id
+                        ) l ON TRUE
+                        WHERE lr.request_id = $1::text
+                        LIMIT 1
+                        `,
+                        [requestId]
+                )
+
+                return result.rows[0] ?? null
+        }
 
     const autoCloseMissedClockOuts = async (
         authContext,
@@ -2135,6 +2197,364 @@ export function registerMeAttendanceRoutes(app, deps) {
             }
         }
     )
+
+    app.get('/me/leave-requests', requireAuth, async (req, res) => {
+        const status =
+            typeof req.query.status === 'string'
+                ? req.query.status.trim().toLowerCase()
+                : null
+        const sourcePage =
+            typeof req.query.sourcePage === 'string'
+                ? req.query.sourcePage.trim().toLowerCase()
+                : 'calendar'
+
+        if (status && !leaveRequestStatusOptions.has(status)) {
+            return res.status(400).json({
+                error: 'Invalid status filter. Use pending, approved, denied, or cancelled.',
+            })
+        }
+
+        if (
+            sourcePage &&
+            sourcePage !== 'all' &&
+            !leaveRequestSourceOptions.has(sourcePage)
+        ) {
+            return res.status(400).json({
+                error: 'Invalid sourcePage filter. Use calendar, home, dashboard, or all.',
+            })
+        }
+
+        try {
+            const resolvedEmployeeId = await ensureEmployeeLinkForUser(
+                req.auth.userId
+            )
+            if (!resolvedEmployeeId) {
+                return res.status(404).json({
+                    error: 'No employee profile is linked to this account yet.',
+                })
+            }
+
+            const payload = await withRlsContext(req.auth, async client => {
+                const balancesResult = await client.query(
+                    `
+                    SELECT
+                      lt.leave_type_id,
+                      lt.name,
+                      COALESCE(lb.credits, 0)::integer AS credits,
+                      COALESCE(lb.accrued, 0)::integer AS accrued,
+                      COALESCE(lb.limit_days, lt.default_limit_days)::integer AS limit_days
+                    FROM app.leave_types lt
+                    LEFT JOIN app.leave_balances lb
+                      ON lb.leave_type_id = lt.leave_type_id
+                     AND lb.employee_id = $1::text
+                    ORDER BY lt.name ASC
+                    `,
+                    [resolvedEmployeeId]
+                )
+
+                const params = [resolvedEmployeeId]
+                const where = ['lr.employee_id = $1::text']
+
+                if (status) {
+                    params.push(status)
+                    where.push(`lr.status = $${params.length}::app.request_status`)
+                }
+
+                if (sourcePage && sourcePage !== 'all') {
+                    params.push(sourcePage)
+                    where.push(`lr.source_page = $${params.length}::text`)
+                }
+
+                const requestsResult = await client.query(
+                    `
+                    SELECT
+                      lr.request_id,
+                      lr.employee_id,
+                      lr.leave_type_id,
+                      COALESCE(lr.leave_type_name, lt.name, '') AS leave_type_name,
+                      lr.start_date::text AS start_date,
+                      lr.end_date::text AS end_date,
+                      lr.message,
+                      lr.status,
+                      lr.submitted_at,
+                      lr.source_page,
+                      COALESCE(a.items, '[]'::jsonb) AS attachments,
+                      COALESCE(l.items, '[]'::jsonb) AS logs
+                    FROM app.leave_requests lr
+                    LEFT JOIN app.leave_types lt
+                      ON lt.leave_type_id = lr.leave_type_id
+                    LEFT JOIN LATERAL (
+                      SELECT jsonb_agg(
+                        jsonb_build_object(
+                          'attachmentId', att.attachment_id,
+                          'fileName', att.file_name
+                        )
+                        ORDER BY att.attachment_id
+                      ) AS items
+                      FROM app.leave_request_attachments att
+                      WHERE att.request_id = lr.request_id
+                    ) a ON TRUE
+                    LEFT JOIN LATERAL (
+                      SELECT jsonb_agg(
+                        jsonb_build_object(
+                          'logId', lg.log_id,
+                          'status', lg.status,
+                          'loggedAt', lg.logged_at,
+                          'approvedBy', lg.approved_by,
+                          'reason', lg.reason
+                        )
+                        ORDER BY lg.logged_at ASC, lg.log_id ASC
+                      ) AS items
+                      FROM app.leave_request_logs lg
+                      WHERE lg.request_id = lr.request_id
+                    ) l ON TRUE
+                    WHERE ${where.join(' AND ')}
+                    ORDER BY lr.submitted_at DESC, lr.request_id DESC
+                    LIMIT 300
+                    `,
+                    params
+                )
+
+                return {
+                    leaveTypes: balancesResult.rows,
+                    requests: requestsResult.rows,
+                }
+            })
+
+            return res.json(payload)
+        } catch (error) {
+            return res.status(400).json({ error: error.message })
+        }
+    })
+
+    app.post('/me/leave-requests', requireAuth, async (req, res) => {
+        const parsed = leaveRequestCreateSchema.safeParse(req.body)
+        if (!parsed.success) {
+            return res.status(400).json({ error: parsed.error.flatten() })
+        }
+
+        const payload = parsed.data
+        if (payload.startDate > payload.endDate) {
+            return res.status(400).json({
+                error: 'startDate must be on or before endDate',
+            })
+        }
+
+        const sourcePage = (payload.sourcePage ?? 'calendar').trim().toLowerCase()
+        if (!leaveRequestSourceOptions.has(sourcePage)) {
+            return res.status(400).json({
+                error: 'Invalid sourcePage. Use calendar, home, or dashboard.',
+            })
+        }
+
+        try {
+            const resolvedEmployeeId = await ensureEmployeeLinkForUser(
+                req.auth.userId
+            )
+            if (!resolvedEmployeeId) {
+                return res.status(404).json({
+                    error: 'No employee profile is linked to this account yet.',
+                })
+            }
+
+            const request = await withRlsContext(req.auth, async client => {
+                const leaveTypeResult = await client.query(
+                    `
+                    SELECT leave_type_id, name, default_limit_days
+                    FROM app.leave_types
+                    WHERE leave_type_id = $1::text
+                    LIMIT 1
+                    `,
+                    [payload.leaveTypeId]
+                )
+
+                if (leaveTypeResult.rowCount === 0) {
+                    throw new Error('Leave type not found')
+                }
+
+                const leaveType = leaveTypeResult.rows[0]
+                const balanceResult = await client.query(
+                    `
+                    SELECT COALESCE(credits, 0)::integer AS credits
+                    FROM app.leave_balances
+                    WHERE employee_id = $1::text
+                      AND leave_type_id = $2::text
+                    LIMIT 1
+                    `,
+                    [resolvedEmployeeId, payload.leaveTypeId]
+                )
+
+                const credits =
+                    balanceResult.rowCount > 0
+                        ? Number(balanceResult.rows[0].credits ?? 0)
+                        : Number(leaveType.default_limit_days ?? 0)
+
+                const startDate = new Date(payload.startDate)
+                const endDate = new Date(payload.endDate)
+                const daysRequested =
+                    Math.ceil(
+                        (endDate.getTime() - startDate.getTime()) /
+                            (1000 * 60 * 60 * 24)
+                    ) + 1
+
+                if (!Number.isFinite(daysRequested) || daysRequested <= 0) {
+                    throw new Error('Invalid leave date range')
+                }
+
+                if (daysRequested > credits) {
+                    throw new Error(
+                        `Insufficient leave credits. You have ${credits} day(s) available.`
+                    )
+                }
+
+                const requestId = `leave-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+
+                await client.query(
+                    `
+                    INSERT INTO app.leave_requests (
+                      request_id,
+                      employee_id,
+                      leave_type_id,
+                      leave_type_name,
+                      start_date,
+                      end_date,
+                      message,
+                      status,
+                      submitted_at,
+                      source_page
+                    )
+                    VALUES (
+                      $1::text,
+                      $2::text,
+                      $3::text,
+                      $4::text,
+                      $5::date,
+                      $6::date,
+                      $7::text,
+                      'pending'::app.request_status,
+                      NOW(),
+                      $8::text
+                    )
+                    `,
+                    [
+                        requestId,
+                        resolvedEmployeeId,
+                        payload.leaveTypeId,
+                        leaveType.name,
+                        payload.startDate,
+                        payload.endDate,
+                        payload.message.trim(),
+                        sourcePage,
+                    ]
+                )
+
+                const attachments = Array.isArray(payload.attachments)
+                    ? payload.attachments
+                    : []
+                for (const fileName of attachments) {
+                    await client.query(
+                        `
+                        INSERT INTO app.leave_request_attachments (request_id, file_name)
+                        VALUES ($1::text, $2::text)
+                        `,
+                        [requestId, fileName]
+                    )
+                }
+
+                await client.query(
+                    `
+                    INSERT INTO app.leave_request_logs (request_id, status, logged_at, approved_by, reason)
+                    VALUES (
+                      $1::text,
+                      'pending'::app.request_status,
+                      NOW(),
+                      NULL,
+                      'Leave request submitted'
+                    )
+                    `,
+                    [requestId]
+                )
+
+                return getLeaveRequestByIdForApi(client, requestId)
+            })
+
+            return res.status(201).json({ request })
+        } catch (error) {
+            return res.status(400).json({ error: error.message })
+        }
+    })
+
+    app.post('/me/leave-requests/:requestId/cancel', requireAuth, async (req, res) => {
+        const requestId = String(req.params.requestId || '').trim()
+        if (!requestId) {
+            return res.status(400).json({ error: 'Invalid requestId' })
+        }
+
+        try {
+            const resolvedEmployeeId = await ensureEmployeeLinkForUser(
+                req.auth.userId
+            )
+            if (!resolvedEmployeeId) {
+                return res.status(404).json({
+                    error: 'No employee profile is linked to this account yet.',
+                })
+            }
+
+            const request = await withRlsContext(req.auth, async client => {
+                const existingResult = await client.query(
+                    `
+                    SELECT request_id, status
+                    FROM app.leave_requests
+                    WHERE request_id = $1::text
+                      AND employee_id = $2::text
+                    LIMIT 1
+                    `,
+                    [requestId, resolvedEmployeeId]
+                )
+
+                if (existingResult.rowCount === 0) {
+                    throw new Error('Leave request not found')
+                }
+
+                const existing = existingResult.rows[0]
+                if (existing.status === 'denied') {
+                    throw new Error('Denied leave requests cannot be cancelled')
+                }
+                if (existing.status === 'cancelled') {
+                    throw new Error('Leave request is already cancelled')
+                }
+
+                await client.query(
+                    `
+                    UPDATE app.leave_requests
+                    SET status = 'cancelled'::app.request_status
+                    WHERE request_id = $1::text
+                    `,
+                    [requestId]
+                )
+
+                await client.query(
+                    `
+                    INSERT INTO app.leave_request_logs (request_id, status, logged_at, approved_by, reason)
+                    VALUES (
+                      $1::text,
+                      'cancelled'::app.request_status,
+                      NOW(),
+                      NULL,
+                      'Leave request cancelled by employee'
+                    )
+                    `,
+                    [requestId]
+                )
+
+                return getLeaveRequestByIdForApi(client, requestId)
+            })
+
+            return res.json({ request, cancelled: true })
+        } catch (error) {
+            return res.status(400).json({ error: error.message })
+        }
+    })
 
     app.delete(
         '/me/overtime-requests/:requestId',

@@ -12,12 +12,12 @@ import {
 import {
 	Filter,
 	Eye,
-	CheckCircle,
-	XCircle,
 	AlertCircle,
 	FileText,
 	Download,
 	Clock,
+	CheckCircle,
+	XCircle,
 	Settings,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -42,12 +42,41 @@ import {
 import { Label } from './ui/label'
 import { Textarea } from './ui/textarea'
 import { format } from 'date-fns'
-import {
-	getInitialAdjustmentRequests,
-	AdjustmentRequest,
-} from './adjustment-requests-data'
+import { AdjustmentRequest } from './adjustment-requests-data'
+
+interface AdjustmentRequestApiLog {
+	status: 'pending' | 'approved' | 'denied' | 'cancelled'
+	loggedAt: string
+	approvedBy?: string | null
+	reason?: string | null
+}
+
+interface AdjustmentRequestApiAttachment {
+	fileName: string
+}
+
+interface AdjustmentRequestApiRow {
+	request_id: string
+	employee_id: string
+	employee_name: string
+	position: string
+	department: string
+	shift_date_from: string
+	shift_date_to: string
+	clock_in_time: string
+	clock_out_time: string
+	reason: 'Forgot to Clock-in/Clock-out' | 'Missing logs'
+	break_duration_minutes: number
+	message: string
+	status: 'pending' | 'approved' | 'denied' | 'cancelled'
+	submitted_at: string
+	attachments?: AdjustmentRequestApiAttachment[]
+	logs?: AdjustmentRequestApiLog[]
+}
 
 interface AdjustmentRequestsSectionProps {
+	apiBaseUrl: string
+	accessToken: string
 	onFilteredCountChange?: (count: number) => void
 	filterStatus?: 'all' | 'pending' | 'approved' | 'denied' | 'cancelled'
 	onFilterStatusChange?: (
@@ -56,13 +85,17 @@ interface AdjustmentRequestsSectionProps {
 }
 
 export function AdjustmentRequestsSection({
+	apiBaseUrl,
+	accessToken,
 	onFilteredCountChange,
 	filterStatus = 'pending',
 	onFilterStatusChange,
 }: AdjustmentRequestsSectionProps) {
 	const [adjustmentRequests, setAdjustmentRequests] = useState<
 		AdjustmentRequest[]
-	>(getInitialAdjustmentRequests())
+	>([])
+	const [isLoadingAdjustmentRequests, setIsLoadingAdjustmentRequests] =
+		useState(false)
 	const adjustmentFilterStatus = filterStatus
 	const [selectedAdjustmentRequest, setSelectedAdjustmentRequest] =
 		useState<AdjustmentRequest | null>(null)
@@ -76,6 +109,98 @@ export function AdjustmentRequestsSection({
 		useState(false)
 	const [adjustmentDenyReason, setAdjustmentDenyReason] = useState('')
 	const [adjustmentCancelReason, setAdjustmentCancelReason] = useState('')
+	const [isSubmittingAction, setIsSubmittingAction] = useState(false)
+
+	const toSafeDate = (value: unknown, fallbackDate?: Date) => {
+		if (typeof value !== 'string') {
+			return fallbackDate ?? new Date()
+		}
+
+		const parsed = new Date(value)
+		if (Number.isNaN(parsed.getTime())) {
+			return fallbackDate ?? new Date()
+		}
+
+		return parsed
+	}
+
+	const loadAdjustmentRequests = React.useCallback(async () => {
+		if (!accessToken) {
+			return
+		}
+
+		setIsLoadingAdjustmentRequests(true)
+		try {
+			const response = await fetch(
+				`${apiBaseUrl}/hr/adjustment-requests?sourcePage=all`,
+				{
+					headers: {
+						Authorization: `Bearer ${accessToken}`,
+					},
+				}
+			)
+
+			const body = await response.json().catch(() => null)
+			if (!response.ok) {
+				throw new Error(body?.error ?? 'Failed to load adjustment requests')
+			}
+
+			const rows = Array.isArray(body?.requests)
+				? (body.requests as AdjustmentRequestApiRow[])
+				: []
+
+			const mapped = rows.map(row => {
+				const submittedDate = toSafeDate(row.submitted_at)
+				const shiftDateFrom = toSafeDate(row.shift_date_from, submittedDate)
+				const shiftDateTo = toSafeDate(row.shift_date_to, shiftDateFrom)
+
+				return {
+					id: String(row.request_id),
+					employeeId: String(row.employee_id ?? ''),
+					employeeName: String(row.employee_name ?? ''),
+					position: String(row.position ?? ''),
+					department: String(row.department ?? ''),
+					shiftDateFrom,
+					shiftDateTo,
+					clockInTime: String(row.clock_in_time ?? ''),
+					clockOutTime: String(row.clock_out_time ?? ''),
+					reason: row.reason,
+					breakDuration: Number(row.break_duration_minutes ?? 0),
+					message: String(row.message ?? ''),
+					status: row.status,
+					submittedDate,
+					attachments: Array.isArray(row.attachments)
+						? row.attachments
+								.map(item => String(item?.fileName ?? ''))
+								.filter(Boolean)
+						: [],
+					logTrail: Array.isArray(row.logs)
+						? row.logs.map(log => ({
+								status: log.status,
+								date: toSafeDate(log.loggedAt, submittedDate),
+								approvedBy: log.approvedBy ?? undefined,
+								reason: log.reason ?? undefined,
+						  }))
+						: [],
+				} as AdjustmentRequest
+			})
+
+			setAdjustmentRequests(mapped)
+		} catch (error) {
+			const message =
+				error instanceof Error
+					? error.message
+					: 'Failed to load adjustment requests'
+			toast.error(message)
+			setAdjustmentRequests([])
+		} finally {
+			setIsLoadingAdjustmentRequests(false)
+		}
+	}, [accessToken, apiBaseUrl])
+
+	React.useEffect(() => {
+		loadAdjustmentRequests()
+	}, [loadAdjustmentRequests])
 
 	const filteredAdjustmentRequests = adjustmentRequests
 		.filter(req =>
@@ -99,101 +224,156 @@ export function AdjustmentRequestsSection({
 		setShowAdjustmentDetailsDialog(true)
 	}
 
-	const handleApproveAdjustment = () => {
-		if (!selectedAdjustmentRequest) return
-
-		setAdjustmentRequests(prev =>
-			prev.map(req =>
-				req.id === selectedAdjustmentRequest.id
-					? {
-							...req,
-							status: 'approved' as const,
-							logTrail: [
-								...req.logTrail,
-								{
-									status: 'approved' as const,
-									date: new Date(),
-									approvedBy: 'Sarah Martinez',
-								},
-							],
-						}
-					: req
-			)
+	const isMissingAdjustmentRequestError = (message: string) =>
+		/no existing request|request not found|adjustment request not found/i.test(
+			message
 		)
 
-		toast.success('Adjustment request approved successfully')
-		setShowAdjustmentApproveDialog(false)
-		setShowAdjustmentDetailsDialog(false)
-		setSelectedAdjustmentRequest(null)
-	}
-
-	const handleDenyAdjustment = () => {
+	const handleApproveAdjustment = async () => {
 		if (!selectedAdjustmentRequest) return
 
+		setIsSubmittingAction(true)
+		try {
+			const response = await fetch(
+				`${apiBaseUrl}/hr/adjustment-requests/${selectedAdjustmentRequest.id}/approve`,
+				{
+					method: 'POST',
+					headers: {
+						Authorization: `Bearer ${accessToken}`,
+					},
+				}
+			)
+
+			const body = await response.json().catch(() => null)
+			if (!response.ok) {
+				throw new Error(body?.error ?? 'Failed to approve adjustment request')
+			}
+
+			await loadAdjustmentRequests()
+			toast.success('Adjustment request approved successfully')
+			setShowAdjustmentApproveDialog(false)
+			setShowAdjustmentDetailsDialog(false)
+			setSelectedAdjustmentRequest(null)
+		} catch (error) {
+			const message =
+				error instanceof Error
+					? error.message
+					: 'Failed to approve adjustment request'
+			if (isMissingAdjustmentRequestError(message)) {
+				await loadAdjustmentRequests()
+				setShowAdjustmentApproveDialog(false)
+				setShowAdjustmentDetailsDialog(false)
+				setSelectedAdjustmentRequest(null)
+				return
+			}
+			toast.error(message)
+		} finally {
+			setIsSubmittingAction(false)
+		}
+	}
+
+	const handleDenyAdjustment = async () => {
+		if (!selectedAdjustmentRequest) return
 		if (!adjustmentDenyReason.trim()) {
 			toast.error('Please provide a reason for denial')
 			return
 		}
 
-		setAdjustmentRequests(prev =>
-			prev.map(req =>
-				req.id === selectedAdjustmentRequest.id
-					? {
-							...req,
-							status: 'denied' as const,
-							logTrail: [
-								...req.logTrail,
-								{
-									status: 'denied' as const,
-									date: new Date(),
-									approvedBy: 'Sarah Martinez',
-									reason: adjustmentDenyReason,
-								},
-							],
-						}
-					: req
+		setIsSubmittingAction(true)
+		try {
+			const response = await fetch(
+				`${apiBaseUrl}/hr/adjustment-requests/${selectedAdjustmentRequest.id}/deny`,
+				{
+					method: 'POST',
+					headers: {
+						Authorization: `Bearer ${accessToken}`,
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({ reason: adjustmentDenyReason.trim() }),
+				}
 			)
-		)
 
-		toast.success('Adjustment request denied')
-		setShowAdjustmentDenyDialog(false)
-		setShowAdjustmentDetailsDialog(false)
-		setSelectedAdjustmentRequest(null)
-		setAdjustmentDenyReason('')
+			const body = await response.json().catch(() => null)
+			if (!response.ok) {
+				throw new Error(body?.error ?? 'Failed to deny adjustment request')
+			}
+
+			await loadAdjustmentRequests()
+			toast.success('Adjustment request denied')
+			setShowAdjustmentDenyDialog(false)
+			setShowAdjustmentDetailsDialog(false)
+			setSelectedAdjustmentRequest(null)
+			setAdjustmentDenyReason('')
+		} catch (error) {
+			const message =
+				error instanceof Error
+					? error.message
+					: 'Failed to deny adjustment request'
+			if (isMissingAdjustmentRequestError(message)) {
+				await loadAdjustmentRequests()
+				setShowAdjustmentDenyDialog(false)
+				setShowAdjustmentDetailsDialog(false)
+				setSelectedAdjustmentRequest(null)
+				setAdjustmentDenyReason('')
+				return
+			}
+			toast.error(message)
+		} finally {
+			setIsSubmittingAction(false)
+		}
 	}
 
-	const handleCancelApprovedAdjustment = () => {
+	const handleCancelApprovedAdjustment = async () => {
 		if (!selectedAdjustmentRequest) return
-
 		if (!adjustmentCancelReason.trim()) {
 			toast.error('Please provide a reason for cancellation')
 			return
 		}
 
-		setAdjustmentRequests(prev =>
-			prev.map(req =>
-				req.id === selectedAdjustmentRequest.id
-					? {
-							...req,
-							status: 'cancelled' as const,
-							logTrail: [
-								...req.logTrail,
-								{
-									status: 'cancelled' as const,
-									date: new Date(),
-									reason: adjustmentCancelReason,
-								},
-							],
-						}
-					: req
+		setIsSubmittingAction(true)
+		try {
+			const response = await fetch(
+				`${apiBaseUrl}/hr/adjustment-requests/${selectedAdjustmentRequest.id}/cancel`,
+				{
+					method: 'POST',
+					headers: {
+						Authorization: `Bearer ${accessToken}`,
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({ reason: adjustmentCancelReason.trim() }),
+				}
 			)
-		)
 
-		toast.success('Adjustment request cancelled')
-		setShowAdjustmentCancelDialog(false)
-		setShowAdjustmentDetailsDialog(false)
-		setSelectedAdjustmentRequest(null)
-		setAdjustmentCancelReason('')
+			const body = await response.json().catch(() => null)
+			if (!response.ok) {
+				throw new Error(
+					body?.error ?? 'Failed to cancel adjustment request'
+				)
+			}
+
+			await loadAdjustmentRequests()
+			toast.success('Adjustment request cancelled')
+			setShowAdjustmentCancelDialog(false)
+			setShowAdjustmentDetailsDialog(false)
+			setSelectedAdjustmentRequest(null)
+			setAdjustmentCancelReason('')
+		} catch (error) {
+			const message =
+				error instanceof Error
+					? error.message
+					: 'Failed to cancel adjustment request'
+			if (isMissingAdjustmentRequestError(message)) {
+				await loadAdjustmentRequests()
+				setShowAdjustmentCancelDialog(false)
+				setShowAdjustmentDetailsDialog(false)
+				setSelectedAdjustmentRequest(null)
+				setAdjustmentCancelReason('')
+				return
+			}
+			toast.error(message)
+		} finally {
+			setIsSubmittingAction(false)
+		}
 	}
 
 	const getAdjustmentStatusBadge = (status: AdjustmentRequest['status']) => {
@@ -240,7 +420,12 @@ export function AdjustmentRequestsSection({
 
 			{/* Requests List */}
 			<div className="space-y-2">
-				{filteredAdjustmentRequests.length === 0 ? (
+				{isLoadingAdjustmentRequests ? (
+					<div className="text-center py-8 text-muted-foreground">
+						<Settings className="h-12 w-12 mx-auto mb-2 opacity-20" />
+						<p>Loading adjustment requests...</p>
+					</div>
+				) : filteredAdjustmentRequests.length === 0 ? (
 					<div className="text-center py-8 text-muted-foreground">
 						<Settings className="h-12 w-12 mx-auto mb-2 opacity-20" />
 						<p>
@@ -487,8 +672,7 @@ export function AdjustmentRequestsSection({
 													</div>
 													{log.approvedBy && (
 														<p className="text-xs text-muted-foreground mt-1">
-															By: {log.approvedBy}{' '}
-															(HR)
+															By: {log.approvedBy}
 														</p>
 													)}
 													{log.reason && (
@@ -552,7 +736,6 @@ export function AdjustmentRequestsSection({
 				</DialogContent>
 			</Dialog>
 
-			{/* Approve Confirmation Dialog */}
 			<AlertDialog
 				open={showAdjustmentApproveDialog}
 				onOpenChange={setShowAdjustmentApproveDialog}
@@ -563,35 +746,16 @@ export function AdjustmentRequestsSection({
 							Approve Adjustment Request?
 						</AlertDialogTitle>
 						<AlertDialogDescription>
-							Are you sure you want to approve this adjustment
-							request?
+							Are you sure you want to approve this adjustment request?
 						</AlertDialogDescription>
 					</AlertDialogHeader>
-					{selectedAdjustmentRequest && (
-						<div className="px-6 pb-2">
-							<div className="p-3 bg-muted rounded-lg text-sm">
-								<p className="font-medium text-foreground">
-									{selectedAdjustmentRequest.employeeName} -{' '}
-									{selectedAdjustmentRequest.reason}
-								</p>
-								<p className="text-xs mt-1 text-muted-foreground">
-									{format(
-										selectedAdjustmentRequest.shiftDateFrom,
-										'MMM dd'
-									)}{' '}
-									-{' '}
-									{format(
-										selectedAdjustmentRequest.shiftDateTo,
-										'MMM dd, yyyy'
-									)}
-								</p>
-							</div>
-						</div>
-					)}
 					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogCancel disabled={isSubmittingAction}>
+							Cancel
+						</AlertDialogCancel>
 						<AlertDialogAction
 							onClick={handleApproveAdjustment}
+							disabled={isSubmittingAction}
 							className="bg-vibrant-green text-vibrant-green-foreground hover:bg-vibrant-green/90"
 						>
 							Yes, Approve
@@ -600,7 +764,6 @@ export function AdjustmentRequestsSection({
 				</AlertDialogContent>
 			</AlertDialog>
 
-			{/* Deny Dialog */}
 			<Dialog
 				open={showAdjustmentDenyDialog}
 				onOpenChange={setShowAdjustmentDenyDialog}
@@ -609,52 +772,26 @@ export function AdjustmentRequestsSection({
 					<DialogHeader>
 						<DialogTitle>Deny Adjustment Request</DialogTitle>
 						<DialogDescription>
-							Please provide a reason for denying this adjustment
-							request. This will be visible to the employee.
+							Please provide a reason for denying this adjustment request.
 						</DialogDescription>
 					</DialogHeader>
-
-					{selectedAdjustmentRequest && (
-						<div className="space-y-4">
-							<div className="p-3 bg-muted rounded-lg">
-								<p className="font-medium">
-									{selectedAdjustmentRequest.employeeName} -{' '}
-									{selectedAdjustmentRequest.reason}
-								</p>
-								<p className="text-sm text-muted-foreground">
-									{format(
-										selectedAdjustmentRequest.shiftDateFrom,
-										'MMM dd'
-									)}{' '}
-									-{' '}
-									{format(
-										selectedAdjustmentRequest.shiftDateTo,
-										'MMM dd, yyyy'
-									)}
-								</p>
-							</div>
-
-							<div>
-								<Label htmlFor="adjustment-deny-reason">
-									Reason for Denial *
-								</Label>
-								<Textarea
-									id="adjustment-deny-reason"
-									placeholder="Please provide a detailed reason for denying this request..."
-									rows={4}
-									value={adjustmentDenyReason}
-									onChange={e =>
-										setAdjustmentDenyReason(e.target.value)
-									}
-									className="mt-2"
-								/>
-							</div>
-						</div>
-					)}
-
+					<div>
+						<Label htmlFor="adjustment-deny-reason">
+							Reason for Denial *
+						</Label>
+						<Textarea
+							id="adjustment-deny-reason"
+							placeholder="Please provide a detailed reason for denying this request..."
+							rows={4}
+							value={adjustmentDenyReason}
+							onChange={e => setAdjustmentDenyReason(e.target.value)}
+							className="mt-2"
+						/>
+					</div>
 					<DialogFooter>
 						<Button
 							variant="outline"
+							disabled={isSubmittingAction}
 							onClick={() => {
 								setShowAdjustmentDenyDialog(false)
 								setAdjustmentDenyReason('')
@@ -664,6 +801,7 @@ export function AdjustmentRequestsSection({
 						</Button>
 						<Button
 							variant="destructive"
+							disabled={isSubmittingAction}
 							onClick={handleDenyAdjustment}
 						>
 							Deny Request
@@ -672,7 +810,6 @@ export function AdjustmentRequestsSection({
 				</DialogContent>
 			</Dialog>
 
-			{/* Cancel Approved Request Dialog */}
 			<Dialog
 				open={showAdjustmentCancelDialog}
 				onOpenChange={setShowAdjustmentCancelDialog}
@@ -683,54 +820,26 @@ export function AdjustmentRequestsSection({
 							Cancel Approved Adjustment Request
 						</DialogTitle>
 						<DialogDescription>
-							Please provide a reason for cancelling this approved
-							adjustment request.
+							Please provide a reason for cancelling this approved adjustment request.
 						</DialogDescription>
 					</DialogHeader>
-
-					{selectedAdjustmentRequest && (
-						<div className="space-y-4">
-							<div className="p-3 bg-muted rounded-lg">
-								<p className="font-medium">
-									{selectedAdjustmentRequest.employeeName} -{' '}
-									{selectedAdjustmentRequest.reason}
-								</p>
-								<p className="text-sm text-muted-foreground">
-									{format(
-										selectedAdjustmentRequest.shiftDateFrom,
-										'MMM dd'
-									)}{' '}
-									-{' '}
-									{format(
-										selectedAdjustmentRequest.shiftDateTo,
-										'MMM dd, yyyy'
-									)}
-								</p>
-							</div>
-
-							<div>
-								<Label htmlFor="adjustment-cancel-reason">
-									Reason for Cancellation *
-								</Label>
-								<Textarea
-									id="adjustment-cancel-reason"
-									placeholder="Please provide a detailed reason for cancelling this approved request..."
-									rows={4}
-									value={adjustmentCancelReason}
-									onChange={e =>
-										setAdjustmentCancelReason(
-											e.target.value
-										)
-									}
-									className="mt-2"
-								/>
-							</div>
-						</div>
-					)}
-
+					<div>
+						<Label htmlFor="adjustment-cancel-reason">
+							Reason for Cancellation *
+						</Label>
+						<Textarea
+							id="adjustment-cancel-reason"
+							placeholder="Please provide a detailed reason for cancelling this approved request..."
+							rows={4}
+							value={adjustmentCancelReason}
+							onChange={e => setAdjustmentCancelReason(e.target.value)}
+							className="mt-2"
+						/>
+					</div>
 					<DialogFooter>
 						<Button
 							variant="outline"
+							disabled={isSubmittingAction}
 							onClick={() => {
 								setShowAdjustmentCancelDialog(false)
 								setAdjustmentCancelReason('')
@@ -740,6 +849,7 @@ export function AdjustmentRequestsSection({
 						</Button>
 						<Button
 							variant="destructive"
+							disabled={isSubmittingAction}
 							onClick={handleCancelApprovedAdjustment}
 						>
 							Cancel Adjustment Request

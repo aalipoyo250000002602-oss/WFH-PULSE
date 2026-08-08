@@ -18,6 +18,12 @@ on:
       - 'package.json'
       - 'pnpm-lock.yaml'
   workflow_dispatch:
+    inputs:
+      run_strict_adjustment_smoke:
+        description: 'Run strict adjustment smoke (fails when sample states are missing)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   api-tests:
@@ -91,6 +97,18 @@ jobs:
 
       - name: Run Newman collection
         run: corepack pnpm run api:newman:ci
+
+      - name: Run adjustment action smoke (standard)
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.run_strict_adjustment_smoke }}
+        env:
+          API_BASE_URL: http://127.0.0.1:8787
+        run: corepack pnpm run api:smoke:adjustments
+
+      - name: Run adjustment action smoke (strict)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_strict_adjustment_smoke }}
+        env:
+          API_BASE_URL: http://127.0.0.1:8787
+        run: corepack pnpm run api:smoke:adjustments:strict
 
       - name: Print API logs
         if: always()

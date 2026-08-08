@@ -1930,6 +1930,8 @@ export default function App() {
             case 'calendar':
                 return (
                     <CalendarPage
+                        apiBaseUrl={apiBaseUrl}
+                        accessToken={authSession?.accessToken ?? ''}
                         attendanceData={Object.fromEntries(
                             Object.entries(attendanceData).filter(
                                 ([, status]) => status !== 'on-leave'

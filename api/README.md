@@ -61,6 +61,24 @@ Start API first, then:
 corepack pnpm run api:smoke
 ```
 
+Adjustment request action smoke test (approve, deny, cancel):
+
+```bash
+corepack pnpm run api:smoke:adjustments
+```
+
+Strict mode:
+
+```bash
+corepack pnpm run api:smoke:adjustments:strict
+```
+
+Notes:
+
+- Defaults to `test@mit.co` / `testpass` unless overridden with `API_SMOKE_EMAIL` and `API_SMOKE_PASSWORD`.
+- Uses available DB sample request states; when a state is unavailable it skips that action unless `--strict` is passed.
+- GitHub Actions workflow `.github/workflows/api-newman-ci.yml` runs standard mode on push/PR and supports strict mode via `workflow_dispatch` input `run_strict_adjustment_smoke=true`.
+
 ## Postman collection
 
 Import these files:
