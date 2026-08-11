@@ -428,6 +428,60 @@ export function EmployeeDetailsPage({
     }, [accessToken, apiBaseUrl, employee?.id])
 
     useEffect(() => {
+        if (!employee?.id || !accessToken) {
+            return
+        }
+
+        const handleLeaveDataUpdated = async () => {
+            try {
+                const response = await fetch(
+                    `${apiBaseUrl}/employees/${employee.id}/leave-credits`,
+                    {
+                        method: 'GET',
+                        headers: {
+                            Authorization: `Bearer ${accessToken}`,
+                        },
+                    }
+                )
+
+                if (!response.ok) {
+                    return
+                }
+
+                const payload = await response.json().catch(() => ({}))
+                const rows = Array.isArray(payload?.leaveCredits)
+                    ? payload.leaveCredits
+                    : []
+
+                setLeaveCredits(
+                    rows.map((row: Record<string, unknown>) => ({
+                        leaveTypeId: String(row?.leaveTypeId ?? ''),
+                        name: String(row?.name ?? ''),
+                        credits: Number(row?.credits ?? 0),
+                        accrued: Number(row?.accrued ?? 0),
+                        limitDays: Number(row?.limitDays ?? 0),
+                        defaultLimitDays: Number(row?.defaultLimitDays ?? 0),
+                    }))
+                )
+            } catch {
+                // Keep existing values if refresh fails temporarily.
+            }
+        }
+
+        window.addEventListener(
+            'wfh-pulse:leave-updated',
+            handleLeaveDataUpdated
+        )
+
+        return () => {
+            window.removeEventListener(
+                'wfh-pulse:leave-updated',
+                handleLeaveDataUpdated
+            )
+        }
+    }, [accessToken, apiBaseUrl, employee?.id])
+
+    useEffect(() => {
         setLeaveCreditsFormData(
             leaveCredits.map(item => ({
                 leaveTypeId: item.leaveTypeId,

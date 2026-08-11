@@ -623,6 +623,13 @@ export function DashboardPage({
     const getErrorMessage = (error: unknown, fallbackMessage: string) =>
         error instanceof Error ? error.message : fallbackMessage
 
+    const notifyLeaveDataUpdated = () => {
+        if (typeof window === 'undefined') {
+            return
+        }
+        window.dispatchEvent(new CustomEvent('wfh-pulse:leave-updated'))
+    }
+
     const mapLeaveRequestRow = (row: LeaveRequestApiRow): LeaveRequest => {
         const submittedDate = toSafeDate(row.submitted_at)
         const startDate = toSafeDate(row.start_date, submittedDate)
@@ -1031,6 +1038,7 @@ export function DashboardPage({
             }
 
             await loadLeaveRequests()
+            notifyLeaveDataUpdated()
             toast.success('Leave request approved successfully')
             setShowApproveDialog(false)
             setShowLeaveDetailsDialog(false)
@@ -1078,6 +1086,7 @@ export function DashboardPage({
             }
 
             await loadLeaveRequests()
+            notifyLeaveDataUpdated()
             toast.success('Leave request denied')
             setShowDenyDialog(false)
             setShowLeaveDetailsDialog(false)
@@ -1127,6 +1136,7 @@ export function DashboardPage({
             }
 
             await loadLeaveRequests()
+            notifyLeaveDataUpdated()
             toast.success('Leave request cancelled')
             setShowCancelApprovedDialog(false)
             setShowLeaveDetailsDialog(false)

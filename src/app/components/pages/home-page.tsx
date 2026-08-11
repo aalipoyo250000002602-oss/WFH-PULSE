@@ -87,6 +87,29 @@ interface HomePageProps {
     onCalendarRefresh?: () => Promise<void>
 }
 
+interface HomeLeaveRequestApiLog {
+    status: 'pending' | 'approved' | 'denied' | 'cancelled'
+    loggedAt: string
+    approvedBy?: string | null
+    reason?: string | null
+}
+
+interface HomeLeaveRequestApiAttachment {
+    fileName: string
+}
+
+interface HomeLeaveRequestApiRow {
+    request_id: string
+    leave_type_name: string
+    start_date: string
+    end_date: string
+    message: string
+    status: 'pending' | 'approved' | 'denied' | 'cancelled'
+    submitted_at: string
+    attachments?: HomeLeaveRequestApiAttachment[]
+    logs?: HomeLeaveRequestApiLog[]
+}
+
 export function HomePage({
     isClockedIn,
     isOnBreak,
@@ -154,12 +177,98 @@ export function HomePage({
     const [showOvertimeModal, setShowOvertimeModal] = useState(false)
     const [editingOvertimeRequest, setEditingOvertimeRequest] =
         useState<OvertimeRequestState | null>(null)
+    const [leaveRequests, setLeaveRequests] = useState<
+        HomeLeaveRequestApiRow[]
+    >([])
+
+    const approvedLeaveDetailsByDate = useMemo(() => {
+        const byDate: Record<
+            string,
+            {
+                requestDate: string
+                fromDate: string
+                toDate: string
+                reason: string
+                attachments: string[]
+                approvedBy: string
+                approvedDate: string
+            }
+        > = {}
+
+        for (const request of leaveRequests) {
+            if (request.status !== 'approved') {
+                continue
+            }
+
+            const requestDate = String(request.submitted_at).slice(0, 10)
+            const fromDate = String(request.start_date).slice(0, 10)
+            const toDate = String(request.end_date).slice(0, 10)
+            const attachments = Array.isArray(request.attachments)
+                ? request.attachments
+                      .map(item => String(item?.fileName ?? ''))
+                      .filter(Boolean)
+                : []
+            const approvedLog = (request.logs ?? [])
+                .slice()
+                .reverse()
+                .find(log => log.status === 'approved')
+            const approvedBy =
+                approvedLog?.approvedBy?.trim() || 'HR/Admin Approver'
+            const approvedDate = approvedLog?.loggedAt
+                ? new Date(approvedLog.loggedAt).toLocaleString()
+                : '-'
+
+            const cursor = new Date(fromDate)
+            const end = new Date(toDate)
+            cursor.setHours(0, 0, 0, 0)
+            end.setHours(0, 0, 0, 0)
+
+            while (cursor <= end) {
+                const dateKey = `${cursor.getFullYear()}-${String(
+                    cursor.getMonth() + 1
+                ).padStart(
+                    2,
+                    '0'
+                )}-${String(cursor.getDate()).padStart(2, '0')}`
+                byDate[dateKey] = {
+                    requestDate,
+                    fromDate,
+                    toDate,
+                    reason: request.message || request.leave_type_name,
+                    attachments,
+                    approvedBy,
+                    approvedDate,
+                }
+                cursor.setDate(cursor.getDate() + 1)
+            }
+        }
+
+        return byDate
+    }, [leaveRequests])
+
+    const homeCalendarStatusData = useMemo<
+        Record<string, 'present' | 'absent' | 'holiday' | 'late' | 'on-leave'>
+    >(() => {
+        const merged = { ...attendanceData }
+
+        for (const [dateKey, detail] of Object.entries(
+            calendarAttendanceDetails
+        )) {
+            if (detail?.status) {
+                merged[dateKey] = detail.status
+            }
+        }
+
+        return merged
+    }, [attendanceData, calendarAttendanceDetails])
 
     const attendanceDetailsData = useMemo<
         Record<string, AttendanceDetails>
     >(() => {
         const detailsMap: Record<string, AttendanceDetails> = {}
-        for (const [dateKey, status] of Object.entries(attendanceData)) {
+        for (const [dateKey, status] of Object.entries(
+            homeCalendarStatusData
+        )) {
             if (status === 'holiday') continue
             const source = calendarAttendanceDetails[dateKey]
             const workDuration =
@@ -178,11 +287,19 @@ export function HomePage({
                 adjustmentApprovalStatus:
                     source?.adjustmentApprovalStatus ?? null,
                 overtimeApprovalStatus: source?.overtimeApprovalStatus ?? null,
+                leaveDetails:
+                    status === 'on-leave'
+                        ? approvedLeaveDetailsByDate[dateKey]
+                        : undefined,
             }
         }
 
         return detailsMap
-    }, [attendanceData, calendarAttendanceDetails])
+    }, [
+        homeCalendarStatusData,
+        calendarAttendanceDetails,
+        approvedLeaveDetailsByDate,
+    ])
 
     const mapApiAdjustmentRequest = (
         row: any
@@ -399,6 +516,36 @@ export function HomePage({
         }
     }
 
+    const loadLeaveRequests = async () => {
+        if (!accessToken) {
+            return
+        }
+
+        try {
+            const response = await fetch(
+                `${apiBaseUrl}/me/leave-requests?sourcePage=all&t=${Date.now()}`,
+                {
+                    cache: 'no-store',
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                    },
+                }
+            )
+
+            const payload = await response.json().catch(() => null)
+            if (!response.ok) {
+                return
+            }
+
+            const rows = Array.isArray(payload?.requests)
+                ? (payload.requests as HomeLeaveRequestApiRow[])
+                : []
+            setLeaveRequests(rows)
+        } catch {
+            // Keep current leave request state if API is temporarily unreachable.
+        }
+    }
+
     const upsertOvertimeRequest = (request: OvertimeRequestState) => {
         setOvertimeRequests(prev => {
             const next = prev.filter(
@@ -419,6 +566,21 @@ export function HomePage({
     useEffect(() => {
         void loadAdjustmentRequests()
         void loadOvertimeRequests()
+        void loadLeaveRequests()
+    }, [accessToken, apiBaseUrl])
+
+    useEffect(() => {
+        const handleLeaveUpdated = () => {
+            void loadLeaveRequests()
+        }
+
+        window.addEventListener('wfh-pulse:leave-updated', handleLeaveUpdated)
+        return () => {
+            window.removeEventListener(
+                'wfh-pulse:leave-updated',
+                handleLeaveUpdated
+            )
+        }
     }, [accessToken, apiBaseUrl])
 
     // Handle date click from mini calendar
@@ -729,38 +891,49 @@ export function HomePage({
     }
 
     // Calculate monthly stats
-    const currentMonth = new Date().getMonth()
-    const currentYear = new Date().getFullYear()
-    const today = new Date()
-    today.setHours(23, 59, 59, 999)
+    const now = new Date()
+    const currentMonth = now.getMonth()
+    const currentYear = now.getFullYear()
+    const todayDayOfMonth = now.getDate()
 
     const monthlyStats = Object.entries(attendanceData).reduce(
-        (stats, [date, status]) => {
-            const entryDate = new Date(date)
-            if (
-                entryDate.getMonth() === currentMonth &&
-                entryDate.getFullYear() === currentYear &&
-                entryDate <= today
-            ) {
-                if (status === 'present' || status === 'late') {
+        (stats, [dateKey, status]) => {
+            const dateMatch = dateKey.match(/^(\d{4})-(\d{2})-(\d{2})/)
+            if (!dateMatch) {
+                return stats
+            }
+
+            const [, yearText, monthText, dayText] = dateMatch
+            const entryYear = Number(yearText)
+            const entryMonth = Number(monthText) - 1
+            const entryDay = Number(dayText)
+            const isCurrentMonth =
+                entryYear === currentYear && entryMonth === currentMonth
+            const isOnOrBeforeToday = entryDay <= todayDayOfMonth
+            const detail = calendarAttendanceDetails[dateKey]
+            const hasLoginAttendance = Boolean(detail.clockIn)
+
+            if (isCurrentMonth && isOnOrBeforeToday && hasLoginAttendance) {
+                if (status === 'present') {
                     stats.present++
                     stats.trackedDays++
+                    stats.attendedDays++
                 }
-                if (status === 'absent') {
-                    stats.absent++
+                if (status === 'late') {
+                    stats.late++
                     stats.trackedDays++
+                    stats.attendedDays++
                 }
-                if (status === 'late') stats.late++
             }
             return stats
         },
-        { present: 0, absent: 0, late: 0, trackedDays: 0 }
+        { present: 0, absent: 0, late: 0, trackedDays: 0, attendedDays: 0 }
     )
 
     const attendancePercentage =
         monthlyStats.trackedDays > 0
             ? Math.round(
-                  (monthlyStats.present / monthlyStats.trackedDays) * 100
+                  (monthlyStats.attendedDays / monthlyStats.trackedDays) * 100
               )
             : 0
 
@@ -905,7 +1078,9 @@ export function HomePage({
                                         exit={{ y: -10 }}
                                     >
                                         <MiniCalendar
-                                            attendanceData={attendanceData}
+                                            attendanceData={
+                                                homeCalendarStatusData
+                                            }
                                             onDateClick={handleDateClick}
                                         />
                                     </motion.div>

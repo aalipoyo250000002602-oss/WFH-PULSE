@@ -180,6 +180,38 @@ export function registerEmployeeCoreRoutes(app, deps) {
         )
     }
 
+    const resolveLeaveTypeIdForRequest = async (
+        client,
+        leaveTypeId,
+        leaveTypeName
+    ) => {
+        const normalizedLeaveTypeId = String(leaveTypeId ?? '').trim()
+        if (normalizedLeaveTypeId) {
+            return normalizedLeaveTypeId
+        }
+
+        const normalizedLeaveTypeName = String(leaveTypeName ?? '').trim()
+        if (!normalizedLeaveTypeName) {
+            throw new Error('Leave type is missing for this request')
+        }
+
+        const leaveTypeResult = await client.query(
+            `
+            SELECT leave_type_id
+            FROM app.leave_types
+            WHERE lower(name) = lower($1::text)
+            LIMIT 1
+            `,
+            [normalizedLeaveTypeName]
+        )
+
+        if (leaveTypeResult.rowCount === 0) {
+            throw new Error('Leave type not found for this request')
+        }
+
+        return String(leaveTypeResult.rows[0].leave_type_id)
+    }
+
     const getAdjustmentRequestByIdForHrApi = async (client, requestId) => {
         const result = await client.query(
             `
@@ -1170,6 +1202,7 @@ export function registerEmployeeCoreRoutes(app, deps) {
                             status,
                             employee_id,
                             leave_type_id,
+                            leave_type_name,
                             start_date::text AS start_date,
                             end_date::text AS end_date
                         FROM app.leave_requests
@@ -1195,13 +1228,19 @@ export function registerEmployeeCoreRoutes(app, deps) {
                         existing.start_date,
                         existing.end_date
                     )
+                    const resolvedLeaveTypeId =
+                        await resolveLeaveTypeIdForRequest(
+                            client,
+                            existing.leave_type_id,
+                            existing.leave_type_name
+                        )
 
                     const actorName = getHrActorName(req.auth)
 
                     await applyLeaveCreditsDelta(
                         client,
                         String(existing.employee_id),
-                        String(existing.leave_type_id),
+                        resolvedLeaveTypeId,
                         -leaveDays
                     )
 
@@ -1347,7 +1386,14 @@ export function registerEmployeeCoreRoutes(app, deps) {
                 const request = await withRlsContext(req.auth, async client => {
                     const existingResult = await client.query(
                         `
-                        SELECT request_id, status
+                        SELECT
+                            request_id,
+                            status,
+                            employee_id,
+                            leave_type_id,
+                            leave_type_name,
+                            start_date::text AS start_date,
+                            end_date::text AS end_date
                         FROM app.leave_requests
                         WHERE request_id = $1::text
                         LIMIT 1
@@ -1371,13 +1417,19 @@ export function registerEmployeeCoreRoutes(app, deps) {
                         existing.start_date,
                         existing.end_date
                     )
+                    const resolvedLeaveTypeId =
+                        await resolveLeaveTypeIdForRequest(
+                            client,
+                            existing.leave_type_id,
+                            existing.leave_type_name
+                        )
 
                     const actorName = getHrActorName(req.auth)
 
                     await applyLeaveCreditsDelta(
                         client,
                         String(existing.employee_id),
-                        String(existing.leave_type_id),
+                        resolvedLeaveTypeId,
                         leaveDays
                     )
 

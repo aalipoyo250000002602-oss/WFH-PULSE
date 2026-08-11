@@ -1283,6 +1283,28 @@ export default function App() {
             return
         }
 
+        const handleLeaveDataUpdated = () => {
+            void loadCalendarData(authSession.accessToken)
+        }
+
+        window.addEventListener(
+            'wfh-pulse:leave-updated',
+            handleLeaveDataUpdated
+        )
+
+        return () => {
+            window.removeEventListener(
+                'wfh-pulse:leave-updated',
+                handleLeaveDataUpdated
+            )
+        }
+    }, [isLoggedIn, authSession?.accessToken])
+
+    useEffect(() => {
+        if (!isLoggedIn || !authSession?.accessToken) {
+            return
+        }
+
         const intervalId = window.setInterval(() => {
             void loadCalendarData(authSession.accessToken)
         }, 15000)
@@ -2153,16 +2175,7 @@ export default function App() {
                         apiBaseUrl={apiBaseUrl}
                         accessToken={authSession?.accessToken ?? ''}
                         currentUserRole={authSession?.role ?? 'employee'}
-                        attendanceData={Object.fromEntries(
-                            Object.entries(attendanceData).filter(
-                                ([, status]) => status !== 'on-leave'
-                            ) as Array<
-                                [
-                                    string,
-                                    'absent' | 'holiday' | 'late' | 'present',
-                                ]
-                            >
-                        )}
+                        attendanceData={attendanceData}
                         holidays={holidays}
                         onAddHoliday={handleAddHoliday}
                         onEditHoliday={handleEditHoliday}

@@ -88,6 +88,8 @@ interface LogEntry {
 interface LeaveRequest {
     id: string
     leaveTypeId: string
+    startDateKey: string
+    endDateKey: string
     startDate: Date
     endDate: Date
     message: string
@@ -159,6 +161,13 @@ export function CalendarPage({
     onEditHoliday,
     onDeleteHoliday,
 }: CalendarPageProps) {
+    const notifyLeaveDataUpdated = () => {
+        if (typeof window === 'undefined') {
+            return
+        }
+        window.dispatchEvent(new CustomEvent('wfh-pulse:leave-updated'))
+    }
+
     const canManageHolidays = currentUserRole === 'admin'
     const [currentDate, setCurrentDate] = useState(new Date())
     const [selectedDate, setSelectedDate] = useState<string>('')
@@ -380,6 +389,8 @@ export function CalendarPage({
                 return 'bg-vibrant-orange/20 text-vibrant-orange border-vibrant-orange/30'
             case 'absent':
                 return 'bg-destructive/20 text-destructive border-destructive/30'
+            case 'on-leave':
+                return 'bg-vibrant-blue/20 text-vibrant-blue border-vibrant-blue/30'
             case 'holiday':
                 return 'bg-vibrant-purple/20 text-vibrant-purple border-vibrant-purple/30'
             default:
@@ -469,6 +480,36 @@ export function CalendarPage({
 
         // Regular single day selection
         setSelectedDate(dateKey)
+
+        const approvedLeaveOnDate = leaveTypes
+            .flatMap(leaveType =>
+                leaveType.requests.map(request => ({
+                    request,
+                    leaveTypeName: leaveType.name,
+                    leaveTypeId: leaveType.id,
+                }))
+            )
+            .filter(item => item.request.status === 'approved')
+            .filter(
+                item =>
+                    item.request.startDateKey <= dateKey &&
+                    item.request.endDateKey >= dateKey
+            )
+            .sort(
+                (a, b) =>
+                    b.request.submittedDate.getTime() -
+                    a.request.submittedDate.getTime()
+            )[0]
+
+        if (approvedLeaveOnDate) {
+            handleViewLeaveDetails(
+                approvedLeaveOnDate.request,
+                approvedLeaveOnDate.leaveTypeName,
+                approvedLeaveOnDate.leaveTypeId
+            )
+            return
+        }
+
         const existingHoliday = filteredHolidays.find(h => h.date === dateKey)
         if (!canManageHolidays) {
             return
@@ -809,6 +850,7 @@ export function CalendarPage({
                 }
 
                 await loadLeaveData()
+                notifyLeaveDataUpdated()
                 toast.success('Leave request submitted successfully')
                 setShowLeaveRequestDialog(false)
                 handleCancelLeaveMode()
@@ -861,6 +903,7 @@ export function CalendarPage({
                 }
 
                 await loadLeaveData()
+                notifyLeaveDataUpdated()
                 toast.success('Leave request cancelled successfully')
                 setShowCancelConfirmDialog(false)
                 setShowLeaveDetailsDialog(false)
@@ -925,6 +968,8 @@ export function CalendarPage({
                 const mapped: LeaveRequest = {
                     id: String(row.request_id),
                     leaveTypeId: String(row.leave_type_id),
+                    startDateKey: String(row.start_date).slice(0, 10),
+                    endDateKey: String(row.end_date).slice(0, 10),
                     startDate: toSafeDate(row.start_date, submittedDate),
                     endDate: toSafeDate(row.end_date, submittedDate),
                     message: String(row.message ?? ''),
@@ -1008,6 +1053,29 @@ export function CalendarPage({
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isFullCalendarOpen, accessToken])
+
+    useEffect(() => {
+        if (!accessToken) {
+            return
+        }
+
+        const handleLeaveDataUpdated = () => {
+            void loadLeaveData()
+        }
+
+        window.addEventListener(
+            'wfh-pulse:leave-updated',
+            handleLeaveDataUpdated
+        )
+
+        return () => {
+            window.removeEventListener(
+                'wfh-pulse:leave-updated',
+                handleLeaveDataUpdated
+            )
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [accessToken])
 
     useEffect(() => {
         if (typeof window === 'undefined') {
@@ -1334,6 +1402,9 @@ export function CalendarPage({
                                                         getDateKey(day)
                                                 )
                                             const dateKey = getDateKey(day)
+                                            const isOnLeaveDay =
+                                                attendanceData[dateKey] ===
+                                                'on-leave'
 
                                             return (
                                                 <button
@@ -1345,9 +1416,14 @@ export function CalendarPage({
                                                 >
                                                     <div className="flex flex-col items-center">
                                                         <span>{day}</span>
-                                                        {holiday && (
-                                                            <div className="w-1 h-1 bg-current rounded-full mt-1" />
-                                                        )}
+                                                        <div className="mt-1 flex items-center gap-1 min-h-[4px]">
+                                                            {holiday && (
+                                                                <div className="w-1 h-1 rounded-full bg-vibrant-purple" />
+                                                            )}
+                                                            {isOnLeaveDay && (
+                                                                <div className="w-1 h-1 rounded-full bg-vibrant-blue" />
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </button>
                                             )
@@ -1384,6 +1460,12 @@ export function CalendarPage({
                                                 <div className="w-3 h-3 rounded bg-vibrant-purple/20 border border-vibrant-purple/30" />
                                                 <span className="text-muted-foreground">
                                                     Holiday
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <div className="w-3 h-3 rounded bg-vibrant-blue/20 border border-vibrant-blue/30" />
+                                                <span className="text-muted-foreground">
+                                                    On Leave
                                                 </span>
                                             </div>
                                         </div>

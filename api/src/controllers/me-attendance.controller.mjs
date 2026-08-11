@@ -2944,6 +2944,22 @@ export function registerMeAttendanceRoutes(app, deps) {
                   FROM app.attendance_records ar
                   ${attendanceFilterSql}
                 ),
+                                approved_leave_dates AS (
+                                    SELECT DISTINCT gs::date AS attendance_date
+                                    FROM app.leave_requests lr
+                                    CROSS JOIN LATERAL generate_series(
+                                        lr.start_date,
+                                        lr.end_date,
+                                        INTERVAL '1 day'
+                                    ) gs
+                                    WHERE lr.employee_id = $1::text
+                                        AND lr.status = 'approved'::app.request_status
+                                ),
+                                all_attendance_dates AS (
+                                    SELECT attendance_date FROM attendance_dates
+                                    UNION
+                                    SELECT attendance_date FROM approved_leave_dates
+                                ),
                 actual_rows AS (
                   SELECT
                     ar.attendance_date,
@@ -3026,6 +3042,11 @@ export function registerMeAttendanceRoutes(app, deps) {
                   SELECT
                     d.attendance_date,
                                         COALESCE(
+                                            CASE
+                                                WHEN approved_leave_dates.attendance_date IS NOT NULL
+                                                    THEN 'on-leave'::app.attendance_status
+                                                ELSE NULL
+                                            END,
                                             adjusted_rows.status,
                                             CASE
                                                 WHEN approved_adjustment_requests.attendance_date IS NOT NULL
@@ -3069,7 +3090,8 @@ export function registerMeAttendanceRoutes(app, deps) {
                     END AS effective_record_type,
                     lar.status AS adjustment_approval_status,
                     lor.status AS overtime_approval_status
-                  FROM attendance_dates d
+                                    FROM all_attendance_dates d
+                                    LEFT JOIN approved_leave_dates ON approved_leave_dates.attendance_date = d.attendance_date
                   LEFT JOIN actual_rows ON actual_rows.attendance_date = d.attendance_date
                   LEFT JOIN adjusted_rows ON adjusted_rows.attendance_date = d.attendance_date
                                     LEFT JOIN approved_adjustment_requests ON approved_adjustment_requests.attendance_date = d.attendance_date
