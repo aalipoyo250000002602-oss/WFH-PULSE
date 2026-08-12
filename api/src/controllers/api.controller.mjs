@@ -932,6 +932,16 @@ const hrPayrollUpdateSchema = z.object({
             })
         )
         .max(100),
+    otherEarnings: z
+        .array(
+            z.object({
+                id: z.string().min(1).max(120).optional(),
+                name: z.string().min(1).max(120),
+                amount: z.number().nonnegative(),
+            })
+        )
+        .max(100)
+        .default([]),
 })
 
 async function getUserProfileByUserId(userId) {
@@ -1325,7 +1335,8 @@ async function getEmployeeRowForApi(client, employeeId) {
       pp.tin,
       pp.phil_health,
       pp.pag_ibig,
-      COALESCE(pd.items, '[]'::jsonb) AS payroll_deductions
+    COALESCE(pd.items, '[]'::jsonb) AS payroll_deductions,
+    COALESCE(pe.items, '[]'::jsonb) AS payroll_other_earnings
     FROM app.employees e
     LEFT JOIN app.departments d ON d.department_id = e.department_id
     LEFT JOIN app.job_positions jp ON jp.position_id = e.position_id
@@ -1358,6 +1369,18 @@ async function getEmployeeRowForApi(client, employeeId) {
       FROM app.payroll_deductions d2
       WHERE d2.employee_id = e.employee_id
     ) pd ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT jsonb_agg(
+                jsonb_build_object(
+                    'earning_id', e2.earning_id,
+                    'earning_name', e2.earning_name,
+                    'amount', e2.amount
+                )
+                ORDER BY e2.earning_id
+            ) AS items
+            FROM app.payroll_other_earnings e2
+            WHERE e2.employee_id = e.employee_id
+        ) pe ON TRUE
     WHERE e.employee_id = $1::text
     `,
         [employeeId, attendanceTimeZone]
@@ -1560,6 +1583,7 @@ registerEmployeeRoutes(app, {
     isEmailTakenByAnotherEmployee,
     getEmployeeRowForApi,
     resolveEmployeeId,
+    syncAbsentAttendanceForRange,
 })
 
 if (process.argv.includes('--check')) {

@@ -99,6 +99,16 @@ export function EmployeesCard({
                       amount: Number(item?.amount ?? 0),
                   }))
                 : []
+            const otherEarnings = Array.isArray(row.payroll_other_earnings)
+                ? row.payroll_other_earnings.map((item: any, idx: number) => ({
+                      id: String(
+                          item?.earning_id ??
+                              `earning-${row.employee_id}-${idx + 1}`
+                      ),
+                      name: String(item?.earning_name ?? 'Other Earning'),
+                      amount: Number(item?.amount ?? 0),
+                  }))
+                : []
 
             if (row.salary == null && deductions.length === 0) {
                 return {}
@@ -114,6 +124,7 @@ export function EmployeesCard({
                         tin: String(row.tin ?? ''),
                     },
                     deductions,
+                    otherEarnings,
                 },
             }
         })(),

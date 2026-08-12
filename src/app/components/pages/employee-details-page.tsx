@@ -100,9 +100,20 @@ function mapApiEmployeeToState(row: Record<string, any>): Employee {
               amount: Number(item?.amount ?? 0),
           }))
         : []
+    const otherEarnings = Array.isArray(row.payroll_other_earnings)
+        ? row.payroll_other_earnings.map((item: any, idx: number) => ({
+              id: String(
+                  item?.earning_id ?? `earning-${row.employee_id}-${idx + 1}`
+              ),
+              name: String(item?.earning_name ?? 'Other Earning'),
+              amount: Number(item?.amount ?? 0),
+          }))
+        : []
 
     const payroll =
-        row.salary == null && deductions.length === 0
+        row.salary == null &&
+        deductions.length === 0 &&
+        otherEarnings.length === 0
             ? undefined
             : {
                   salary: Number(row.salary ?? 0),
@@ -113,6 +124,7 @@ function mapApiEmployeeToState(row: Record<string, any>): Employee {
                       tin: String(row.tin ?? ''),
                   },
                   deductions,
+                  otherEarnings,
               }
 
     return {
@@ -687,6 +699,13 @@ export function EmployeeDetailsPage({
                             name: deduction.name,
                             amount: deduction.amount,
                         })),
+                        otherEarnings: (payroll.otherEarnings ?? []).map(
+                            earning => ({
+                                id: earning.id,
+                                name: earning.name,
+                                amount: earning.amount,
+                            })
+                        ),
                     }),
                 }
             )
@@ -1659,6 +1678,7 @@ export function EmployeeDetailsPage({
                 <EmployeePayrollCard
                     payroll={employee.payroll}
                     onUpdate={handleUpdatePayroll}
+                    canEdit={currentUserRole === 'admin'}
                     isOpen={isPayrollOpen}
                     onOpenChange={setIsPayrollOpen}
                 />

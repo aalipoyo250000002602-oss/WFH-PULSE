@@ -6,6 +6,12 @@ export interface Deduction {
     amount: number
 }
 
+export interface OtherEarning {
+    id: string
+    name: string
+    amount: number
+}
+
 export interface PayrollInfo {
     governmentIds: {
         pagIbig: string
@@ -15,6 +21,7 @@ export interface PayrollInfo {
     }
     salary: number
     deductions: Deduction[]
+    otherEarnings?: OtherEarning[]
 }
 
 export interface Employee {
