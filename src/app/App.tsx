@@ -2185,16 +2185,8 @@ export default function App() {
             case 'analytics':
                 return (
                     <AnalyticsPage
-                        attendanceData={Object.fromEntries(
-                            Object.entries(attendanceData).filter(
-                                ([, status]) => status !== 'on-leave'
-                            ) as Array<
-                                [
-                                    string,
-                                    'absent' | 'holiday' | 'late' | 'present',
-                                ]
-                            >
-                        )}
+                        apiBaseUrl={apiBaseUrl}
+                        accessToken={authSession?.accessToken ?? ''}
                         employmentOptions={employmentOptions}
                     />
                 )

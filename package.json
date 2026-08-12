@@ -36,6 +36,7 @@
         "db:migrate:down": "node ./database/migrate.mjs down",
         "db:migrate:status": "node ./database/migrate.mjs status",
         "db:migrate:dry": "node ./database/migrate.mjs status --dry-run",
+        "db:verify:july-attendance": "node ./database/verify-july-2026-attendance.mjs",
         "db:sync:all": "node ./scripts/build-sync-dbs.mjs",
         "db:sync:all:dry": "node ./scripts/build-sync-dbs.mjs --dry-run",
         "db:sync:all:no-build": "node ./scripts/build-sync-dbs.mjs --skip-build",

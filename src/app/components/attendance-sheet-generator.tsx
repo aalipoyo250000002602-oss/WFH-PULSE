@@ -44,11 +44,7 @@ import {
     Send,
     CheckCircle,
 } from 'lucide-react'
-import {
-    getEmployees,
-    Employee,
-    syncEmployeesWithEmploymentOptions,
-} from './employee-data'
+import { Employee, syncEmployeesWithEmploymentOptions } from './employee-data'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 
@@ -390,6 +386,21 @@ interface AttendanceRecord {
     lateMinutes: number
 }
 
+interface CalculatedPayroll {
+    salary: number
+    dailyRate: number
+    hourlyRate: number
+    totalWorkHoursDecimal: number
+    totalWorkEarnings: number
+    totalLateHoursDecimal: number
+    lateDeduction: number
+    payrollDeductions: Array<{ id: string; name: string; amount: number }>
+    totalPayrollDeductions: number
+    grossPay: number
+    totalDeductions: number
+    netPay: number
+}
+
 interface EmailLog {
     id: string
     employeeName: string
@@ -401,6 +412,8 @@ interface EmailLog {
 }
 
 interface AttendanceSheetGeneratorProps {
+    apiBaseUrl: string
+    accessToken: string
     employmentOptions: {
         employmentTypes: string[]
         departments: Array<{ departmentId: number; name: string }>
@@ -413,15 +426,18 @@ interface AttendanceSheetGeneratorProps {
 }
 
 export function AttendanceSheetGenerator({
+    apiBaseUrl,
+    accessToken,
     employmentOptions,
 }: AttendanceSheetGeneratorProps) {
+    const [databaseEmployees, setDatabaseEmployees] = useState<Employee[]>([])
     const employees = useMemo(
         () =>
             syncEmployeesWithEmploymentOptions(
-                getEmployees(),
+                databaseEmployees,
                 employmentOptions
             ),
-        [employmentOptions]
+        [databaseEmployees, employmentOptions]
     )
     const [searchQuery, setSearchQuery] = useState('')
     const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(
@@ -435,6 +451,9 @@ export function AttendanceSheetGenerator({
     const [generatedReport, setGeneratedReport] = useState<
         AttendanceRecord[] | null
     >(null)
+    const [calculatedPayroll, setCalculatedPayroll] =
+        useState<CalculatedPayroll | null>(null)
+    const [isGeneratingReport, setIsGeneratingReport] = useState(false)
     const [logoBase64, setLogoBase64] = useState<string>('')
     const [showEmployeeList, setShowEmployeeList] = useState(false)
     const [employeeListSort, setEmployeeListSort] = useState<
@@ -447,6 +466,81 @@ export function AttendanceSheetGenerator({
         useState(false)
     const [emailMessage, setEmailMessage] = useState('')
     const [emailLogs, setEmailLogs] = useState<EmailLog[]>([])
+
+    useEffect(() => {
+        if (!accessToken) return
+
+        const loadEmployees = async () => {
+            try {
+                const response = await fetch(`${apiBaseUrl}/employees`, {
+                    headers: { Authorization: `Bearer ${accessToken}` },
+                })
+                const payload = await response.json().catch(() => ({}))
+                if (!response.ok) {
+                    throw new Error(
+                        payload?.error || 'Unable to load employees'
+                    )
+                }
+
+                const rows = Array.isArray(payload?.employees)
+                    ? payload.employees
+                    : []
+                setDatabaseEmployees(
+                    rows.map((row: any) => ({
+                        id: String(row.employee_id),
+                        employeeId: String(row.employee_code),
+                        firstName: String(row.first_name ?? ''),
+                        lastName: String(row.last_name ?? ''),
+                        status: row.attendance_status ?? 'absent',
+                        employmentStatus: row.employment_status ?? 'active',
+                        employmentType: row.employment_type ?? '',
+                        department: String(row.department ?? ''),
+                        position: String(row.position ?? ''),
+                        email: String(row.email ?? ''),
+                        payroll:
+                            row.salary == null
+                                ? undefined
+                                : {
+                                      salary: Number(row.salary),
+                                      governmentIds: {
+                                          pagIbig: String(row.pag_ibig ?? ''),
+                                          philHealth: String(
+                                              row.phil_health ?? ''
+                                          ),
+                                          sss: String(row.sss ?? ''),
+                                          tin: String(row.tin ?? ''),
+                                      },
+                                      deductions: Array.isArray(
+                                          row.payroll_deductions
+                                      )
+                                          ? row.payroll_deductions.map(
+                                                (deduction: any) => ({
+                                                    id: String(
+                                                        deduction.deduction_id
+                                                    ),
+                                                    name: String(
+                                                        deduction.deduction_name
+                                                    ),
+                                                    amount: Number(
+                                                        deduction.amount
+                                                    ),
+                                                })
+                                            )
+                                          : [],
+                                  },
+                    }))
+                )
+            } catch (error) {
+                toast.error(
+                    error instanceof Error
+                        ? error.message
+                        : 'Unable to load employees'
+                )
+            }
+        }
+
+        void loadEmployees()
+    }, [accessToken, apiBaseUrl])
 
     useEffect(() => {
         if (!selectedEmployee) {
@@ -504,9 +598,10 @@ export function AttendanceSheetGenerator({
         const employee = employees.find(emp => emp.id === employeeId)
         setSelectedEmployee(employee || null)
         setGeneratedReport(null) // Reset report when changing employee
+        setCalculatedPayroll(null)
     }
 
-    const handleGenerateReport = () => {
+    const handleGenerateReport = async () => {
         // Validation
         if (!selectedEmployee) {
             toast.error('Please select an employee')
@@ -534,24 +629,54 @@ export function AttendanceSheetGenerator({
             return
         }
 
-        // Generate attendance records for the date range
-        const records: AttendanceRecord[] = []
-        const currentDate = new Date(dateRange.from)
-
-        while (currentDate <= dateRange.to) {
-            // Skip weekends
-            if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
-                const record = generateAttendanceData(
-                    selectedEmployee.id,
-                    new Date(currentDate)
-                )
-                records.push(record)
+        try {
+            setIsGeneratingReport(true)
+            const from = format(dateRange.from, 'yyyy-MM-dd')
+            const to = format(dateRange.to, 'yyyy-MM-dd')
+            const response = await fetch(
+                `${apiBaseUrl}/employees/${encodeURIComponent(selectedEmployee.id)}/payroll-report?from=${from}&to=${to}`,
+                { headers: { Authorization: `Bearer ${accessToken}` } }
+            )
+            const payload = await response.json().catch(() => ({}))
+            if (!response.ok) {
+                throw new Error(payload?.error || 'Unable to generate report')
             }
-            currentDate.setDate(currentDate.getDate() + 1)
-        }
 
-        setGeneratedReport(records)
-        toast.success('Report generated successfully')
+            const records = Array.isArray(payload?.records)
+                ? payload.records.map((record: any) => {
+                      const minutes = Number(record.workDurationMinutes ?? 0)
+                      const lateMinutes = Number(record.lateMinutes ?? 0)
+                      return {
+                          date: String(record.date),
+                          status:
+                              record.status === 'on-leave'
+                                  ? ('on-leave' as const)
+                                  : record.status === 'absent'
+                                    ? ('absent' as const)
+                                    : ('present' as const),
+                          clockInTime: record.clockInTime || undefined,
+                          clockOutTime: record.clockOutTime || undefined,
+                          workDuration: `${Math.floor(minutes / 60)}h ${minutes % 60}m`,
+                          isLate: record.status === 'late' || lateMinutes > 0,
+                          lateMinutes,
+                      }
+                  })
+                : []
+
+            setGeneratedReport(records)
+            setCalculatedPayroll(payload.payroll ?? null)
+            toast.success('Database attendance and payroll calculated')
+        } catch (error) {
+            setGeneratedReport(null)
+            setCalculatedPayroll(null)
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : 'Unable to generate report'
+            )
+        } finally {
+            setIsGeneratingReport(false)
+        }
     }
 
     const calculateSummary = () => {
@@ -860,59 +985,7 @@ export function AttendanceSheetGenerator({
     }
 
     const calculatePayroll = () => {
-        if (
-            !selectedEmployee ||
-            !generatedReport ||
-            !selectedEmployee.payroll
-        ) {
-            return null
-        }
-
-        const summary = calculateSummary()
-        if (!summary) return null
-
-        const payroll = selectedEmployee.payroll
-
-        // Calculate total work hours (convert minutes to decimal hours)
-        const totalWorkHoursDecimal =
-            summary.totalWorkHours + summary.totalWorkMinutes / 60
-
-        // Calculate hourly rate
-        const dailyRate = payroll.salary / 21
-        const hourlyRate = dailyRate / 8
-
-        // Calculate total work earnings
-        const totalWorkEarnings = totalWorkHoursDecimal * hourlyRate
-
-        // Calculate late deduction (convert late minutes to hours)
-        const totalLateHoursDecimal = summary.totalLateMinutes / 60
-        const lateDeduction = totalLateHoursDecimal * hourlyRate
-
-        // Calculate total deductions from payroll
-        const payrollDeductions = payroll.deductions.reduce(
-            (sum, d) => sum + d.amount,
-            0
-        )
-
-        // Calculate net pay
-        const grossPay = totalWorkEarnings
-        const totalDeductions = payrollDeductions + lateDeduction
-        const netPay = grossPay - totalDeductions
-
-        return {
-            salary: payroll.salary,
-            dailyRate,
-            hourlyRate,
-            totalWorkHoursDecimal,
-            totalWorkEarnings,
-            totalLateHoursDecimal,
-            lateDeduction,
-            payrollDeductions: payroll.deductions,
-            totalPayrollDeductions: payrollDeductions,
-            grossPay,
-            totalDeductions,
-            netPay,
-        }
+        return calculatedPayroll
     }
 
     const exportPayslipToCSV = () => {
@@ -1643,11 +1716,16 @@ WFH PULSE`
                     onClick={handleGenerateReport}
                     className="w-full"
                     disabled={
-                        !selectedEmployee || !dateRange.from || !dateRange.to
+                        !selectedEmployee ||
+                        !dateRange.from ||
+                        !dateRange.to ||
+                        isGeneratingReport
                     }
                 >
                     <FileText className="h-4 w-4 mr-2" />
-                    Generate Report and Compute Payroll
+                    {isGeneratingReport
+                        ? 'Calculating...'
+                        : 'Generate Report and Compute Payroll'}
                 </Button>
 
                 {/* Generated Report Display */}

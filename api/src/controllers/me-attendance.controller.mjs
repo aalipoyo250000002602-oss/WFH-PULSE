@@ -1,4 +1,5 @@
 import { resolveAttendanceStatus } from '../services/attendance-status.service.mjs'
+import { formatDateOnly } from '../services/date-only.service.mjs'
 
 export function registerMeAttendanceRoutes(app, deps) {
     const {
@@ -38,6 +39,176 @@ export function registerMeAttendanceRoutes(app, deps) {
         'cancelled',
     ])
     const leaveRequestSourceOptions = new Set(['calendar', 'home', 'dashboard'])
+
+    app.get('/me/analytics', requireAuth, async (req, res) => {
+        const period =
+            typeof req.query.period === 'string'
+                ? req.query.period
+                : 'thisMonth'
+        const allowedPeriods = new Set([
+            'thisMonth',
+            'lastMonth',
+            'last6Months',
+            'thisYear',
+        ])
+        if (!allowedPeriods.has(period)) {
+            return res.status(400).json({ error: 'Invalid analytics period' })
+        }
+
+        try {
+            const employeeId = await ensureEmployeeLinkForUser(req.auth.userId)
+            if (!employeeId) {
+                return res.status(404).json({
+                    error: 'No employee profile is linked to this account yet.',
+                })
+            }
+
+            const bounds = await withRlsContext(req.auth, async client => {
+                const result = await client.query(
+                    `
+                                        WITH local_date AS (
+                                            SELECT (NOW() AT TIME ZONE $1::text)::date AS today
+                                        )
+                                        SELECT
+                                            CASE $2::text
+                                                WHEN 'thisMonth' THEN DATE_TRUNC('month', today)::date
+                                                WHEN 'lastMonth' THEN (DATE_TRUNC('month', today) - INTERVAL '1 month')::date
+                                                WHEN 'last6Months' THEN (DATE_TRUNC('month', today) - INTERVAL '5 months')::date
+                                                ELSE DATE_TRUNC('year', today)::date
+                                            END::text AS from_date,
+                                            CASE $2::text
+                                                WHEN 'lastMonth' THEN (DATE_TRUNC('month', today) - INTERVAL '1 day')::date
+                                                ELSE today
+                                            END::text AS to_date
+                                        FROM local_date
+                                        `,
+                    [attendanceTimeZone, period]
+                )
+                return result.rows[0]
+            })
+
+            await syncAbsentAttendanceForRange(
+                req.auth,
+                employeeId,
+                bounds.from_date,
+                bounds.to_date
+            )
+
+            const rows = await withRlsContext(req.auth, async client => {
+                const result = await client.query(
+                    `
+                                        WITH actual_rows AS (
+                                            SELECT attendance_date, status
+                                            FROM app.attendance_records
+                                            WHERE employee_id = $1::text
+                                                AND attendance_date BETWEEN $2::date AND $3::date
+                                                AND record_type = 'actual'::app.attendance_record_type
+                                                AND EXISTS (
+                                                    SELECT 1
+                                                    FROM app.company_settings_working_hours schedule
+                                                    WHERE schedule.iso_day = EXTRACT(ISODOW FROM attendance_date)::smallint
+                                                        AND schedule.is_working_day = TRUE
+                                                )
+                                        ),
+                                        adjusted_rows AS (
+                                            SELECT attendance_date, status
+                                            FROM app.attendance_records
+                                            WHERE employee_id = $1::text
+                                                AND attendance_date BETWEEN $2::date AND $3::date
+                                                AND record_type = 'adjusted'::app.attendance_record_type
+                                                AND approval_status = 'approved'::app.request_status
+                                                AND EXISTS (
+                                                    SELECT 1
+                                                    FROM app.company_settings_working_hours schedule
+                                                    WHERE schedule.iso_day = EXTRACT(ISODOW FROM attendance_date)::smallint
+                                                        AND schedule.is_working_day = TRUE
+                                                )
+                                        ),
+                                        attendance_dates AS (
+                                            SELECT attendance_date FROM actual_rows
+                                            UNION
+                                            SELECT attendance_date FROM adjusted_rows
+                                        ),
+                                        effective_rows AS (
+                                            SELECT
+                                                dates.attendance_date,
+                                                COALESCE(adjusted.status, actual.status, 'absent'::app.attendance_status) AS status
+                                            FROM attendance_dates dates
+                                            LEFT JOIN actual_rows actual USING (attendance_date)
+                                            LEFT JOIN adjusted_rows adjusted USING (attendance_date)
+                                        )
+                                        SELECT
+                                            CASE
+                                                WHEN $4::text IN ('thisMonth', 'lastMonth')
+                                                    THEN DATE_TRUNC('week', attendance_date)::date
+                                                ELSE DATE_TRUNC('month', attendance_date)::date
+                                            END AS bucket_start,
+                                            COUNT(*) FILTER (WHERE status = 'present'::app.attendance_status)::integer AS present,
+                                            COUNT(*) FILTER (WHERE status = 'late'::app.attendance_status)::integer AS late,
+                                            COUNT(*) FILTER (WHERE status = 'absent'::app.attendance_status)::integer AS absent,
+                                            COUNT(*) FILTER (WHERE status = 'on-leave'::app.attendance_status)::integer AS on_leave,
+                                            COUNT(*) FILTER (WHERE status = 'holiday'::app.attendance_status)::integer AS holiday
+                                        FROM effective_rows
+                                        GROUP BY bucket_start
+                                        ORDER BY bucket_start
+                                        `,
+                    [employeeId, bounds.from_date, bounds.to_date, period]
+                )
+                return result.rows
+            })
+
+            const trends = rows.map((row, index) => ({
+                label:
+                    period === 'thisMonth' || period === 'lastMonth'
+                        ? `Week ${index + 1}`
+                        : new Intl.DateTimeFormat('en-US', {
+                              month: 'short',
+                              timeZone: 'UTC',
+                          }).format(row.bucket_start),
+                bucketStart: formatDateOnly(row.bucket_start),
+                present: Number(row.present ?? 0),
+                late: Number(row.late ?? 0),
+                absent: Number(row.absent ?? 0),
+                onLeave: Number(row.on_leave ?? 0),
+                holiday: Number(row.holiday ?? 0),
+            }))
+            const summary = trends.reduce(
+                (totals, row) => {
+                    totals.present += row.present
+                    totals.late += row.late
+                    totals.absent += row.absent
+                    totals.onLeave += row.onLeave
+                    totals.holiday += row.holiday
+                    return totals
+                },
+                { present: 0, late: 0, absent: 0, onLeave: 0, holiday: 0 }
+            )
+            const scheduledDays =
+                summary.present + summary.late + summary.absent
+            const totalDays = scheduledDays + summary.onLeave + summary.holiday
+
+            return res.json({
+                period,
+                from: bounds.from_date,
+                to: bounds.to_date,
+                summary: {
+                    ...summary,
+                    totalDays,
+                    attendanceRate:
+                        scheduledDays > 0
+                            ? Math.round(
+                                  ((summary.present + summary.late) /
+                                      scheduledDays) *
+                                      100
+                              )
+                            : 0,
+                },
+                trends,
+            })
+        } catch (error) {
+            return res.status(400).json({ error: error.message })
+        }
+    })
 
     const getLeaveRequestByIdForApi = async (client, requestId) => {
         const result = await client.query(
@@ -3199,7 +3370,7 @@ export function registerMeAttendanceRoutes(app, deps) {
             )
 
             const attendance = attendanceRows.map(row => ({
-                date: String(row.attendance_date).slice(0, 10),
+                date: formatDateOnly(row.attendance_date),
                 status: row.status,
                 clockIn: row.clock_in ? String(row.clock_in).slice(0, 5) : null,
                 clockOut: row.clock_out
@@ -3225,7 +3396,7 @@ export function registerMeAttendanceRoutes(app, deps) {
 
             const holidays = holidayRows.map(row => {
                 const holidayDate = new Date(
-                    `${String(row.holiday_date).slice(0, 10)}T00:00:00`
+                    `${formatDateOnly(row.holiday_date)}T00:00:00`
                 )
                 const daysUntil = Math.ceil(
                     (holidayDate.getTime() - today.getTime()) /
@@ -3235,7 +3406,7 @@ export function registerMeAttendanceRoutes(app, deps) {
                 return {
                     id: row.holiday_id,
                     name: row.name,
-                    date: String(row.holiday_date).slice(0, 10),
+                    date: formatDateOnly(row.holiday_date),
                     type: row.holiday_type,
                     countryCode: row.country_code,
                     countryName: row.country_name,

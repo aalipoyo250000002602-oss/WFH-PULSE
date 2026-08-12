@@ -1,4 +1,4 @@
-﻿import { useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import {
     BarChart,
     Bar,
@@ -40,7 +40,8 @@ import { toast } from 'sonner'
 import { AttendanceSheetGenerator } from '../attendance-sheet-generator'
 
 interface AnalyticsPageProps {
-    attendanceData: Record<string, 'present' | 'absent' | 'holiday' | 'late'>
+    apiBaseUrl: string
+    accessToken: string
     employmentOptions: {
         employmentTypes: string[]
         departments: Array<{ departmentId: number; name: string }>
@@ -52,8 +53,29 @@ interface AnalyticsPageProps {
     }
 }
 
+interface AnalyticsTrend {
+    label: string
+    bucketStart: string
+    present: number
+    late: number
+    absent: number
+    onLeave: number
+    holiday: number
+}
+
+interface AnalyticsSummary {
+    present: number
+    late: number
+    absent: number
+    onLeave: number
+    holiday: number
+    totalDays: number
+    attendanceRate: number
+}
+
 export function AnalyticsPage({
-    attendanceData,
+    apiBaseUrl,
+    accessToken,
     employmentOptions,
 }: AnalyticsPageProps) {
     const [selectedPeriod, setSelectedPeriod] = useState('thisMonth')
@@ -62,98 +84,94 @@ export function AnalyticsPage({
     // Collapsible card states
     const [isAttendanceSheetOpen, setIsAttendanceSheetOpen] = useState(false)
     const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false)
+    const [chartData, setChartData] = useState<AnalyticsTrend[]>([])
+    const [summary, setSummary] = useState<AnalyticsSummary>({
+        present: 0,
+        late: 0,
+        absent: 0,
+        onLeave: 0,
+        holiday: 0,
+        totalDays: 0,
+        attendanceRate: 0,
+    })
+    const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false)
+    const [analyticsError, setAnalyticsError] = useState('')
 
-    // July 2026 weekly breakdown (weeks ending Jul 21)
-    // Week 1: Jul 1-3 (3 days), Week 2: Jul 6-10 (5 days), Week 3: Jul 13-17 (5 days), Week 4 (partial): Jul 20-21 (2 days)
-    const generateWeeklyData = () => [
-        { week: 'Week 1', present: 3, absent: 0, late: 0 },
-        { week: 'Week 2', present: 4, absent: 0, late: 1 },
-        { week: 'Week 3', present: 3, absent: 1, late: 0 },
-        { week: 'Week 4', present: 1, absent: 0, late: 1 },
-    ]
+    useEffect(() => {
+        if (!accessToken) return
 
-    // Monthly attendance data Jan-Jul 2026 (working days only, holidays excluded)
-    const generateMonthlyData = () => [
-        { month: 'Jan', present: 18, absent: 1, late: 2 },
-        { month: 'Feb', present: 17, absent: 1, late: 2 },
-        { month: 'Mar', present: 19, absent: 1, late: 2 },
-        { month: 'Apr', present: 17, absent: 2, late: 1 },
-        { month: 'May', present: 19, absent: 1, late: 2 },
-        { month: 'Jun', present: 17, absent: 1, late: 2 },
-        { month: 'Jul', present: 11, absent: 1, late: 2 },
-    ]
-
-    // Calculate current month statistics
-    const calculateMonthlyStats = () => {
-        const currentMonth = new Date().getMonth()
-        const currentYear = new Date().getFullYear()
-
-        const stats = Object.entries(attendanceData).reduce(
-            (acc, [date, status]) => {
-                const entryDate = new Date(date)
-                if (
-                    entryDate.getMonth() === currentMonth &&
-                    entryDate.getFullYear() === currentYear
-                ) {
-                    acc[status] = (acc[status] || 0) + 1
+        const loadAnalytics = async () => {
+            setIsLoadingAnalytics(true)
+            setAnalyticsError('')
+            try {
+                const response = await fetch(
+                    `${apiBaseUrl}/me/analytics?period=${encodeURIComponent(selectedPeriod)}`,
+                    { headers: { Authorization: `Bearer ${accessToken}` } }
+                )
+                const payload = await response.json().catch(() => ({}))
+                if (!response.ok) {
+                    throw new Error(
+                        payload?.error || 'Unable to load attendance analytics'
+                    )
                 }
-                return acc
-            },
-            {} as Record<string, number>
-        )
 
-        const total = Object.values(stats).reduce(
-            (sum, count) => sum + count,
-            0
-        )
-
-        return [
-            {
-                name: 'Present',
-                value: stats.present || 0,
-                color: 'oklch(0.7 0.15 145)',
-            },
-            {
-                name: 'Late',
-                value: stats.late || 0,
-                color: 'oklch(0.7 0.15 50)',
-            },
-            {
-                name: 'Absent',
-                value: stats.absent || 0,
-                color: 'oklch(0.396 0.141 25.723)',
-            },
-            {
-                name: 'Holiday',
-                value: stats.holiday || 0,
-                color: 'oklch(0.6 0.2 300)',
-            },
-        ].filter(item => item.value > 0)
-    }
-
-    const weeklyData = generateWeeklyData()
-    const monthlyData = generateMonthlyData()
-    const pieData = calculateMonthlyStats()
-
-    const getChartData = () => {
-        switch (selectedPeriod) {
-            case 'thisMonth':
-            case 'lastMonth':
-                return weeklyData
-            case 'last6Months':
-            case 'thisYear':
-                return monthlyData
-            default:
-                return weeklyData
+                setChartData(
+                    Array.isArray(payload?.trends) ? payload.trends : []
+                )
+                setSummary({
+                    present: Number(payload?.summary?.present ?? 0),
+                    late: Number(payload?.summary?.late ?? 0),
+                    absent: Number(payload?.summary?.absent ?? 0),
+                    onLeave: Number(payload?.summary?.onLeave ?? 0),
+                    holiday: Number(payload?.summary?.holiday ?? 0),
+                    totalDays: Number(payload?.summary?.totalDays ?? 0),
+                    attendanceRate: Number(
+                        payload?.summary?.attendanceRate ?? 0
+                    ),
+                })
+            } catch (error) {
+                setChartData([])
+                setAnalyticsError(
+                    error instanceof Error
+                        ? error.message
+                        : 'Unable to load attendance analytics'
+                )
+            } finally {
+                setIsLoadingAnalytics(false)
+            }
         }
-    }
 
-    const chartData = getChartData()
-    const totalPresent =
-        pieData.find(item => item.name === 'Present')?.value || 0
-    const totalDays = pieData.reduce((sum, item) => sum + item.value, 0)
-    const attendanceRate =
-        totalDays > 0 ? Math.round((totalPresent / totalDays) * 100) : 0
+        void loadAnalytics()
+    }, [accessToken, apiBaseUrl, selectedPeriod])
+
+    const pieData = [
+        {
+            name: 'Present',
+            value: summary.present,
+            color: 'oklch(0.7 0.15 145)',
+        },
+        { name: 'Late', value: summary.late, color: 'oklch(0.7 0.15 50)' },
+        {
+            name: 'Absent',
+            value: summary.absent,
+            color: 'oklch(0.396 0.141 25.723)',
+        },
+        {
+            name: 'On Leave',
+            value: summary.onLeave,
+            color: 'oklch(0.65 0.16 230)',
+        },
+        {
+            name: 'Holiday',
+            value: summary.holiday,
+            color: 'oklch(0.6 0.2 300)',
+        },
+    ].filter(item => item.value > 0)
+    const totalPresent = summary.present + summary.late
+    const totalDays = summary.totalDays
+    const attendanceRate = summary.attendanceRate
+    const isWeeklyView =
+        selectedPeriod === 'thisMonth' || selectedPeriod === 'lastMonth'
 
     const exportAnalyticsToCSV = () => {
         const periodLabel =
@@ -183,12 +201,11 @@ export function AnalyticsPage({
             `Total Days,${totalDays}`,
             ``,
             `Attendance Trends:`,
-            selectedPeriod.includes('Month')
+            isWeeklyView
                 ? 'Week,Present,Late,Absent'
                 : 'Month,Present,Late,Absent',
             ...chartData.map(
-                row =>
-                    `${'week' in row ? row.week : row.month},${row.present},${row.late},${row.absent}`
+                row => `${row.label},${row.present},${row.late},${row.absent}`
             ),
             ``,
             `Status Distribution:`,
@@ -381,7 +398,7 @@ export function AnalyticsPage({
             <caption>Attendance Trends</caption>
             <thead>
               <tr>
-                <th>${selectedPeriod.includes('Month') ? 'Week' : 'Month'}</th>
+                <th>${isWeeklyView ? 'Week' : 'Month'}</th>
                 <th>Present</th>
                 <th>Late</th>
                 <th>Absent</th>
@@ -393,7 +410,7 @@ export function AnalyticsPage({
                   .map(
                       row => `
                 <tr>
-                  <td><strong>${'week' in row ? row.week : row.month}</strong></td>
+                  <td><strong>${row.label}</strong></td>
                   <td style="color: #22c55e;">${row.present}</td>
                   <td style="color: #f59e0b;">${row.late}</td>
                   <td style="color: #ef4444;">${row.absent}</td>
@@ -549,6 +566,8 @@ export function AnalyticsPage({
                             >
                                 <CardContent className="pt-0">
                                     <AttendanceSheetGenerator
+                                        apiBaseUrl={apiBaseUrl}
+                                        accessToken={accessToken}
                                         employmentOptions={employmentOptions}
                                     />
                                 </CardContent>
@@ -710,6 +729,11 @@ export function AnalyticsPage({
                                     </div>
 
                                     {/* Key Metrics */}
+                                    {analyticsError && (
+                                        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                                            {analyticsError}
+                                        </div>
+                                    )}
                                     <div>
                                         <div className="flex items-center gap-2 mb-3">
                                             <TrendingUp className="h-5 w-5 text-vibrant-green" />
@@ -720,7 +744,9 @@ export function AnalyticsPage({
                                         <div className="grid grid-cols-3 gap-4">
                                             <div className="text-center p-4 rounded-lg bg-vibrant-green/10">
                                                 <p className="text-2xl font-bold text-vibrant-green">
-                                                    {attendanceRate}%
+                                                    {isLoadingAnalytics
+                                                        ? '...'
+                                                        : `${attendanceRate}%`}
                                                 </p>
                                                 <p className="text-sm text-muted-foreground">
                                                     Attendance Rate
@@ -728,7 +754,9 @@ export function AnalyticsPage({
                                             </div>
                                             <div className="text-center p-4 rounded-lg bg-vibrant-blue/10">
                                                 <p className="text-2xl font-bold text-vibrant-blue">
-                                                    {totalPresent}
+                                                    {isLoadingAnalytics
+                                                        ? '...'
+                                                        : totalPresent}
                                                 </p>
                                                 <p className="text-sm text-muted-foreground">
                                                     Days Present
@@ -736,7 +764,9 @@ export function AnalyticsPage({
                                             </div>
                                             <div className="text-center p-4 rounded-lg bg-vibrant-purple/10">
                                                 <p className="text-2xl font-bold text-vibrant-purple">
-                                                    {totalDays}
+                                                    {isLoadingAnalytics
+                                                        ? '...'
+                                                        : totalDays}
                                                 </p>
                                                 <p className="text-sm text-muted-foreground">
                                                     Total Days
@@ -765,13 +795,7 @@ export function AnalyticsPage({
                                                             className="opacity-30"
                                                         />
                                                         <XAxis
-                                                            dataKey={
-                                                                selectedPeriod.includes(
-                                                                    'Month'
-                                                                )
-                                                                    ? 'week'
-                                                                    : 'month'
-                                                            }
+                                                            dataKey="label"
                                                             fontSize={12}
                                                         />
                                                         <YAxis fontSize={12} />
@@ -813,13 +837,7 @@ export function AnalyticsPage({
                                                             className="opacity-30"
                                                         />
                                                         <XAxis
-                                                            dataKey={
-                                                                selectedPeriod.includes(
-                                                                    'Month'
-                                                                )
-                                                                    ? 'week'
-                                                                    : 'month'
-                                                            }
+                                                            dataKey="label"
                                                             fontSize={12}
                                                         />
                                                         <YAxis fontSize={12} />
