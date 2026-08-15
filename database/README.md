@@ -73,6 +73,22 @@ Current migration set includes:
 - `0002_seed` - initial seed data
 - `0003_auth_refresh_and_self_update_guard` - refresh session function + protected self-update trigger
 
+## Copy local application data to Supabase
+
+After applying migrations, compare the local and Supabase application tables:
+
+```bash
+corepack pnpm run db:sync:data:dry
+```
+
+To replace the Supabase `app` and `app_auth` table rows with local PostgreSQL data:
+
+```bash
+corepack pnpm run db:sync:data
+```
+
+The data sync does not modify Supabase-managed `auth` tables or migration history. It validates table and column compatibility, truncates only the project application tables, copies rows in foreign-key order, and verifies matching row counts.
+
 Rollback latest migration:
 
 ```bash
@@ -85,4 +101,3 @@ corepack pnpm run db:migrate:down
 corepack pnpm run db:setup:dry
 corepack pnpm run db:setup
 ```
-
