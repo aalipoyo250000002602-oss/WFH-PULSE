@@ -171,15 +171,19 @@ type WorkingDayKey = (typeof orderedWorkingDayKeys)[number]
 type WorkingDaysState = Record<WorkingDayKey, boolean>
 
 function resolveApiBaseUrl() {
+    const apiBaseUrl = (import.meta as any).env?.VITE_API_BASE_URL ?? ''
+
     if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
-        return (
-            (import.meta as any).env?.VITE_API_BASE_URL_ANDROID ??
-            (import.meta as any).env?.VITE_API_BASE_URL ??
-            ''
-        )
+        try {
+            if (new URL(apiBaseUrl).hostname.endsWith('.supabase.co')) {
+                return apiBaseUrl
+            }
+        } catch {}
+
+        return (import.meta as any).env?.VITE_API_BASE_URL_ANDROID ?? apiBaseUrl
     }
 
-    return (import.meta as any).env?.VITE_API_BASE_URL ?? ''
+    return apiBaseUrl
 }
 
 export default function App() {

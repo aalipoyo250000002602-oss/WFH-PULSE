@@ -20,16 +20,24 @@ Choose your path:
 
 ### Option A: Run as Web App
 
+Use the local API and database:
+
 ```powershell
 Push-Location "C:{your directory}\WFH-PULSE"
 corepack pnpm run setup
-corepack pnpm run dev:host
+corepack pnpm run dev:local
 ```
 
 Open:
 
 - Local browser: `http://localhost:{id}`
 - Android Emulator browser: `http://10.0.2.2:{id}`
+
+Use the production Supabase API and database:
+
+```powershell
+corepack pnpm run dev:prod
+```
 
 ### Option B: Run as Android App (Emulator)
 
@@ -40,17 +48,22 @@ corepack pnpm run android:run:auto
 
 ## Script Shortcuts
 
-| Script | What it does |
-|---|---|
-| `corepack pnpm run setup` | Installs dependencies |
-| `corepack pnpm run dev` | Starts Vite dev server |
-| `corepack pnpm run dev:host` | Dev server exposed on `0.0.0.0:5173` |
-| `corepack pnpm run build` | Production build |
-| `corepack pnpm run preview` | Preview production build on `4173` |
-| `corepack pnpm run android:sync` | Build + sync web assets to Android |
-| `corepack pnpm run android:run:auto` | Build + sync + deploy to first connected Android device/emulator |
-| `corepack pnpm run android:run:emu` | Build + sync + deploy to `emulator-5554` |
-| `corepack pnpm run android:open` | Open `android/` project in Android Studio |
+| Script                                    | What it does                                                                       |
+| ----------------------------------------- | ---------------------------------------------------------------------------------- |
+| `corepack pnpm run setup`                 | Installs dependencies                                                              |
+| `corepack pnpm run dev`                   | Starts Vite dev server                                                             |
+| `corepack pnpm run dev:host`              | Dev server exposed on `0.0.0.0:5173`                                               |
+| `corepack pnpm run dev:local`             | Web dev server using `.env.local`                                                  |
+| `corepack pnpm run dev:prod`              | Web dev server using `.env.prod` and Supabase                                      |
+| `corepack pnpm run build`                 | Production build                                                                   |
+| `corepack pnpm run preview`               | Preview production build on `4173`                                                 |
+| `corepack pnpm run android:sync`          | Build with `.env.prod` + sync web assets to Android                                |
+| `corepack pnpm run android:run:auto`      | Build with `.env.prod` + sync + deploy to first connected Android device/emulator  |
+| `corepack pnpm run android:sync:local`    | Build with `.env.local` + sync web assets to Android                               |
+| `corepack pnpm run android:run:local`     | Build with `.env.local` + sync + deploy to first connected Android device/emulator |
+| `corepack pnpm run android:run:emu`       | Build + sync + deploy to `emulator-5554`                                           |
+| `corepack pnpm run android:run:local:emu` | Build locally configured assets + deploy to `emulator-5554`                        |
+| `corepack pnpm run android:open`          | Open `android/` project in Android Studio                                          |
 
 ## Project Map
 
