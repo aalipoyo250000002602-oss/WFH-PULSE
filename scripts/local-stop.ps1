@@ -4,7 +4,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$ports = @(5173, 8787)
+$ports = @(5173, 5174, 8787)
 $pidSet = New-Object 'System.Collections.Generic.HashSet[int]'
 
 foreach ($port in $ports) {
@@ -27,7 +27,7 @@ foreach ($process in $runnerProcesses) {
 }
 
 if ($pidSet.Count -eq 0) {
-  Write-Host '[local:stop] No local API/web dev processes found on ports 5173 or 8787.'
+  Write-Host '[local:stop] No local API/web dev processes found on ports 5173, 5174, or 8787.'
   exit 0
 }
 

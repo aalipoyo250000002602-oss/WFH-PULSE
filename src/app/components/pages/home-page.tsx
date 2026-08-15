@@ -911,7 +911,7 @@ export function HomePage({
                 entryYear === currentYear && entryMonth === currentMonth
             const isOnOrBeforeToday = entryDay <= todayDayOfMonth
             const detail = calendarAttendanceDetails[dateKey]
-            const hasLoginAttendance = Boolean(detail.clockIn)
+            const hasLoginAttendance = Boolean(detail?.clockIn)
 
             if (isCurrentMonth && isOnOrBeforeToday && hasLoginAttendance) {
                 if (status === 'present') {

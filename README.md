@@ -36,8 +36,10 @@ Open:
 Use the production Supabase API and database:
 
 ```powershell
-corepack pnpm run dev:prod
+corepack pnpm run prod:all
 ```
+
+This starts the local Node API at `http://localhost:8787`, configured to use the Supabase database, and the web app with `.env.prod`.
 
 ### Option B: Run as Android App (Emulator)
 
@@ -54,7 +56,9 @@ corepack pnpm run android:run:auto
 | `corepack pnpm run dev`                   | Starts Vite dev server                                                             |
 | `corepack pnpm run dev:host`              | Dev server exposed on `0.0.0.0:5173`                                               |
 | `corepack pnpm run dev:local`             | Web dev server using `.env.local`                                                  |
-| `corepack pnpm run dev:prod`              | Web dev server using `.env.prod` and Supabase                                      |
+| `corepack pnpm run dev:prod`              | Web dev server using `.env.prod`                                                   |
+| `corepack pnpm run dev:prod:5174`         | Production-configured web dev server on `5174`                                     |
+| `corepack pnpm run prod:all`              | Supabase-backed API + production-configured web dev server                         |
 | `corepack pnpm run build`                 | Production build                                                                   |
 | `corepack pnpm run preview`               | Preview production build on `4173`                                                 |
 | `corepack pnpm run android:sync`          | Build with `.env.prod` + sync web assets to Android                                |
