@@ -27,7 +27,6 @@
         "android:run:auto": "corepack pnpm run android:run",
         "android:run:emu": "corepack pnpm run android:run -- emulator-5554",
         "android:run:local": "corepack pnpm run exec:local -- android:run:raw",
-        "android:run:local:emu": "corepack pnpm run exec:local -- android:run:raw emulator-5554",
         "android:open": "powershell -ExecutionPolicy Bypass -File ./scripts/android-open.ps1",
         "android:build:Pixel7": "corepack pnpm run android:run --target Pixel_7",
         "android:build:Pixel10Pro": "corepack pnpm run android:run --target Pixel_10_Pro",

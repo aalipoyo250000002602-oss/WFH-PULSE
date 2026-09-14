@@ -1,0 +1,2 @@
+-- One-time sample data normalization; rollback intentionally left as no-op
+-- because some August/September rows may have existed before this migration.
