@@ -56,11 +56,37 @@ function Import-DotEnvFile {
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
 
+function Get-PnpmCommand {
+  $pnpmCmd = Get-Command pnpm.cmd -ErrorAction SilentlyContinue
+  if ($pnpmCmd) {
+    return ,$pnpmCmd.Source
+  }
+
+  $pnpm = Get-Command pnpm -ErrorAction SilentlyContinue
+  if ($pnpm) {
+    return ,$pnpm.Source
+  }
+
+  $corepack = Get-Command corepack -ErrorAction SilentlyContinue
+  if ($corepack) {
+    return @($corepack.Source, 'pnpm')
+  }
+
+  throw "Unable to find pnpm. Install pnpm or enable corepack."
+}
+
 $envFile = Join-Path $projectRoot '.env.prod'
 $loadedCount = Import-DotEnvFile -FilePath $envFile
 
-Write-Host "[env:prod] Loaded $loadedCount variables from .env.prod"
-Write-Host "[env:prod] Running: corepack pnpm run $ScriptName $($ScriptArgs -join ' ')"
+$pnpmCommand = @(Get-PnpmCommand)
+$runner = $pnpmCommand[0]
+$runnerArgs = @()
+if ($pnpmCommand.Count -gt 1) {
+  $runnerArgs = $pnpmCommand[1..($pnpmCommand.Count - 1)]
+}
 
-& corepack pnpm run $ScriptName @ScriptArgs
+Write-Host "[env:prod] Loaded $loadedCount variables from .env.prod"
+Write-Host "[env:prod] Running: $runner $($runnerArgs -join ' ') run $ScriptName $($ScriptArgs -join ' ')"
+
+& $runner @runnerArgs run $ScriptName @ScriptArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

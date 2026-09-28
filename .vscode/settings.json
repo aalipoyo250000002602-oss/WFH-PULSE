@@ -4,6 +4,8 @@
     "editor.insertSpaces": true,
     "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.formatOnSave": true,
+    "npm.packageManager": "pnpm",
+    "npm.scriptRunner": "pnpm.cmd",
     "prettier.useTabs": false,
     "prettier.tabWidth": 4,
     "[typescript]": {

@@ -11,6 +11,50 @@ if (-not $Target -and $args.Count -gt 0) {
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
 
+function Get-PnpmCommand {
+  $pnpmCmd = Get-Command pnpm.cmd -ErrorAction SilentlyContinue
+  if ($pnpmCmd) {
+    return ,$pnpmCmd.Source
+  }
+
+  $pnpm = Get-Command pnpm -ErrorAction SilentlyContinue
+  if ($pnpm) {
+    return ,$pnpm.Source
+  }
+
+  $corepack = Get-Command corepack -ErrorAction SilentlyContinue
+  if ($corepack) {
+    return @($corepack.Source, 'pnpm')
+  }
+
+  throw "Unable to find pnpm. Install pnpm or enable corepack."
+}
+
+$pnpmCommand = @(Get-PnpmCommand)
+$runner = $pnpmCommand[0]
+$runnerArgs = @()
+if ($pnpmCommand.Count -gt 1) {
+  $runnerArgs = $pnpmCommand[1..($pnpmCommand.Count - 1)]
+}
+
+function Assert-NodeVersion {
+  $nodeVersionRaw = & node -v
+  if ($LASTEXITCODE -ne 0) {
+    throw "Node.js is required but was not found in PATH."
+  }
+
+  $major = 0
+  if ($nodeVersionRaw -match '^v(\d+)') {
+    $major = [int]$matches[1]
+  }
+
+  if ($major -lt 22) {
+    throw "Capacitor Android commands require Node.js >= 22.0.0. Current: $nodeVersionRaw"
+  }
+}
+
+Assert-NodeVersion
+
 $studioJbr = 'C:\Program Files\Android\Android Studio\jbr'
 $javaExe = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin\java.exe' } else { $null }
 
@@ -25,11 +69,11 @@ if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\java.exe'))) {
 }
 
 Write-Host "[android:run] Building web assets..."
-corepack pnpm run build
+& $runner @runnerArgs run build
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "[android:run] Syncing Capacitor Android project..."
-corepack pnpm exec cap sync android
+& $runner @runnerArgs exec cap sync android
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 if (-not $Target) {
@@ -52,7 +96,7 @@ if (-not $Target) {
   }
 }
 
-$runCmd = @('pnpm', 'exec', 'cap', 'run', 'android')
+$runCmd = @('exec', 'cap', 'run', 'android')
 if ($Target) {
   $runCmd += @('--target', $Target)
   Write-Host "[android:run] Deploying to target '$Target'..."
@@ -60,7 +104,7 @@ if ($Target) {
   Write-Host "[android:run] Deploying to default Android device/emulator..."
 }
 
-corepack @runCmd
+& $runner @runnerArgs @runCmd
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "[android:run] Done."

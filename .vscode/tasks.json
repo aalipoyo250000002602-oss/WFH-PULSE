@@ -1,0 +1,255 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "exec:local",
+			"type": "shell",
+			"command": "pnpm.cmd",
+			"args": [
+				"run",
+				"exec:local"
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "pnpm: exec:local",
+			"type": "shell",
+			"command": "pnpm.cmd",
+			"args": [
+				"run",
+				"exec:local"
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "db:test:once",
+			"type": "shell",
+			"command": "pnpm.cmd",
+			"args": [
+				"run",
+				"db:test"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "db:test:verify",
+			"type": "shell",
+			"command": "pnpm.cmd",
+			"args": [
+				"run",
+				"db:test"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "db:create:wfh_pulse",
+			"type": "shell",
+			"command": "$env:PGPASSWORD='postgres'; & 'C:\\Program Files\\PostgreSQL\\18\\bin\\createdb.exe' -h 127.0.0.1 -p 5432 -U postgres wfh_pulse",
+			"isBackground": false
+		},
+		{
+			"label": "db:create:from-env",
+			"type": "shell",
+			"command": "$cfg=@{}; Get-Content 'database/.env.local.postgres' | ForEach-Object { $l=$_.Trim(); if(-not $l -or $l.StartsWith('#')){ return }; $i=$l.IndexOf('='); if($i -lt 1){ return }; $cfg[$l.Substring(0,$i).Trim()]=$l.Substring($i+1).Trim() }; $env:PGPASSWORD=$cfg['PGPASSWORD']; & 'C:\\Program Files\\PostgreSQL\\18\\bin\\createdb.exe' -h $cfg['PGHOST'] -p $cfg['PGPORT'] -U $cfg['PGUSER'] $cfg['PGDATABASE']",
+			"isBackground": false
+		},
+		{
+			"label": "db:test:post-create",
+			"type": "shell",
+			"command": "pnpm.cmd",
+			"args": [
+				"run",
+				"db:test"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "db:migrate:up:post-create",
+			"type": "shell",
+			"command": "pnpm.cmd",
+			"args": [
+				"run",
+				"db:migrate"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "db:migrate:status:post-create",
+			"type": "shell",
+			"command": "pnpm.cmd",
+			"args": [
+				"run",
+				"db:migrate:status"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "api:health-login:verify",
+			"type": "shell",
+			"command": "$health = Invoke-RestMethod -Uri 'http://localhost:8787/health' -Method Get; Write-Output ('health_ok=' + $health.ok); $body = @{ email = 'test@mit.co'; password = 'testpass' } | ConvertTo-Json; try { $login = Invoke-RestMethod -Uri 'http://localhost:8787/auth/login' -Method Post -ContentType 'application/json' -Body $body; Write-Output ('login_ok=true'); Write-Output ('role=' + $login.role); Write-Output ('sessionId=' + $login.sessionId) } catch { Write-Output ('login_ok=false'); if ($_.ErrorDetails.Message) { Write-Output $_.ErrorDetails.Message } else { Write-Output $_.Exception.Message } }",
+			"isBackground": false
+		},
+		{
+			"label": "local:stop:once",
+			"type": "shell",
+			"command": "pnpm.cmd",
+			"args": [
+				"run",
+				"local:stop"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "api:dev:restart",
+			"type": "shell",
+			"command": "pnpm.cmd",
+			"args": [
+				"run",
+				"api:dev"
+			],
+			"isBackground": true
+		},
+		{
+			"label": "api:health-login:final",
+			"type": "shell",
+			"command": "$health = Invoke-RestMethod -Uri 'http://localhost:8787/health' -Method Get; Write-Output ('health_ok=' + $health.ok); $body = @{ email = 'test@mit.co'; password = 'testpass' } | ConvertTo-Json; try { $login = Invoke-RestMethod -Uri 'http://localhost:8787/auth/login' -Method Post -ContentType 'application/json' -Body $body; Write-Output ('login_ok=true'); Write-Output ('role=' + $login.role); Write-Output ('sessionId=' + $login.sessionId) } catch { Write-Output ('login_ok=false'); if ($_.ErrorDetails.Message) { Write-Output $_.ErrorDetails.Message } else { Write-Output $_.Exception.Message } }",
+			"isBackground": false
+		},
+		{
+			"label": "android:build:Pixel10Pro:verify",
+			"type": "shell",
+			"command": "pnpm.cmd",
+			"args": [
+				"run",
+				"android:build:Pixel10Pro"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "node:version:check",
+			"type": "shell",
+			"command": "node -v; where.exe node",
+			"isBackground": false
+		},
+		{
+			"label": "android:build:Pixel10Pro:post-fix",
+			"type": "shell",
+			"command": "pnpm.cmd",
+			"args": [
+				"run",
+				"android:build:Pixel10Pro"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "local-all:dry-run:verify",
+			"type": "shell",
+			"command": "powershell -ExecutionPolicy Bypass -File ./scripts/local-all.ps1 -DryRun",
+			"isBackground": false
+		},
+		{
+			"label": "prod-all:dry-run:verify",
+			"type": "shell",
+			"command": "powershell -ExecutionPolicy Bypass -File ./scripts/prod-all.ps1 -DryRun",
+			"isBackground": false
+		},
+		{
+			"label": "android:run:emu:verify",
+			"type": "shell",
+			"command": "pnpm.cmd",
+			"args": [
+				"run",
+				"android:run:emu"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "check:winget",
+			"type": "shell",
+			"command": "winget --version",
+			"isBackground": false
+		},
+		{
+			"label": "check:nvm",
+			"type": "shell",
+			"command": "nvm version",
+			"isBackground": false
+		},
+		{
+			"label": "check:choco",
+			"type": "shell",
+			"command": "choco -v",
+			"isBackground": false
+		},
+		{
+			"label": "install:node:lts",
+			"type": "shell",
+			"command": "winget install OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent",
+			"isBackground": false
+		},
+		{
+			"label": "verify:node:version",
+			"type": "shell",
+			"command": "node -v; where.exe node",
+			"isBackground": false
+		},
+		{
+			"label": "verify:pnpm:version",
+			"type": "shell",
+			"command": "pnpm.cmd -v",
+			"isBackground": false
+		},
+		{
+			"label": "android:run:emu:node24",
+			"type": "shell",
+			"command": "pnpm.cmd run android:run:emu",
+			"isBackground": false
+		},
+		{
+			"label": "android:discover:avd",
+			"type": "shell",
+			"command": "$emulator = Get-Command emulator -ErrorAction SilentlyContinue; if ($emulator) { & $emulator.Source -list-avds } elseif (Test-Path \"$env:LOCALAPPDATA\\Android\\Sdk\\emulator\\emulator.exe\") { & \"$env:LOCALAPPDATA\\Android\\Sdk\\emulator\\emulator.exe\" -list-avds } else { Write-Output 'NO_EMULATOR_BIN' }; adb devices",
+			"isBackground": false
+		},
+		{
+			"label": "android:sdk:paths",
+			"type": "shell",
+			"command": "Write-Output \"ANDROID_HOME=$env:ANDROID_HOME\"; Write-Output \"ANDROID_SDK_ROOT=$env:ANDROID_SDK_ROOT\"; Write-Output \"LOCALAPPDATA=$env:LOCALAPPDATA\"; if (Test-Path \"$env:USERPROFILE\\.android\\avd\") { Get-ChildItem \"$env:USERPROFILE\\.android\\avd\" -Name } else { Write-Output 'NO_AVD_DIR' }; if (Test-Path \"$env:LOCALAPPDATA\\Android\\Sdk\\emulator\\emulator.exe\") { Write-Output 'EMU_OK'; & \"$env:LOCALAPPDATA\\Android\\Sdk\\emulator\\emulator.exe\" -list-avds } else { Write-Output 'EMU_MISSING' }; if (Test-Path \"$env:LOCALAPPDATA\\Android\\Sdk\\platform-tools\\adb.exe\") { Write-Output 'ADB_OK' } else { Write-Output 'ADB_MISSING' }",
+			"isBackground": false
+		},
+		{
+			"label": "android:check:cmdline-tools",
+			"type": "shell",
+			"command": "$sdkRoot = \"$env:LOCALAPPDATA\\Android\\Sdk\"; $avdManager = Join-Path $sdkRoot 'cmdline-tools\\latest\\bin\\avdmanager.bat'; $sdkManager = Join-Path $sdkRoot 'cmdline-tools\\latest\\bin\\sdkmanager.bat'; Write-Output \"AVDMANAGER_EXISTS=$([bool](Test-Path $avdManager))\"; Write-Output \"SDKMANAGER_EXISTS=$([bool](Test-Path $sdkManager))\"; if (Test-Path $avdManager) { & $avdManager list avd }",
+			"isBackground": false
+		},
+		{
+			"label": "android:check:cmdline-tools:retry",
+			"type": "shell",
+			"command": "$sdkRoot = Join-Path $env:LOCALAPPDATA 'Android\\Sdk'; $avdManager = Join-Path $sdkRoot 'cmdline-tools\\latest\\bin\\avdmanager.bat'; $sdkManager = Join-Path $sdkRoot 'cmdline-tools\\latest\\bin\\sdkmanager.bat'; Write-Output ('AVDMANAGER_EXISTS=' + (Test-Path $avdManager)); Write-Output ('SDKMANAGER_EXISTS=' + (Test-Path $sdkManager)); if (Test-Path $avdManager) { & $avdManager list avd }",
+			"isBackground": false
+		},
+		{
+			"label": "android:open:studio",
+			"type": "shell",
+			"command": "pnpm.cmd",
+			"args": [
+				"run",
+				"android:open"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "android:run:emu:after-open",
+			"type": "shell",
+			"command": "pnpm.cmd",
+			"args": [
+				"run",
+				"android:run:emu"
+			],
+			"isBackground": false
+		}
+	]
+}
