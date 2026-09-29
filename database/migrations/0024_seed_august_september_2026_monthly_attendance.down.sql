@@ -1,0 +1,2 @@
+-- Data normalization overwrites existing attendance; rollback intentionally
+-- leaves the generated records in place rather than deleting prior user data.

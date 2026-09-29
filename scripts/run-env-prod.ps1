@@ -12,10 +12,9 @@ if ($rawArgs.Count -le $startIndex) {
 }
 
 $ScriptName = $rawArgs[$startIndex]
-$ScriptArgs = if ($rawArgs.Count -gt ($startIndex + 1)) {
-  $rawArgs[($startIndex + 1)..($rawArgs.Count - 1)]
-} else {
-  @()
+$ScriptArgs = @()
+if ($rawArgs.Count -gt ($startIndex + 1)) {
+  $ScriptArgs = @($rawArgs[($startIndex + 1)..($rawArgs.Count - 1)])
 }
 
 function Import-DotEnvFile {

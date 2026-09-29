@@ -76,37 +76,71 @@ Write-Host "[android:run] Syncing Capacitor Android project..."
 & $runner @runnerArgs exec cap sync android
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-if (-not $Target) {
-  $adb = Get-Command adb -ErrorAction SilentlyContinue
-  if ($adb) {
-    $deviceLines = & adb devices | Select-String "\sdevice$"
-    $firstDevice = $null
-    foreach ($line in $deviceLines) {
-      $id = (($line.ToString() -split "\s+")[0]).Trim()
-      if ($id -and $id -ne 'List') {
-        $firstDevice = $id
-        break
-      }
+$adbCommand = Get-Command adb -ErrorAction SilentlyContinue
+if ($adbCommand) {
+  $adbPath = $adbCommand.Source
+} else {
+  $sdkPath = $env:ANDROID_HOME
+  if (-not $sdkPath) {
+    $sdkPath = $env:ANDROID_SDK_ROOT
+  }
+  if (-not $sdkPath) {
+    $sdkLine = Get-Content (Join-Path $projectRoot 'android\local.properties') |
+      Where-Object { $_ -match '^sdk\.dir=' } |
+      Select-Object -First 1
+    if ($sdkLine) {
+      $sdkPath = ($sdkLine -replace '^sdk\.dir=', '').Replace('\:', ':').Replace('\\', '\')
     }
+  }
 
-    if ($firstDevice) {
-      $Target = $firstDevice
-      Write-Host "[android:run] Auto-detected target '$Target'."
-    }
+  $adbPath = if ($sdkPath) {
+    Join-Path $sdkPath 'platform-tools\adb.exe'
+  } else {
+    $null
   }
 }
 
-$runCmd = @('exec', 'cap', 'run', 'android')
-if ($Target) {
-  $runCmd += @('--target', $Target)
-  Write-Host "[android:run] Deploying to target '$Target'..."
-} else {
-  Write-Host "[android:run] Deploying to default Android device/emulator..."
+if (-not $adbPath -or -not (Test-Path $adbPath)) {
+  throw "Android Debug Bridge (adb) was not found. Add platform-tools to PATH or configure android/local.properties."
 }
 
-& $runner @runnerArgs @runCmd
+$connectedTargets = @(
+  & $adbPath devices |
+    ForEach-Object {
+      if ($_ -match '^(\S+)\s+device$') {
+        $matches[1]
+      }
+    }
+)
+if ($LASTEXITCODE -ne 0) {
+  throw "Unable to list Android devices with adb."
+}
+
+if (-not $Target -and $connectedTargets.Count -gt 0) {
+  $Target = $connectedTargets[0]
+  Write-Host "[android:run] Auto-detected target '$Target'."
+}
+if (-not $Target) {
+  throw "No Android device or emulator is connected."
+}
+if ($Target -notin $connectedTargets) {
+  throw "Android target '$Target' is not connected or is unauthorized."
+}
+
+$androidPath = Join-Path $projectRoot 'android'
+$gradleWrapper = Join-Path $androidPath 'gradlew.bat'
+Write-Host "[android:run] Building debug APK..."
+& $gradleWrapper -p $androidPath assembleDebug
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+$apkPath = Join-Path $androidPath 'app\build\outputs\apk\debug\app-debug.apk'
+Write-Host "[android:run] Installing APK on target '$Target'..."
+& $adbPath -s $Target install -r $apkPath
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host "[android:run] Launching WFH Pulse..."
+& $adbPath -s $Target shell monkey -p com.wfh.pulse -c android.intent.category.LAUNCHER 1
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "[android:run] Done."
-
 

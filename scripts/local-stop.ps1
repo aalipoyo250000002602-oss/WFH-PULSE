@@ -18,7 +18,7 @@ foreach ($port in $ports) {
 
 # Also catch PowerShell shells that launched the API command from local-all helper.
 $runnerProcesses = @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" -ErrorAction SilentlyContinue |
-  Where-Object { $_.CommandLine -match 'pnpm\s+run\s+api:dev' })
+  Where-Object { $_.CommandLine -match 'pnpm\s+run\s+api:dev(?::local)?' })
 
 foreach ($process in $runnerProcesses) {
   if ($process.ProcessId -gt 0) {
@@ -53,5 +53,4 @@ if ($DryRun) {
 } else {
   Write-Host '[local:stop] Done.'
 }
-
 

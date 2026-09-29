@@ -43,10 +43,19 @@ This starts the local Node API at `http://localhost:8787`, configured to use the
 
 ### Option B: Run as Android App (Emulator)
 
+Start the local API (connected to local PostgreSQL) and web server in one terminal:
+
 ```powershell
-Push-Location "C:{your directory}\WFH-PULSE"
-corepack pnpm run android:run:auto
+corepack pnpm run local:all
 ```
+
+Then, in a second terminal, build and deploy the locally configured app to the Android emulator:
+
+```powershell
+corepack pnpm run android:run:local:emu
+```
+
+The emulator reaches the API on your computer through `10.0.2.2:8787`; the API connects to PostgreSQL using `database/.env.local.postgres`. The app does not connect directly to PostgreSQL.
 
 ## Script Shortcuts
 
@@ -58,6 +67,7 @@ corepack pnpm run android:run:auto
 | `corepack pnpm run dev:local`             | Web dev server using `.env.local`                                                  |
 | `corepack pnpm run dev:prod`              | Web dev server using `.env.prod`                                                   |
 | `corepack pnpm run dev:prod:5174`         | Production-configured web dev server on `5174`                                     |
+| `corepack pnpm run local:all`             | Starts local PostgreSQL-backed API + web dev server                               |
 | `corepack pnpm run prod:all`              | Supabase-backed API + production-configured web dev server                         |
 | `corepack pnpm run build`                 | Production build                                                                   |
 | `corepack pnpm run preview`               | Preview production build on `4173`                                                 |
@@ -67,6 +77,7 @@ corepack pnpm run android:run:auto
 | `corepack pnpm run android:run:local`     | Build with `.env.local` + sync + deploy to first connected Android device/emulator |
 | `corepack pnpm run android:run:emu`       | Build + sync + deploy to `emulator-5554`                                           |
 | `corepack pnpm run android:run:local:emu` | Build locally configured assets + deploy to `emulator-5554`                        |
+| `corepack pnpm run api:dev:local`         | Starts the API with local PostgreSQL explicitly selected                          |
 | `corepack pnpm run android:open`          | Open `android/` project in Android Studio                                          |
 
 ## Project Map

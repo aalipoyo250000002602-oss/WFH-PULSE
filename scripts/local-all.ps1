@@ -35,7 +35,7 @@ if ($pnpmCommand.Count -gt 1) {
 
 $runnerScript = "$runner $($runnerArgs -join ' ')".Trim()
 $quotedRunnerArgs = ($runnerArgs | ForEach-Object { "'$_'" }) -join ' '
-$apiCommand = "Set-Location '$projectRoot'; & '$runner' $quotedRunnerArgs run api:dev"
+$apiCommand = "Set-Location '$projectRoot'; & '$runner' $quotedRunnerArgs run api:dev:local"
 $apiArgs = @(
   '-NoExit',
   '-ExecutionPolicy', 'Bypass',
@@ -55,4 +55,3 @@ Start-Process -FilePath 'powershell.exe' -ArgumentList $apiArgs | Out-Null
 Write-Host '[local:all] Starting web dev server (local env) in current terminal...'
 & $runner @runnerArgs run dev:local
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
