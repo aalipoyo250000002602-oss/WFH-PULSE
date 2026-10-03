@@ -83,6 +83,7 @@ interface AdjustmentRequestsSectionProps {
     onFilterStatusChange?: (
         status: 'all' | 'pending' | 'approved' | 'denied' | 'cancelled'
     ) => void
+    onRequestsChanged?: () => void
 }
 
 export function AdjustmentRequestsSection({
@@ -92,6 +93,7 @@ export function AdjustmentRequestsSection({
     onFilteredCountChange,
     filterStatus = 'pending',
     onFilterStatusChange,
+    onRequestsChanged,
 }: AdjustmentRequestsSectionProps) {
     const [adjustmentRequests, setAdjustmentRequests] = useState<
         AdjustmentRequest[]
@@ -267,6 +269,7 @@ export function AdjustmentRequestsSection({
             }
 
             await loadAdjustmentRequests()
+            onRequestsChanged?.()
             toast.success(`${requestLabelTitle} approved successfully`)
             setShowAdjustmentApproveDialog(false)
             setShowAdjustmentDetailsDialog(false)
@@ -318,6 +321,7 @@ export function AdjustmentRequestsSection({
             }
 
             await loadAdjustmentRequests()
+            onRequestsChanged?.()
             toast.success(`${requestLabelTitle} denied`)
             setShowAdjustmentDenyDialog(false)
             setShowAdjustmentDetailsDialog(false)
@@ -373,6 +377,7 @@ export function AdjustmentRequestsSection({
             }
 
             await loadAdjustmentRequests()
+            onRequestsChanged?.()
             toast.success(`${requestLabelTitle} cancelled`)
             setShowAdjustmentCancelDialog(false)
             setShowAdjustmentDetailsDialog(false)

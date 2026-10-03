@@ -59,6 +59,7 @@ import { Label } from '../ui/label'
 import { Textarea } from '../ui/textarea'
 import { format } from 'date-fns'
 import { AdjustmentRequestsSection } from '../adjustment-requests-section'
+import { RequestNotificationBadge } from '../request-notification-badge'
 
 const ITEMS_PER_PAGE = 10
 
@@ -124,12 +125,20 @@ interface DashboardPageProps {
             name: string
         }>
     }
+    unreadRequestCounts: {
+        leave: number
+        adjustment: number
+        overtime: number
+    }
+    onRequestCountsRefresh: () => void
 }
 
 export function DashboardPage({
     apiBaseUrl,
     accessToken,
     employmentOptions,
+    unreadRequestCounts,
+    onRequestCountsRefresh,
 }: DashboardPageProps) {
     const getTodayIsoDate = () => {
         const now = new Date()
@@ -1038,6 +1047,7 @@ export function DashboardPage({
             }
 
             await loadLeaveRequests()
+            onRequestCountsRefresh()
             notifyLeaveDataUpdated()
             toast.success('Leave request approved successfully')
             setShowApproveDialog(false)
@@ -1086,6 +1096,7 @@ export function DashboardPage({
             }
 
             await loadLeaveRequests()
+            onRequestCountsRefresh()
             notifyLeaveDataUpdated()
             toast.success('Leave request denied')
             setShowDenyDialog(false)
@@ -1136,6 +1147,7 @@ export function DashboardPage({
             }
 
             await loadLeaveRequests()
+            onRequestCountsRefresh()
             notifyLeaveDataUpdated()
             toast.success('Leave request cancelled')
             setShowCancelApprovedDialog(false)
@@ -1563,6 +1575,9 @@ export function DashboardPage({
                             <CardTitle className="flex items-center gap-2">
                                 <CalendarIcon className="h-5 w-5 text-vibrant-pink" />
                                 Leave Requests
+                                <RequestNotificationBadge
+                                    count={unreadRequestCounts.leave}
+                                />
                             </CardTitle>
                             <div className="flex items-center gap-2">
                                 <span
@@ -1777,6 +1792,9 @@ export function DashboardPage({
                             <CardTitle className="flex items-center gap-2">
                                 <Clock className="h-5 w-5 text-vibrant-orange" />
                                 Adjustment Requests
+                                <RequestNotificationBadge
+                                    count={unreadRequestCounts.adjustment}
+                                />
                             </CardTitle>
                             <div className="flex items-center gap-2">
                                 <span
@@ -1872,6 +1890,9 @@ export function DashboardPage({
                                         onFilterStatusChange={
                                             setAdjustmentFilterStatus
                                         }
+                                        onRequestsChanged={
+                                            onRequestCountsRefresh
+                                        }
                                     />
                                 </CardContent>
                             </motion.div>
@@ -1891,6 +1912,9 @@ export function DashboardPage({
                             <CardTitle className="flex items-center gap-2">
                                 <Clock className="h-5 w-5 text-vibrant-blue" />
                                 Overtime Requests
+                                <RequestNotificationBadge
+                                    count={unreadRequestCounts.overtime}
+                                />
                             </CardTitle>
                             <div className="flex items-center gap-2">
                                 <span
@@ -1986,6 +2010,9 @@ export function DashboardPage({
                                         filterStatus={overtimeFilterStatus}
                                         onFilterStatusChange={
                                             setOvertimeFilterStatus
+                                        }
+                                        onRequestsChanged={
+                                            onRequestCountsRefresh
                                         }
                                     />
                                 </CardContent>
