@@ -30,7 +30,148 @@ export function registerMeAttendanceRoutes(app, deps) {
         buildOvertimeLogReason,
         parsePurposeFromOvertimeMessage,
         seedCalendarSampleAttendanceIfEmpty,
+        notifySlackAttendanceEvent,
     } = deps
+
+    const insertSlackNotificationLogSafe = async ({
+        authContext,
+        attendanceId,
+        employeeId,
+        eventAction,
+        deliveryStatus,
+        payload,
+        messageText,
+        httpStatus,
+        errorMessage,
+    }) => {
+        try {
+            await withRlsContext(authContext, async client => {
+                await client.query(
+                    `
+                    INSERT INTO app.slack_notification_logs (
+                      attendance_id,
+                      employee_id,
+                      event_action,
+                      delivery_status,
+                      message_text,
+                      http_status,
+                      error_message,
+                      payload
+                    )
+                    VALUES (
+                      $1::bigint,
+                      $2::text,
+                      $3::text,
+                      $4::text,
+                      $5::text,
+                      $6::integer,
+                      $7::text,
+                      $8::jsonb
+                    )
+                    `,
+                    [
+                        attendanceId,
+                        employeeId,
+                        eventAction,
+                        deliveryStatus,
+                        messageText,
+                        Number.isFinite(Number(httpStatus))
+                            ? Number(httpStatus)
+                            : null,
+                        errorMessage ?? null,
+                        payload && typeof payload === 'object' ? payload : {},
+                    ]
+                )
+            })
+        } catch (logError) {
+            console.error(
+                'Slack notification log insert failed:',
+                logError?.message ?? logError
+            )
+        }
+    }
+
+    const notifySlackAttendanceEventSafe = async ({ authContext, ...payload }) => {
+        if (typeof notifySlackAttendanceEvent !== 'function') {
+            await insertSlackNotificationLogSafe({
+                authContext,
+                attendanceId: payload.attendanceId,
+                employeeId: payload.employeeId,
+                eventAction: payload.action,
+                deliveryStatus: 'failed',
+                payload,
+                messageText: null,
+                httpStatus: null,
+                errorMessage: 'Slack notifier is not configured',
+            })
+            return
+        }
+
+        try {
+            const result = await notifySlackAttendanceEvent(payload)
+            await insertSlackNotificationLogSafe({
+                authContext,
+                attendanceId: payload.attendanceId,
+                employeeId: payload.employeeId,
+                eventAction: payload.action,
+                deliveryStatus: 'success',
+                payload,
+                messageText: result?.payload?.text ?? null,
+                httpStatus: result?.httpStatus ?? null,
+                errorMessage: null,
+            })
+        } catch (error) {
+            await insertSlackNotificationLogSafe({
+                authContext,
+                attendanceId: payload.attendanceId,
+                employeeId: payload.employeeId,
+                eventAction: payload.action,
+                deliveryStatus: 'failed',
+                payload,
+                messageText: null,
+                httpStatus: error?.httpStatus ?? null,
+                errorMessage: String(error?.message ?? error),
+            })
+
+            console.error(
+                'Slack attendance notification failed:',
+                error?.message ?? error
+            )
+        }
+    }
+
+    const getEmployeeSlackDetails = async (authContext, employeeId) => {
+        const employeeRow = await withRlsContext(authContext, async client => {
+            const result = await client.query(
+                `
+                SELECT
+                  e.first_name,
+                  e.last_name,
+                  COALESCE(jp.name, e.position, 'Employee') AS position
+                FROM app.employees e
+                LEFT JOIN app.job_positions jp ON jp.position_id = e.position_id
+                WHERE e.employee_id = $1::text
+                LIMIT 1
+                `,
+                [employeeId]
+            )
+            return result.rows[0] ?? null
+        })
+
+        if (!employeeRow) {
+            return {
+                employeeName: null,
+                position: 'Employee',
+            }
+        }
+
+        const employeeName = `${employeeRow.first_name ?? ''} ${employeeRow.last_name ?? ''}`.trim()
+
+        return {
+            employeeName: employeeName || null,
+            position: employeeRow.position ?? 'Employee',
+        }
+    }
 
     const leaveRequestStatusOptions = new Set([
         'pending',
@@ -631,6 +772,114 @@ export function registerMeAttendanceRoutes(app, deps) {
         }
     })
 
+    app.get('/me/slack-notification-logs', requireAuth, async (req, res) => {
+        try {
+            const resolvedEmployeeId = await ensureEmployeeLinkForUser(
+                req.auth.userId
+            )
+            if (!resolvedEmployeeId) {
+                return res.status(404).json({
+                    error: 'No employee profile is linked to this account yet.',
+                })
+            }
+
+            const limitRaw = Number.parseInt(String(req.query.limit ?? '50'), 10)
+            const limit = Number.isFinite(limitRaw)
+                ? Math.min(Math.max(limitRaw, 1), 200)
+                : 50
+
+            const statusParam = String(req.query.status ?? '').trim().toLowerCase()
+            const actionParam = String(req.query.action ?? '').trim().toLowerCase()
+
+            const allowedStatuses = new Set(['success', 'failed'])
+            const allowedActions = new Set(['clock_in', 'clock_out'])
+
+            if (statusParam && !allowedStatuses.has(statusParam)) {
+                return res.status(400).json({
+                    error: 'Invalid status filter. Use success or failed.',
+                })
+            }
+
+            if (actionParam && !allowedActions.has(actionParam)) {
+                return res.status(400).json({
+                    error: 'Invalid action filter. Use clock_in or clock_out.',
+                })
+            }
+
+            const logs = await withRlsContext(req.auth, async client => {
+                const params = [resolvedEmployeeId]
+                const where = ['employee_id = $1::text']
+
+                if (statusParam) {
+                    params.push(statusParam)
+                    where.push(`delivery_status = $${params.length}::text`)
+                }
+
+                if (actionParam) {
+                    params.push(actionParam)
+                    where.push(`event_action = $${params.length}::text`)
+                }
+
+                params.push(limit)
+
+                const result = await client.query(
+                    `
+                    SELECT
+                      notification_log_id,
+                      attendance_id,
+                      employee_id,
+                      event_action,
+                      delivery_status,
+                      message_text,
+                      http_status,
+                      error_message,
+                      payload,
+                      created_at
+                    FROM app.slack_notification_logs
+                    WHERE ${where.join(' AND ')}
+                    ORDER BY created_at DESC
+                    LIMIT $${params.length}::integer
+                    `,
+                    params
+                )
+
+                return result.rows
+            })
+
+            return res.json({
+                logs: logs.map(row => ({
+                    notificationLogId: Number(row.notification_log_id),
+                    attendanceId:
+                        row.attendance_id == null
+                            ? null
+                            : Number(row.attendance_id),
+                    employeeId: String(row.employee_id),
+                    action: String(row.event_action),
+                    status: String(row.delivery_status),
+                    messageText:
+                        row.message_text == null
+                            ? null
+                            : String(row.message_text),
+                    httpStatus:
+                        row.http_status == null
+                            ? null
+                            : Number(row.http_status),
+                    errorMessage:
+                        row.error_message == null
+                            ? null
+                            : String(row.error_message),
+                    payload:
+                        row.payload && typeof row.payload === 'object'
+                            ? row.payload
+                            : {},
+                    createdAt: row.created_at,
+                })),
+            })
+        } catch (error) {
+            return res.status(400).json({ error: error.message })
+        }
+    })
+
     app.post('/me/attendance/clock-in', requireAuth, async (req, res) => {
         try {
             const resolvedEmployeeId = await ensureEmployeeLinkForUser(
@@ -825,6 +1074,23 @@ export function registerMeAttendanceRoutes(app, deps) {
                 })
 
                 return updatedResult.rows[0]
+            })
+
+            const employeeSlackDetails = await getEmployeeSlackDetails(
+                req.auth,
+                resolvedEmployeeId
+            )
+
+            await notifySlackAttendanceEventSafe({
+                authContext: req.auth,
+                action: 'clock_in',
+                attendanceId: Number(attendance.attendance_id),
+                employeeId: resolvedEmployeeId,
+                employeeName: employeeSlackDetails.employeeName,
+                position: employeeSlackDetails.position,
+                attendanceDate: attendance.attendance_date,
+                eventTime: attendance.clock_in,
+                status: attendance.status,
             })
 
             return res
@@ -1263,6 +1529,23 @@ export function registerMeAttendanceRoutes(app, deps) {
                 })
 
                 return updatedResult.rows[0]
+            })
+
+            const employeeSlackDetails = await getEmployeeSlackDetails(
+                req.auth,
+                resolvedEmployeeId
+            )
+
+            await notifySlackAttendanceEventSafe({
+                authContext: req.auth,
+                action: 'clock_out',
+                attendanceId: Number(attendance.attendance_id),
+                employeeId: resolvedEmployeeId,
+                employeeName: employeeSlackDetails.employeeName,
+                position: employeeSlackDetails.position,
+                attendanceDate: attendance.attendance_date,
+                eventTime: attendance.clock_out,
+                status: attendance.status,
             })
 
             return res.json({ attendance: mapAttendanceRecordRow(attendance) })

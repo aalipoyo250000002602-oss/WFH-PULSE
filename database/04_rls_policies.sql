@@ -62,6 +62,7 @@ ALTER TABLE app.payroll_deductions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.attendance_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.attendance_break_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.attendance_activity_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.slack_notification_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.attendance_leave_details ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.attendance_leave_attachments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.attendance_adjustment_requests ENABLE ROW LEVEL SECURITY;
@@ -173,6 +174,21 @@ CREATE POLICY attendance_activity_logs_select ON app.attendance_activity_logs
 
 DROP POLICY IF EXISTS attendance_activity_logs_write ON app.attendance_activity_logs;
 CREATE POLICY attendance_activity_logs_write ON app.attendance_activity_logs
+  FOR ALL USING (
+    app.is_hr_or_admin() OR employee_id = app.current_employee_id()
+  )
+  WITH CHECK (
+    app.is_hr_or_admin() OR employee_id = app.current_employee_id()
+  );
+
+DROP POLICY IF EXISTS slack_notification_logs_select ON app.slack_notification_logs;
+CREATE POLICY slack_notification_logs_select ON app.slack_notification_logs
+  FOR SELECT USING (
+    app.is_hr_or_admin() OR employee_id = app.current_employee_id()
+  );
+
+DROP POLICY IF EXISTS slack_notification_logs_write ON app.slack_notification_logs;
+CREATE POLICY slack_notification_logs_write ON app.slack_notification_logs
   FOR ALL USING (
     app.is_hr_or_admin() OR employee_id = app.current_employee_id()
   )
