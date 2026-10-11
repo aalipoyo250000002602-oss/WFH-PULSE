@@ -126,7 +126,11 @@ export function registerEmployeeCoreRoutes(app, deps) {
         }))
     }
 
-    const getLeaveDaysInclusive = (startDateValue, endDateValue) => {
+    const getChargeableLeaveDays = async (
+        client,
+        startDateValue,
+        endDateValue
+    ) => {
         const startIso = String(startDateValue ?? '').slice(0, 10)
         const endIso = String(endDateValue ?? '').slice(0, 10)
         const start = new Date(`${startIso}T00:00:00Z`)
@@ -140,7 +144,28 @@ export function registerEmployeeCoreRoutes(app, deps) {
             throw new Error('Invalid leave date range')
         }
 
-        return Math.floor((end.getTime() - start.getTime()) / 86400000) + 1
+        const result = await client.query(
+            `
+            WITH leave_dates AS (
+              SELECT gs::date AS leave_date
+              FROM generate_series($1::date, $2::date, INTERVAL '1 day') gs
+            ),
+            holiday_dates AS (
+              SELECT holiday_date::date AS holiday_date FROM app.holidays
+              UNION
+              SELECT holiday_date::date AS holiday_date FROM app.holiday_subdivision_holidays
+            )
+            SELECT COUNT(*)::integer AS chargeable_days
+            FROM leave_dates ld
+            LEFT JOIN holiday_dates hd
+              ON hd.holiday_date = ld.leave_date
+            WHERE EXTRACT(ISODOW FROM ld.leave_date) < 6
+              AND hd.holiday_date IS NULL
+            `,
+            [startIso, endIso]
+        )
+
+        return Number(result.rows[0]?.chargeable_days ?? 0)
     }
 
     const applyLeaveCreditsDelta = async (
@@ -1237,7 +1262,8 @@ export function registerEmployeeCoreRoutes(app, deps) {
                         )
                     }
 
-                    const leaveDays = getLeaveDaysInclusive(
+                    const leaveDays = await getChargeableLeaveDays(
+                        client,
                         existing.start_date,
                         existing.end_date
                     )
@@ -1426,7 +1452,8 @@ export function registerEmployeeCoreRoutes(app, deps) {
                         )
                     }
 
-                    const leaveDays = getLeaveDaysInclusive(
+                    const leaveDays = await getChargeableLeaveDays(
+                        client,
                         existing.start_date,
                         existing.end_date
                     )
