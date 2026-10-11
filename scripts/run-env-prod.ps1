@@ -77,6 +77,10 @@ function Get-PnpmCommand {
 $envFile = Join-Path $projectRoot '.env.prod'
 $loadedCount = Import-DotEnvFile -FilePath $envFile
 
+# Production runs must always target Supabase-backed database config.
+$env:WFH_PULSE_DB_TARGET = 'supabase'
+$env:DB_TARGET = 'supabase'
+
 $pnpmCommand = @(Get-PnpmCommand)
 $runner = $pnpmCommand[0]
 $runnerArgs = @()
@@ -85,6 +89,7 @@ if ($pnpmCommand.Count -gt 1) {
 }
 
 Write-Host "[env:prod] Loaded $loadedCount variables from .env.prod"
+Write-Host "[env:prod] Forced WFH_PULSE_DB_TARGET=supabase"
 Write-Host "[env:prod] Running: $runner $($runnerArgs -join ' ') run $ScriptName $($ScriptArgs -join ' ')"
 
 & $runner @runnerArgs run $ScriptName @ScriptArgs

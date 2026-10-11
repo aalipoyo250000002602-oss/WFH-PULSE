@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: wfh-pulse-api
+    env: node
+    plan: starter
+    buildCommand: pnpm install
+    startCommand: pnpm run api:dev
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+      - key: WFH_PULSE_DB_TARGET
+        value: supabase
+      - key: PGSSL
+        value: "true"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SUPABASE_JWKS_URL
+        sync: false
+      - key: SUPABASE_DB_URL
+        sync: false
+      - key: API_JWT_SECRET
+        generateValue: true
