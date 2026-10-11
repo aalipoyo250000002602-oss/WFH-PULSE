@@ -12,6 +12,7 @@ This API wires the PostgreSQL schema to a Node.js backend with auth endpoints an
 - `GET /me/profile` (self-service)
 - `PATCH /me/profile` (self-service, limited editable fields)
 - `GET /me/attendance` (self-service)
+- `GET /me/slack-notification-logs` (self-service)
 - `GET /employees` (authenticated, RLS-scoped)
 - `GET /hr/employees` (HR/Admin)
 - `GET /health`
@@ -46,6 +47,15 @@ Backward-compatible root modules (`api/server.mjs`, `api/auth.mjs`, `api/db.mjs`
 
 1. `database/.env.local.postgres`
 2. `api/.env.local` (copy from `api/.env.example`)
+
+Optional Slack attendance notifications (clock-in/clock-out):
+
+- `SLACK_WEBHOOK_URL`: Incoming webhook URL for your Slack workspace.
+- `SLACK_CHANNEL`: Channel override (for example `#attendance`) if your webhook allows it.
+- `SLACK_USERNAME`: Bot display name. Default: `WFH-PULSE Attendance Bot`.
+- `SLACK_ICON_EMOJI`: Bot icon emoji. Default: `:alarm_clock:`.
+
+When `SLACK_WEBHOOK_URL` is unset, Slack notifications are automatically disabled.
 
 ## Start API
 

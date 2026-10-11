@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { getApiConfig } from '../config/api.config.mjs'
 import { query, withRlsContext, pool } from '../models/db.model.mjs'
 import { signAccessToken } from '../services/token.service.mjs'
+import { createSlackAttendanceNotifier } from '../services/slack-attendance-notifier.service.mjs'
 import { requireAuth, requireRole } from '../middleware/auth.middleware.mjs'
 import { registerAuthRoutes } from './auth.controller.mjs'
 import { registerMeRoutes } from './me.controller.mjs'
@@ -274,6 +275,12 @@ const isoDayByName = {
 }
 const attendanceTimeZone =
     process.env.ATTENDANCE_TIMEZONE ?? process.env.APP_TIMEZONE ?? 'Asia/Manila'
+const slackAttendanceNotifier = createSlackAttendanceNotifier({
+    webhookUrl: process.env.SLACK_WEBHOOK_URL,
+    channel: process.env.SLACK_CHANNEL,
+    username: process.env.SLACK_USERNAME,
+    iconEmoji: process.env.SLACK_ICON_EMOJI,
+})
 
 function normalizeTimeValue(value) {
     if (value == null) {
@@ -1555,6 +1562,8 @@ registerMeRoutes(app, {
     buildOvertimeLogReason,
     parsePurposeFromOvertimeMessage,
     seedCalendarSampleAttendanceIfEmpty,
+    notifySlackAttendanceEvent:
+        slackAttendanceNotifier.notifySlackAttendanceEvent,
 })
 
 registerSettingsRoutes(app, {
