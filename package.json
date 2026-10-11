@@ -62,6 +62,7 @@
         "api:newman:ci": "newman run ./api/postman/WFH-PULSE-API.postman_collection.json -e ./api/postman/WFH-PULSE-Local.postman_environment.json --reporters cli,junit --reporter-junit-export ./api/postman/newman-report.xml"
     },
     "dependencies": {
+        "@aparajita/capacitor-biometric-auth": "^10.0.0",
         "@capacitor/android": "^8.4.2",
         "@capacitor/core": "^8.4.2",
         "@emotion/react": "11.14.0",

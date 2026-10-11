@@ -38,14 +38,9 @@ export function LoginForm({
 
     const handleBiometricLogin = () => {
         setIsAuthenticating(true)
-        setIsLoading(true)
-        // Simulate biometric scan delay before requesting temporary biometric sign-in.
-        setTimeout(() => {
+        onBiometricLogin().finally(() => {
             setIsAuthenticating(false)
-            onBiometricLogin().finally(() => {
-                setIsLoading(false)
-            })
-        }, 1500)
+        })
     }
 
     // Loading screen
@@ -144,7 +139,7 @@ export function LoginForm({
                                 ) : (
                                     <>
                                         <ScanFace className="h-5 w-5 mr-2" />
-                                        Sign in with Face ID
+                                        Sign in with Biometric
                                     </>
                                 )}
                             </Button>

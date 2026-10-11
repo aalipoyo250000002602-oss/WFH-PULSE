@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Capacitor } from '@capacitor/core'
+import {
+    AndroidBiometryStrength,
+    BiometricAuth,
+} from '@aparajita/capacitor-biometric-auth'
 import { AttendanceHeader } from './components/attendance-header'
 import { BottomNavigation } from './components/bottom-navigation'
 import { HomePage } from './components/pages/home-page'
@@ -1844,12 +1848,82 @@ export default function App() {
         }
     }
 
+    const requestBiometricVerification = useCallback(async () => {
+        if (!Capacitor.isNativePlatform()) {
+            return true
+        }
+
+        try {
+            const biometry = await BiometricAuth.checkBiometry()
+            if (!biometry.isAvailable) {
+                toast.error('Biometric sign in unavailable', {
+                    description:
+                        biometry.reason ||
+                        'No enrolled biometric identity was found on this device.',
+                })
+                return false
+            }
+
+            await new Promise<void>((resolve, reject) => {
+                const timeoutId = window.setTimeout(() => {
+                    reject(
+                        new Error(
+                            'Biometric prompt did not open. Ensure emulator lock screen and fingerprint are enrolled, then try again.'
+                        )
+                    )
+                }, 15000)
+
+                BiometricAuth.authenticate({
+                    reason:
+                        'Use your fingerprint, Face ID, or device credentials to sign in.',
+                    cancelTitle: 'Cancel',
+                    allowDeviceCredential: true,
+                    iosFallbackTitle: 'Use Passcode',
+                    androidTitle: 'Biometric sign in',
+                    androidSubtitle: 'Verify your identity to continue',
+                    androidConfirmationRequired: false,
+                    androidBiometryStrength: AndroidBiometryStrength.weak,
+                })
+                    .then(() => {
+                        window.clearTimeout(timeoutId)
+                        resolve()
+                    })
+                    .catch(error => {
+                        window.clearTimeout(timeoutId)
+                        reject(error)
+                    })
+            })
+
+            return true
+        } catch (error) {
+            const biometryError = error as { code?: string; message?: string }
+            if (
+                biometryError.code === 'userCancel' ||
+                biometryError.code === 'systemCancel'
+            ) {
+                return false
+            }
+
+            toast.error('Biometric sign in failed', {
+                description:
+                    biometryError.message ||
+                    'Unable to verify your biometric identity.',
+            })
+            return false
+        }
+    }, [])
+
     const handleBiometricLogin = async () => {
         if (isSupabaseBaseUrl) {
-            toast.error('Face ID sign in unavailable', {
+            toast.error('Biometric sign in unavailable', {
                 description:
                     'Biometric sign-in requires your custom API auth route. Use email and password for Supabase Auth mode.',
             })
+            return
+        }
+
+        const didVerifyBiometric = await requestBiometricVerification()
+        if (!didVerifyBiometric) {
             return
         }
 
@@ -1877,7 +1951,7 @@ export default function App() {
             }
 
             if (!response.ok) {
-                toast.error('Face ID sign in failed', {
+                toast.error('Biometric sign in failed', {
                     description:
                         payload?.error ||
                         'Biometric sign-in is not available for this user.',
@@ -1890,11 +1964,11 @@ export default function App() {
                 return
             }
 
-            toast.success('Face ID sign in successful', {
+            toast.success('Biometric sign in successful', {
                 description: 'Temporary biometric session started.',
             })
         } catch {
-            toast.error('Face ID sign in failed', {
+            toast.error('Biometric sign in failed', {
                 description:
                     'Unable to reach auth server. Please check your API connection.',
             })

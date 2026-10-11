@@ -53,20 +53,98 @@ function Assert-NodeVersion {
   }
 }
 
-Assert-NodeVersion
+function Get-JavaMajorVersion {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$JavaExePath
+  )
 
-$studioJbr = 'C:\Program Files\Android\Android Studio\jbr'
-$javaExe = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin\java.exe' } else { $null }
-
-if (-not $javaExe -or -not (Test-Path $javaExe)) {
-  if (Test-Path (Join-Path $studioJbr 'bin\java.exe')) {
-    $env:JAVA_HOME = $studioJbr
+  if (-not (Test-Path $JavaExePath)) {
+    return $null
   }
+
+  $versionOutput = & $env:ComSpec /c "`"$JavaExePath`" -version 2>&1"
+  if ($LASTEXITCODE -ne 0 -or -not $versionOutput) {
+    return $null
+  }
+
+  $firstLine = [string]$versionOutput[0]
+  if ($firstLine -match '"(\d+)(?:\.\d+)*"') {
+    return [int]$matches[1]
+  }
+
+  return $null
 }
 
-if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\java.exe'))) {
-  $env:Path = "$($env:JAVA_HOME)\bin;$($env:Path)"
+function Resolve-GradleJavaHome {
+  $existingJavaExe = if ($env:JAVA_HOME) {
+    Join-Path $env:JAVA_HOME 'bin\java.exe'
+  } else {
+    $null
+  }
+  $existingMajor = if ($existingJavaExe) {
+    Get-JavaMajorVersion -JavaExePath $existingJavaExe
+  } else {
+    $null
+  }
+
+  if ($existingMajor -ge 17 -and $existingMajor -le 21) {
+    return
+  }
+
+  $candidateHomes = @()
+  $candidateHomes += 'C:\Program Files\Java\jdk-21'
+  $candidateHomes += 'C:\Program Files\Eclipse Adoptium\jdk-21.0.12.1-hotspot'
+  $candidateHomes += 'C:\Program Files\Microsoft\jdk-21'
+  $candidateHomes += 'C:\Program Files\Android\Android Studio\jbr'
+
+  $wildcardRoots = @(
+    'C:\Program Files\Java',
+    'C:\Program Files\Eclipse Adoptium',
+    'C:\Program Files\Microsoft',
+    "$env:LOCALAPPDATA\Programs\Eclipse Adoptium"
+  )
+  foreach ($root in $wildcardRoots) {
+    if (-not (Test-Path $root)) {
+      continue
+    }
+
+    $candidateHomes += @(
+      Get-ChildItem -Path $root -Directory -Filter 'jdk-21*' -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty FullName
+    )
+    $candidateHomes += @(
+      Get-ChildItem -Path $root -Directory -Filter 'jdk-17*' -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty FullName
+    )
+  }
+
+  $selectedHome = $null
+  $selectedMajor = $null
+  foreach ($candidate in ($candidateHomes | Where-Object { $_ } | Select-Object -Unique)) {
+    $javaExe = Join-Path $candidate 'bin\java.exe'
+    $major = Get-JavaMajorVersion -JavaExePath $javaExe
+    if (-not $major) {
+      continue
+    }
+    if ($major -ge 17 -and $major -le 21) {
+      $selectedHome = $candidate
+      $selectedMajor = $major
+      break
+    }
+  }
+
+  if (-not $selectedHome) {
+    throw "Android build requires JDK 17-21, but current JAVA_HOME points to Java $existingMajor. Install JDK 21 and set JAVA_HOME."
+  }
+
+  $env:JAVA_HOME = $selectedHome
+  $env:Path = "$selectedHome\bin;$($env:Path)"
+  Write-Host "[android:run] Using Java $selectedMajor from '$selectedHome'."
 }
+
+Assert-NodeVersion
+Resolve-GradleJavaHome
 
 Write-Host "[android:run] Building web assets..."
 & $runner @runnerArgs run build
@@ -143,4 +221,3 @@ Write-Host "[android:run] Launching WFH Pulse..."
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "[android:run] Done."
-
