@@ -55,6 +55,7 @@ import { Badge } from '../ui/badge'
 import { Textarea } from '../ui/textarea'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
+import { LeavePlan, SmartLeavePlanner } from '../smart-leave-planner'
 
 interface Holiday {
     id: string
@@ -415,6 +416,11 @@ export function CalendarPage({
 
         // Handle leave mode selections
         if (isLeaveMode) {
+            if (dateKey < formatLocalDateKey(new Date())) {
+                toast.error('Leave dates cannot be in the past')
+                return
+            }
+
             if (!leaveRangeStart) {
                 setLeaveRangeStart(dateKey)
             } else if (!leaveRangeEnd) {
@@ -788,13 +794,16 @@ export function CalendarPage({
             return
         }
 
-        if (leaveRequestForm.attachments.length === 0) {
-            toast.error('Please upload at least one attachment')
+        if (leaveRequestForm.startDate > leaveRequestForm.endDate) {
+            toast.error('End date must be after start date')
             return
         }
 
-        if (leaveRequestForm.startDate > leaveRequestForm.endDate) {
-            toast.error('End date must be after start date')
+        if (
+            formatLocalDateKey(leaveRequestForm.startDate) <
+            formatLocalDateKey(new Date())
+        ) {
+            toast.error('Leave dates cannot be in the past')
             return
         }
 
@@ -864,6 +873,58 @@ export function CalendarPage({
         }
 
         submitLeaveRequest()
+    }
+
+    const handleSelectLeavePlan = (plan: LeavePlan) => {
+        const startDate = new Date(`${plan.startDate}T00:00:00`)
+        const endDate = new Date(`${plan.endDate}T00:00:00`)
+        setLeaveRangeStart(plan.startDate)
+        setLeaveRangeEnd(plan.endDate)
+        setCurrentDate(startDate)
+        setLeaveRequestForm({
+            leaveType: plan.leaveTypeId,
+            startDate,
+            endDate,
+            message: plan.message,
+            attachments: [],
+        })
+        setShowLeaveRequestDialog(true)
+        toast.info(
+            'Recommended dates selected. Review and submit your request.'
+        )
+    }
+
+    const handleLeaveRequestDateClick = (day: number) => {
+        const selectedDateKey = getDateKey(day)
+        const selectedDate = new Date(`${selectedDateKey}T00:00:00`)
+
+        if (selectedDateKey < formatLocalDateKey(new Date())) {
+            toast.error('Leave dates cannot be in the past')
+            return
+        }
+
+        if (!leaveRangeStart || leaveRangeEnd) {
+            setLeaveRangeStart(selectedDateKey)
+            setLeaveRangeEnd('')
+            setLeaveRequestForm(prev => ({
+                ...prev,
+                startDate: selectedDate,
+                endDate: undefined,
+            }))
+            return
+        }
+
+        if (selectedDateKey < leaveRangeStart) {
+            toast.error('End date must be after start date')
+            return
+        }
+
+        setLeaveRangeEnd(selectedDateKey)
+        setLeaveRequestForm(prev => ({
+            ...prev,
+            startDate: new Date(`${leaveRangeStart}T00:00:00`),
+            endDate: selectedDate,
+        }))
     }
 
     const handleViewLeaveDetails = (
@@ -1257,6 +1318,12 @@ export function CalendarPage({
     return (
         <div className="space-y-6 pb-20">
             <div className="px-4 space-y-4">
+                <SmartLeavePlanner
+                    leaveTypes={leaveTypes}
+                    holidays={holidays}
+                    requests={recentLeaveRequests}
+                    onSelectPlan={handleSelectLeavePlan}
+                />
                 <Card>
                     <CardHeader
                         className="pb-3 cursor-pointer hover:bg-accent/50 transition-colors"
@@ -1408,6 +1475,7 @@ export function CalendarPage({
 
                                             return (
                                                 <button
+                                                    type="button"
                                                     key={`calendar-day-${currentDate.getMonth()}-${day}`}
                                                     onClick={() =>
                                                         handleDayClick(day)
@@ -2650,6 +2718,11 @@ export function CalendarPage({
 
                                                 let bgColor =
                                                     'hover:bg-muted/50'
+                                                const isPastDate =
+                                                    dateKey <
+                                                    formatLocalDateKey(
+                                                        new Date()
+                                                    )
                                                 if (
                                                     isLeaveStart ||
                                                     isLeaveEnd
@@ -2659,6 +2732,9 @@ export function CalendarPage({
                                                 } else if (isInLeaveRange) {
                                                     bgColor =
                                                         'bg-vibrant-purple/30 text-vibrant-purple'
+                                                } else if (isPastDate) {
+                                                    bgColor =
+                                                        'text-muted-foreground/40 cursor-not-allowed'
                                                 } else if (isToday) {
                                                     bgColor =
                                                         'bg-vibrant-blue/20 text-vibrant-blue border-vibrant-blue'
@@ -2669,9 +2745,13 @@ export function CalendarPage({
 
                                                 return (
                                                     <button
+                                                        type="button"
                                                         key={`calendar-day-${currentDate.getMonth()}-${day}`}
+                                                        disabled={isPastDate}
                                                         onClick={() =>
-                                                            handleDayClick(day)
+                                                            handleLeaveRequestDateClick(
+                                                                day
+                                                            )
                                                         }
                                                         className={`p-1 h-8 text-xs rounded border transition-all ${bgColor}`}
                                                     >
@@ -2756,7 +2836,7 @@ export function CalendarPage({
 
                             {/* Attachments */}
                             <div>
-                                <Label>Attachments *</Label>
+                                <Label>Attachments (Optional)</Label>
                                 <div className="space-y-2">
                                     <Button
                                         type="button"
