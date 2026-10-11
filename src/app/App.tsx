@@ -1848,7 +1848,12 @@ export default function App() {
         }
     }
 
-    const requestBiometricVerification = useCallback(async () => {
+    const requestBiometricVerification = useCallback(
+        async (options?: {
+            reason?: string
+            unavailableTitle?: string
+            failedTitle?: string
+        }) => {
         if (!Capacitor.isNativePlatform()) {
             return true
         }
@@ -1856,7 +1861,7 @@ export default function App() {
         try {
             const biometry = await BiometricAuth.checkBiometry()
             if (!biometry.isAvailable) {
-                toast.error('Biometric sign in unavailable', {
+                toast.error(options?.unavailableTitle || 'Biometric unavailable', {
                     description:
                         biometry.reason ||
                         'No enrolled biometric identity was found on this device.',
@@ -1875,6 +1880,7 @@ export default function App() {
 
                 BiometricAuth.authenticate({
                     reason:
+                        options?.reason ||
                         'Use your fingerprint, Face ID, or device credentials to sign in.',
                     cancelTitle: 'Cancel',
                     allowDeviceCredential: true,
@@ -1904,14 +1910,16 @@ export default function App() {
                 return false
             }
 
-            toast.error('Biometric sign in failed', {
+            toast.error(options?.failedTitle || 'Biometric verification failed', {
                 description:
                     biometryError.message ||
                     'Unable to verify your biometric identity.',
             })
             return false
         }
-    }, [])
+        },
+        []
+    )
 
     const handleBiometricLogin = async () => {
         if (isSupabaseBaseUrl) {
@@ -1922,7 +1930,12 @@ export default function App() {
             return
         }
 
-        const didVerifyBiometric = await requestBiometricVerification()
+        const didVerifyBiometric = await requestBiometricVerification({
+            reason:
+                'Use your fingerprint, Face ID, or device credentials to sign in.',
+            unavailableTitle: 'Biometric sign in unavailable',
+            failedTitle: 'Biometric sign in failed',
+        })
         if (!didVerifyBiometric) {
             return
         }
@@ -2151,6 +2164,59 @@ export default function App() {
         }
     }
 
+    const handleClockInAction = async () => {
+        if (securityPreferences.biometricClockInOut) {
+            const didVerify = await requestBiometricVerification({
+                reason:
+                    'Use your fingerprint, Face ID, or device credentials to clock in.',
+                unavailableTitle: 'Biometric clock in unavailable',
+                failedTitle: 'Biometric clock in failed',
+            })
+            if (!didVerify) {
+                return
+            }
+        }
+
+        await handleClockIn()
+    }
+
+    const handleClockOutAction = async () => {
+        if (securityPreferences.biometricClockInOut) {
+            const didVerify = await requestBiometricVerification({
+                reason:
+                    'Use your fingerprint, Face ID, or device credentials to clock out.',
+                unavailableTitle: 'Biometric clock out unavailable',
+                failedTitle: 'Biometric clock out failed',
+            })
+            if (!didVerify) {
+                return
+            }
+        }
+
+        await handleClockOut()
+    }
+
+    const handleBreakAction = async () => {
+        if (securityPreferences.biometricClockInOut) {
+            const didVerify = await requestBiometricVerification({
+                reason: isOnBreak
+                    ? 'Use your fingerprint, Face ID, or device credentials to end break.'
+                    : 'Use your fingerprint, Face ID, or device credentials to start break.',
+                unavailableTitle: isOnBreak
+                    ? 'Biometric end break unavailable'
+                    : 'Biometric break unavailable',
+                failedTitle: isOnBreak
+                    ? 'Biometric end break failed'
+                    : 'Biometric break failed',
+            })
+            if (!didVerify) {
+                return
+            }
+        }
+
+        await handleBreak()
+    }
+
     const handleAddHoliday = async (
         holiday: Omit<HolidayState, 'id' | 'daysUntil'>
     ): Promise<boolean> => {
@@ -2304,9 +2370,12 @@ export default function App() {
                         currentWorkDurationMinutes={todayWorkDurationMinutes}
                         lateMinutesToday={todayLateMinutes}
                         attendanceActivityLogs={attendanceActivityLogs}
-                        onClockIn={handleClockIn}
-                        onClockOut={handleClockOut}
-                        onBreak={handleBreak}
+                        onClockIn={handleClockInAction}
+                        onClockOut={handleClockOutAction}
+                        onBreak={handleBreakAction}
+                        useBiometricClockActions={
+                            securityPreferences.biometricClockInOut
+                        }
                         attendanceData={attendanceData}
                         calendarAttendanceDetails={calendarAttendanceDetails}
                         holidays={holidays}

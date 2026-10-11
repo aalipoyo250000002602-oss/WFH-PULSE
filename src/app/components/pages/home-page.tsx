@@ -40,6 +40,7 @@ interface HomePageProps {
     onClockIn: () => void
     onClockOut: () => void
     onBreak: () => void
+    useBiometricClockActions?: boolean
     attendanceData: Record<
         string,
         'present' | 'absent' | 'holiday' | 'late' | 'on-leave'
@@ -121,6 +122,7 @@ export function HomePage({
     onClockIn,
     onClockOut,
     onBreak,
+    useBiometricClockActions = false,
     attendanceData,
     calendarAttendanceDetails,
     holidays,
@@ -950,6 +952,7 @@ export function HomePage({
                 onClockIn={onClockIn}
                 onClockOut={onClockOut}
                 onBreak={onBreak}
+                useBiometricActions={useBiometricClockActions}
             />
 
             <div className="px-4 space-y-4">

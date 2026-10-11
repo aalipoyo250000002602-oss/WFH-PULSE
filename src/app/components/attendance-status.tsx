@@ -38,6 +38,7 @@ interface AttendanceStatusProps {
 	onClockOut: () => void
 	onBreak: () => void
 	isOnBreak?: boolean
+	useBiometricActions?: boolean
 }
 
 export function AttendanceStatus({
@@ -51,6 +52,7 @@ export function AttendanceStatus({
 	onClockOut,
 	onBreak,
 	isOnBreak = false,
+	useBiometricActions = false,
 }: AttendanceStatusProps) {
 	const [showClockoutDialog, setShowClockoutDialog] = useState(false)
 
