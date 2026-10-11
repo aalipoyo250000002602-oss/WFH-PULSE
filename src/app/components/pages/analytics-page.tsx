@@ -37,6 +37,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react'
 import { Badge } from '../ui/badge'
 import { toast } from 'sonner'
+import { Capacitor } from '@capacitor/core'
 import { AttendanceSheetGenerator } from '../attendance-sheet-generator'
 
 interface AnalyticsPageProps {
@@ -173,6 +174,24 @@ export function AnalyticsPage({
     const isWeeklyView =
         selectedPeriod === 'thisMonth' || selectedPeriod === 'lastMonth'
 
+    const downloadReportFile = (blob: Blob, fileName: string) => {
+        if (Capacitor.isNativePlatform()) {
+            throw new Error(
+                'File download is not supported inside the mobile emulator WebView. Open the app in a desktop browser to export this report.'
+            )
+        }
+
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.setAttribute('href', url)
+        link.setAttribute('download', fileName)
+        link.style.visibility = 'hidden'
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
+    }
+
     const exportAnalyticsToCSV = () => {
         const periodLabel =
             selectedPeriod === 'thisMonth'
@@ -215,23 +234,22 @@ export function AnalyticsPage({
 
         // Add UTF-8 BOM to ensure proper encoding
         const BOM = '\uFEFF'
-        const blob = new Blob([BOM + csvContent], {
-            type: 'text/csv;charset=utf-8;',
-        })
-        const link = document.createElement('a')
-        const url = URL.createObjectURL(blob)
-
-        link.setAttribute('href', url)
-        link.setAttribute(
-            'download',
-            `analytics-report-${new Date().toISOString().split('T')[0]}.csv`
-        )
-        link.style.visibility = 'hidden'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-
-        toast.success('CSV report exported successfully')
+        try {
+            const blob = new Blob([BOM + csvContent], {
+                type: 'text/csv;charset=utf-8;',
+            })
+            downloadReportFile(
+                blob,
+                `analytics-report-${new Date().toISOString().split('T')[0]}.csv`
+            )
+            toast.success('CSV report exported successfully')
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : 'Unable to export CSV report'
+            )
+        }
     }
 
     const exportAnalyticsToPDF = () => {
@@ -463,21 +481,20 @@ export function AnalyticsPage({
       </html>
     `
 
-        const blob = new Blob([htmlContent], { type: 'text/html' })
-        const url = URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.setAttribute('href', url)
-        link.setAttribute(
-            'download',
-            `attendance-analytics-${new Date().toISOString().split('T')[0]}.html`
-        )
-        link.style.visibility = 'hidden'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        URL.revokeObjectURL(url)
-
-        toast.success('Report downloaded successfully')
+        try {
+            const blob = new Blob([htmlContent], { type: 'text/html' })
+            downloadReportFile(
+                blob,
+                `attendance-analytics-${new Date().toISOString().split('T')[0]}.html`
+            )
+            toast.success('Report downloaded successfully')
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : 'Unable to download report'
+            )
+        }
     }
 
     const handleExportData = (format: 'pdf' | 'csv') => {
