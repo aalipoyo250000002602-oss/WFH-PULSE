@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { AttendanceHeader } from './components/attendance-header'
 import { BottomNavigation } from './components/bottom-navigation'
@@ -17,6 +17,12 @@ interface AuthSession {
     refreshToken: string
     sessionId: string
     role: 'admin' | 'hr_manager' | 'employee'
+}
+
+interface UnreadRequestCounts {
+    leave: number
+    adjustment: number
+    overtime: number
 }
 
 interface UserProfileState {
@@ -217,6 +223,12 @@ export default function App() {
     )
     const [isLoggedIn, setIsLoggedIn] = useState(false)
     const [authSession, setAuthSession] = useState<AuthSession | null>(null)
+    const [unreadRequestCounts, setUnreadRequestCounts] =
+        useState<UnreadRequestCounts>({
+            leave: 0,
+            adjustment: 0,
+            overtime: 0,
+        })
     const [currentPage, setCurrentPage] = useState('home')
     const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(
         null
@@ -233,6 +245,81 @@ export default function App() {
     const [attendanceActivityLogs, setAttendanceActivityLogs] = useState<
         AttendanceActivityLogState[]
     >([])
+
+    const loadUnreadRequestCounts = useCallback(async () => {
+        const accessToken = authSession?.accessToken
+        if (!accessToken || authSession?.role === 'employee') {
+            setUnreadRequestCounts({
+                leave: 0,
+                adjustment: 0,
+                overtime: 0,
+            })
+            return
+        }
+
+        const loadCount = async (path: string) => {
+            const queryParams = new URLSearchParams({
+                sourcePage: 'all',
+                status: 'pending',
+            })
+            const response = await fetch(
+                `${apiBaseUrl}${path}?${queryParams.toString()}`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                    },
+                }
+            )
+            const body = await response.json().catch(() => null)
+            if (!response.ok) {
+                throw new Error(
+                    body?.error ?? `Failed to load unread count from ${path}`
+                )
+            }
+
+            return Array.isArray(body?.requests) ? body.requests.length : 0
+        }
+
+        try {
+            const [leave, adjustment, overtime] = await Promise.all([
+                loadCount('/hr/leave-requests'),
+                loadCount('/hr/adjustment-requests'),
+                loadCount('/hr/overtime-requests'),
+            ])
+            setUnreadRequestCounts({ leave, adjustment, overtime })
+        } catch (error) {
+            console.error('Failed to load unread request counts.', error)
+            setUnreadRequestCounts({
+                leave: 0,
+                adjustment: 0,
+                overtime: 0,
+            })
+        }
+    }, [apiBaseUrl, authSession?.accessToken, authSession?.role])
+
+    useEffect(() => {
+        void loadUnreadRequestCounts()
+
+        const refreshCounts = () => {
+            void loadUnreadRequestCounts()
+        }
+        const refreshInterval = window.setInterval(refreshCounts, 30_000)
+
+        window.addEventListener('focus', refreshCounts)
+        window.addEventListener(
+            'wfh-pulse:leave-updated',
+            refreshCounts as EventListener
+        )
+
+        return () => {
+            window.clearInterval(refreshInterval)
+            window.removeEventListener('focus', refreshCounts)
+            window.removeEventListener(
+                'wfh-pulse:leave-updated',
+                refreshCounts as EventListener
+            )
+        }
+    }, [loadUnreadRequestCounts])
 
     // Settings state
     const [workingHours, setWorkingHours] = useState({
@@ -2171,6 +2258,8 @@ export default function App() {
                         apiBaseUrl={apiBaseUrl}
                         accessToken={authSession?.accessToken ?? ''}
                         employmentOptions={employmentOptions}
+                        unreadRequestCounts={unreadRequestCounts}
+                        onRequestCountsRefresh={loadUnreadRequestCounts}
                     />
                 )
             case 'calendar':
@@ -2267,6 +2356,11 @@ export default function App() {
                 <BottomNavigation
                     currentPage={currentPage}
                     onPageChange={setCurrentPage}
+                    unreadRequestCount={
+                        unreadRequestCounts.leave +
+                        unreadRequestCounts.adjustment +
+                        unreadRequestCounts.overtime
+                    }
                 />
             </div>
 
