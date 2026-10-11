@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="WFH-PULSE API" tests="9" time="0.281">
+  <testsuite name="Health" id="f3604497-ea7b-4122-9143-157dc4248215" timestamp="2026-10-03T00:29:15.116Z" tests="0" failures="0" errors="0" time="0.026"/>
+  <testsuite name="Auth / Login" id="620bfcb7-06b9-4b81-85a7-50371c623ebe" timestamp="2026-10-03T00:29:15.116Z" tests="1" failures="0" errors="0" time="0.135">
+    <testcase name="Login status is 200" time="0.135" classname="AuthLogin"/>
+  </testsuite>
+  <testsuite name="Auth / Refresh" id="3e7fd62a-c2fe-4da7-815a-bf679ec17e10" timestamp="2026-10-03T00:29:15.116Z" tests="1" failures="0" errors="0" time="0.032">
+    <testcase name="Refresh status is 200" time="0.032" classname="AuthRefresh"/>
+  </testsuite>
+  <testsuite name="Auth / Register (Admin/HR)" id="67bad96a-468e-47b1-8fc2-2d8c8ab28f77" timestamp="2026-10-03T00:29:15.116Z" tests="0" failures="0" errors="0" time="0.055"/>
+  <testsuite name="Auth / Logout" id="3df1824c-7659-494e-af3b-29327d38fc3f" timestamp="2026-10-03T00:29:15.116Z" tests="0" failures="0" errors="0" time="0.003"/>
+  <testsuite name="Me (Self-Service) / Get Profile" id="adeb7ec8-031d-4ad4-98dd-0d5ea8b8f604" timestamp="2026-10-03T00:29:15.116Z" tests="0" failures="0" errors="0" time="0.008"/>
+  <testsuite name="Me (Self-Service) / Patch Profile (Allowed Fields)" id="8855b5d9-a6ce-48c8-8325-4b8968382403" timestamp="2026-10-03T00:29:15.116Z" tests="0" failures="0" errors="0" time="0.006"/>
+  <testsuite name="Me (Self-Service) / Get Attendance" id="1d725f84-3062-4f2d-a09a-c1c4c5ffe6ac" timestamp="2026-10-03T00:29:15.116Z" tests="0" failures="0" errors="0" time="0.010"/>
+  <testsuite name="HR/Admin / List Employees" id="840e0064-9d9b-4c2d-ad89-0297d184c784" timestamp="2026-10-03T00:29:15.116Z" tests="0" failures="0" errors="0" time="0.006"/>
+</testsuites>
