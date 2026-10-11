@@ -57,6 +57,12 @@ Optional Slack attendance notifications (clock-in/clock-out):
 
 When `SLACK_WEBHOOK_URL` is unset, Slack notifications are automatically disabled.
 
+Optional Smart Leave Planner AI event context:
+
+- `GEMINI_API_KEY`: Server-side Gemini API key used by `POST /me/leave-planner/insights` to enrich recommended schedules with possible local/community events and festivals outside registered company holidays.
+
+When `GEMINI_API_KEY` is unset or credits are unavailable, the planner automatically falls back to built-in schedule guidance.
+
 ## Start API
 
 ```bash

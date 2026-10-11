@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
     ChevronLeft,
     ChevronRight,
@@ -286,6 +286,11 @@ export function CalendarPage({
         const day = String(date.getDate()).padStart(2, '0')
         return `${year}-${month}-${day}`
     }
+
+    const holidayDateSet = useMemo(
+        () => new Set(holidays.map(holiday => holiday.date)),
+        [holidays]
+    )
 
     const getCountryNameFromCode = (countryCode: string) => {
         if (countryCode === 'AU') {
@@ -649,6 +654,18 @@ export function CalendarPage({
         return dates
     }
 
+    const isWeekendDateKey = (dateKey: string) => {
+        const date = new Date(`${dateKey}T00:00:00`)
+        const day = date.getDay()
+        return day === 0 || day === 6
+    }
+
+    const getChargeableLeaveDaysForRange = (start: string, end: string) =>
+        getDatesInRange(start, end).filter(
+            dateKey =>
+                !isWeekendDateKey(dateKey) && !holidayDateSet.has(dateKey)
+        ).length
+
     const handleBulkSave = async () => {
         if (!canManageHolidays) {
             toast.error('Only admin users can manage holidays')
@@ -807,13 +824,17 @@ export function CalendarPage({
             return
         }
 
-        // Calculate days requested
-        const days =
-            Math.ceil(
-                (leaveRequestForm.endDate.getTime() -
-                    leaveRequestForm.startDate.getTime()) /
-                    (1000 * 60 * 60 * 24)
-            ) + 1
+        const days = getChargeableLeaveDaysForRange(
+            formatLocalDateKey(leaveRequestForm.startDate),
+            formatLocalDateKey(leaveRequestForm.endDate)
+        )
+
+        if (days <= 0) {
+            toast.error(
+                'Selected range has no chargeable leave days. Pick dates with at least one working day.'
+            )
+            return
+        }
 
         const selectedLeaveType = leaveTypes.find(
             lt => lt.id === leaveRequestForm.leaveType
@@ -821,7 +842,7 @@ export function CalendarPage({
 
         if (selectedLeaveType && days > selectedLeaveType.credits) {
             toast.error(
-                `Insufficient leave credits. You have ${selectedLeaveType.credits} days available.`
+                `Insufficient leave credits. You have ${selectedLeaveType.credits} day(s) available, but selected dates require ${days} chargeable day(s).`
             )
             return
         }
@@ -1319,6 +1340,8 @@ export function CalendarPage({
         <div className="space-y-6 pb-20">
             <div className="px-4 space-y-4">
                 <SmartLeavePlanner
+                    apiBaseUrl={apiBaseUrl}
+                    accessToken={accessToken}
                     leaveTypes={leaveTypes}
                     holidays={holidays}
                     requests={recentLeaveRequests}
@@ -2806,12 +2829,15 @@ export function CalendarPage({
                                 leaveRequestForm.endDate && (
                                     <div className="bg-vibrant-blue/10 border border-vibrant-blue/30 rounded-lg p-3">
                                         <p className="text-sm text-vibrant-blue">
-                                            Total days requested:{' '}
-                                            {Math.ceil(
-                                                (leaveRequestForm.endDate.getTime() -
-                                                    leaveRequestForm.startDate.getTime()) /
-                                                    (1000 * 60 * 60 * 24)
-                                            ) + 1}{' '}
+                                            Leave credits required:{' '}
+                                            {getChargeableLeaveDaysForRange(
+                                                formatLocalDateKey(
+                                                    leaveRequestForm.startDate
+                                                ),
+                                                formatLocalDateKey(
+                                                    leaveRequestForm.endDate
+                                                )
+                                            )}{' '}
                                             day(s)
                                         </p>
                                     </div>

@@ -25,6 +25,7 @@ export function registerMeAttendanceRoutes(app, deps) {
         overtimeRequestCreateSchema,
         overtimeRequestUpdateSchema,
         leaveRequestCreateSchema,
+        leavePlannerInsightsSchema,
         getWorkingScheduleForDate,
         validateOvertimeOutsideWorkingHours,
         buildOvertimeLogReason,
@@ -91,7 +92,10 @@ export function registerMeAttendanceRoutes(app, deps) {
         }
     }
 
-    const notifySlackAttendanceEventSafe = async ({ authContext, ...payload }) => {
+    const notifySlackAttendanceEventSafe = async ({
+        authContext,
+        ...payload
+    }) => {
         if (typeof notifySlackAttendanceEvent !== 'function') {
             await insertSlackNotificationLogSafe({
                 authContext,
@@ -165,7 +169,8 @@ export function registerMeAttendanceRoutes(app, deps) {
             }
         }
 
-        const employeeName = `${employeeRow.first_name ?? ''} ${employeeRow.last_name ?? ''}`.trim()
+        const employeeName =
+            `${employeeRow.first_name ?? ''} ${employeeRow.last_name ?? ''}`.trim()
 
         return {
             employeeName: employeeName || null,
@@ -180,6 +185,11 @@ export function registerMeAttendanceRoutes(app, deps) {
         'cancelled',
     ])
     const leaveRequestSourceOptions = new Set(['calendar', 'home', 'dashboard'])
+    const geminiApiKey = (
+        process.env.GEMINI_API_KEY ??
+        process.env.GOOGLE_API_KEY ??
+        ''
+    ).trim()
 
     app.get('/me/analytics', requireAuth, async (req, res) => {
         const period =
@@ -404,7 +414,11 @@ export function registerMeAttendanceRoutes(app, deps) {
         return result.rows[0] ?? null
     }
 
-    const getLeaveDaysInclusive = (startDateValue, endDateValue) => {
+    const getChargeableLeaveDays = async (
+        client,
+        startDateValue,
+        endDateValue
+    ) => {
         const startIso = String(startDateValue ?? '').slice(0, 10)
         const endIso = String(endDateValue ?? '').slice(0, 10)
         const start = new Date(`${startIso}T00:00:00Z`)
@@ -418,7 +432,28 @@ export function registerMeAttendanceRoutes(app, deps) {
             throw new Error('Invalid leave date range')
         }
 
-        return Math.floor((end.getTime() - start.getTime()) / 86400000) + 1
+        const result = await client.query(
+            `
+            WITH leave_dates AS (
+              SELECT gs::date AS leave_date
+              FROM generate_series($1::date, $2::date, INTERVAL '1 day') gs
+            ),
+            holiday_dates AS (
+              SELECT holiday_date::date AS holiday_date FROM app.holidays
+              UNION
+              SELECT holiday_date::date AS holiday_date FROM app.holiday_subdivision_holidays
+            )
+            SELECT COUNT(*)::integer AS chargeable_days
+            FROM leave_dates ld
+            LEFT JOIN holiday_dates hd
+              ON hd.holiday_date = ld.leave_date
+            WHERE EXTRACT(ISODOW FROM ld.leave_date) < 6
+              AND hd.holiday_date IS NULL
+            `,
+            [startIso, endIso]
+        )
+
+        return Number(result.rows[0]?.chargeable_days ?? 0)
     }
 
     const applyLeaveCreditsDelta = async (
@@ -783,13 +818,20 @@ export function registerMeAttendanceRoutes(app, deps) {
                 })
             }
 
-            const limitRaw = Number.parseInt(String(req.query.limit ?? '50'), 10)
+            const limitRaw = Number.parseInt(
+                String(req.query.limit ?? '50'),
+                10
+            )
             const limit = Number.isFinite(limitRaw)
                 ? Math.min(Math.max(limitRaw, 1), 200)
                 : 50
 
-            const statusParam = String(req.query.status ?? '').trim().toLowerCase()
-            const actionParam = String(req.query.action ?? '').trim().toLowerCase()
+            const statusParam = String(req.query.status ?? '')
+                .trim()
+                .toLowerCase()
+            const actionParam = String(req.query.action ?? '')
+                .trim()
+                .toLowerCase()
 
             const allowedStatuses = new Set(['success', 'failed'])
             const allowedActions = new Set(['clock_in', 'clock_out'])
@@ -2756,6 +2798,102 @@ export function registerMeAttendanceRoutes(app, deps) {
         }
     )
 
+    app.post('/me/leave-planner/insights', requireAuth, async (req, res) => {
+        const parsed = leavePlannerInsightsSchema.safeParse(req.body)
+        if (!parsed.success) {
+            return res.status(400).json({ error: parsed.error.flatten() })
+        }
+
+        if (!geminiApiKey) {
+            return res.status(503).json({
+                error: 'Gemini API is not configured on the server.',
+            })
+        }
+
+        try {
+            const plansForPrompt = parsed.data.plans.map(plan => ({
+                rangeStart: plan.rangeStart,
+                rangeEnd: plan.rangeEnd,
+                weekendDays: plan.weekendDays,
+                registeredHolidays: plan.registeredHolidays,
+            }))
+
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        contents: [
+                            {
+                                role: 'user',
+                                parts: [
+                                    {
+                                        text: `You are helping an employee plan leave. Return ONLY a valid JSON array with one object per provided range. Each object must have keys: "rangeStart", "rangeEnd", "bullets", and "events". "bullets" must have exactly 2 short strings that explain schedule quality. "events" should list up to 4 possible local/community/public events or festivals outside registered company holidays, prioritizing the Philippines, Australia, and the United States. Prefix each event with the country name (for example: "Philippines: ..."). If uncertain, return an empty events array. Date ranges: ${JSON.stringify(plansForPrompt)}.`,
+                                    },
+                                ],
+                            },
+                        ],
+                        generationConfig: {
+                            temperature: 0.2,
+                            responseMimeType: 'application/json',
+                        },
+                    }),
+                }
+            )
+
+            if (!response.ok) {
+                const errorText = await response.text().catch(() => '')
+                console.error('Gemini insights request failed:', {
+                    status: response.status,
+                    body: errorText.slice(0, 300),
+                })
+                return res.status(503).json({
+                    error: 'Unable to fetch live AI schedule context right now.',
+                })
+            }
+
+            const data = await response.json()
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+
+            if (!text || typeof text !== 'string') {
+                console.error('Gemini insights response did not include text')
+                return res.status(503).json({
+                    error: 'Unable to parse live AI schedule context right now.',
+                })
+            }
+
+            const cleanedText = text
+                .replace(/^```json\s*/i, '')
+                .replace(/^```\s*/i, '')
+                .replace(/\s*```$/, '')
+                .trim()
+
+            let insights = []
+            try {
+                const parsedJson = JSON.parse(cleanedText)
+                insights = Array.isArray(parsedJson) ? parsedJson : []
+            } catch (parseError) {
+                console.error('Gemini insights JSON parse failed:', parseError)
+                return res.status(503).json({
+                    error: 'Unable to parse live AI schedule context right now.',
+                })
+            }
+
+            return res.json({ insights })
+        } catch (error) {
+            console.error(
+                'Gemini insights fetch failed:',
+                error?.message ?? error
+            )
+            return res.status(503).json({
+                error: 'Unable to fetch live AI schedule context right now.',
+            })
+        }
+    })
+
     app.get('/me/leave-requests', requireAuth, async (req, res) => {
         const status =
             typeof req.query.status === 'string'
@@ -2951,21 +3089,21 @@ export function registerMeAttendanceRoutes(app, deps) {
                         ? Number(balanceResult.rows[0].credits ?? 0)
                         : Number(leaveType.default_limit_days ?? 0)
 
-                const startDate = new Date(payload.startDate)
-                const endDate = new Date(payload.endDate)
-                const daysRequested =
-                    Math.ceil(
-                        (endDate.getTime() - startDate.getTime()) /
-                            (1000 * 60 * 60 * 24)
-                    ) + 1
+                const daysRequested = await getChargeableLeaveDays(
+                    client,
+                    payload.startDate,
+                    payload.endDate
+                )
 
                 if (!Number.isFinite(daysRequested) || daysRequested <= 0) {
-                    throw new Error('Invalid leave date range')
+                    throw new Error(
+                        'Selected range has no chargeable leave days. Pick dates with at least one working day.'
+                    )
                 }
 
                 if (daysRequested > credits) {
                     throw new Error(
-                        `Insufficient leave credits. You have ${credits} day(s) available.`
+                        `Insufficient leave credits. You have ${credits} day(s) available, but selected dates require ${daysRequested} chargeable day(s).`
                     )
                 }
 
@@ -3097,7 +3235,8 @@ export function registerMeAttendanceRoutes(app, deps) {
                     }
 
                     if (existing.status === 'approved') {
-                        const leaveDays = getLeaveDaysInclusive(
+                        const leaveDays = await getChargeableLeaveDays(
+                            client,
                             existing.start_date,
                             existing.end_date
                         )

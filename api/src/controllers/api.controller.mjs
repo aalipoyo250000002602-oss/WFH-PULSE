@@ -428,6 +428,20 @@ const leaveRequestCreateSchema = z.object({
     sourcePage: z.string().min(1).max(40).optional(),
 })
 
+const leavePlannerInsightsSchema = z.object({
+    plans: z
+        .array(
+            z.object({
+                rangeStart: z.string().regex(isoDateRegex),
+                rangeEnd: z.string().regex(isoDateRegex),
+                weekendDays: z.number().int().min(0).max(31),
+                registeredHolidays: z.array(z.string().min(1).max(200)).max(31),
+            })
+        )
+        .min(1)
+        .max(3),
+})
+
 function mapSecurityPreferenceRow(row) {
     return {
         biometricLogin: row.biometric_login,
@@ -1557,6 +1571,7 @@ registerMeRoutes(app, {
     overtimeRequestCreateSchema,
     overtimeRequestUpdateSchema,
     leaveRequestCreateSchema,
+    leavePlannerInsightsSchema,
     getWorkingScheduleForDate,
     validateOvertimeOutsideWorkingHours,
     buildOvertimeLogReason,

@@ -67,7 +67,7 @@ The emulator reaches the API on your computer through `10.0.2.2:8787`; the API c
 | `corepack pnpm run dev:local`             | Web dev server using `.env.local`                                                  |
 | `corepack pnpm run dev:prod`              | Web dev server using `.env.prod`                                                   |
 | `corepack pnpm run dev:prod:5174`         | Production-configured web dev server on `5174`                                     |
-| `corepack pnpm run local:all`             | Starts local PostgreSQL-backed API + web dev server                               |
+| `corepack pnpm run local:all`             | Starts local PostgreSQL-backed API + web dev server                                |
 | `corepack pnpm run prod:all`              | Supabase-backed API + production-configured web dev server                         |
 | `corepack pnpm run build`                 | Production build                                                                   |
 | `corepack pnpm run preview`               | Preview production build on `4173`                                                 |
@@ -77,8 +77,23 @@ The emulator reaches the API on your computer through `10.0.2.2:8787`; the API c
 | `corepack pnpm run android:run:local`     | Build with `.env.local` + sync + deploy to first connected Android device/emulator |
 | `corepack pnpm run android:run:emu`       | Build + sync + deploy to `emulator-5554`                                           |
 | `corepack pnpm run android:run:local:emu` | Build locally configured assets + deploy to `emulator-5554`                        |
-| `corepack pnpm run api:dev:local`         | Starts the API with local PostgreSQL explicitly selected                          |
+| `corepack pnpm run api:dev:local`         | Starts the API with local PostgreSQL explicitly selected                           |
 | `corepack pnpm run android:open`          | Open `android/` project in Android Studio                                          |
+
+## Optional AI Event Context (Smart Leave Planner)
+
+To enable live event/festival context in **Pulse AI Smart Leave Planner**, add this to your API environment file (for example `api/.env.local`):
+
+```bash
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+When this key is present and has available credits, the planner enriches each recommended leave schedule with:
+
+- Two concise AI planning insights
+- Possible local/community events and festivals outside registered company holidays
+
+If the key is missing or credits are unavailable, the planner automatically falls back to built-in schedule guidance.
 
 ## Project Map
 
