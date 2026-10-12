@@ -58,7 +58,30 @@ export function createApiFetch({
             } catch {
                 return Response.json({ error: 'The Data API requires a JSON request body.' }, { status: 400 })
             }
+            if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+                return Response.json({ error: 'Expected a JSON object.' }, { status: 400 })
+            }
             headers.set('Content-Type', 'application/json')
+            if (routePath === '/me/security-preferences/password' && method.toUpperCase() === 'POST') {
+                const password = body.newPassword
+                if (typeof password !== 'string' || password.length < 8 || password.length > 30 ||
+                    !/[a-zA-Z]/.test(password) || !/\d/.test(password) || !/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+                    return Response.json({ error: 'Password must be 8-30 characters and contain a letter, number, and symbol.' }, { status: 400 })
+                }
+                const authHeaders = new Headers(headers)
+                authHeaders.delete('Content-Profile')
+                authHeaders.delete('Accept-Profile')
+                const authResponse = await fetchImplementation(`${restApiBase.origin}/auth/v1/user`, {
+                    method: 'PUT', headers: authHeaders, body: JSON.stringify({ password }), signal: init?.signal,
+                })
+                if (!authResponse.ok) {
+                    const authError = await authResponse.json().catch(() => ({}))
+                    return Response.json({ error: authError.msg ?? authError.message ?? 'Unable to update the Supabase Auth password.' }, {
+                        status: authResponse.status,
+                    })
+                }
+                body = { passwordUpdated: true, waivePassword: Boolean(body.waivePassword), platform: body.platform ?? 'web', status: 'Successful' }
+            }
             headers.set('Content-Profile', 'api')
             headers.set('Accept-Profile', 'api')
             const response = await fetchImplementation(`${restApiBase.origin}${restApiBase.pathname}/rpc/wfh_pulse_request`, {
