@@ -88,12 +88,30 @@ Supabase SQL Editor before using this configuration. The function signature is
 `api.wfh_pulse_request(p_path text, p_method text, p_query jsonb, p_body jsonb)`.
 The script reloads the PostgREST schema cache after installation.
 
-The installed RPC supports the main read endpoints: profile, attendance today,
-attendance history, calendar, employment options, employees, leave requests,
-adjustment/overtime requests, security preferences, working hours, leave types,
-and admin holiday reads. Unmigrated operations explicitly return HTTP 501;
-write operations, analytics, advanced attendance aggregation, and payroll
-reports are not yet supported. No Edge Function deployment is used.
+The installed RPC supports attendance clock-in/out and breaks, profile edits,
+security preferences, working-hour settings, leave limits, employee creation
+and edits, payroll updates/reports, holiday CRUD/imports, leave-credit updates,
+leave/adjustment/overtime submissions and HR status transitions, calendar,
+attendance history, analytics, employment options, and notification-log reads.
+Unknown paths or HTTP methods return 404 rather than the earlier migration
+placeholder. No Edge Function deployment is used.
+
+Attendance actions are serialized per employee/date and record audit logs.
+Approved adjustments and overtime are included in effective attendance reads.
+Payroll retains the local API's 21-working-day, eight-hour daily rate formula.
+Request status transitions lock the request; leave approvals and cancellations
+update balances in the same transaction. Settings/payroll writes enforce stored
+HR/admin roles, independently of frontend permissions.
+
+Password changes go to Supabase Auth's `/auth/v1/user` endpoint with the user's
+token; only audit metadata is sent to the RPC. The SQL handler never receives
+or stores the new password. Production AI and Slack handlers are defined in
+`database/08_external_integrations.sql` and read secrets only from Supabase
+Vault: `gemini_api_key` and `slack_attendance_webhook`.
+Until those entries are configured, AI returns 503 so the built-in planner
+fallback remains available, and the Slack trigger safely skips delivery. Slack
+events are queued post-commit with `pg_net`; asynchronous delivery results are
+not yet written back into the delivery-log table.
 
 The database stores application data in `app`, not `public`. The exposed
 `api` wrapper is security-invoker; the private `wfh_private` handler derives
@@ -105,9 +123,40 @@ that has not already been linked to a different Supabase identity.
 Anonymous RPC execution is revoked. The script does not grant direct table
 access, expose `app_auth.users`, or disable existing RLS policies.
 
-Local Express development remains unchanged. A full production release still
-requires migrating and verifying the remaining operations with employee and
-HR/admin accounts, including write validation and approval workflows.
+### Native Biometric Sign-In
+
+Android/iOS biometric sign-in uses the native biometric or device-credential
+prompt and a refresh token encrypted by Android Keystore/iOS Keychain. It
+refreshes the session through Supabase Auth directly; no custom biometric API
+route, stored password, or browser token storage is required.
+
+After updating the native app, sign in with email/password once and enable
+Biometric Login in Security settings. Subsequent local app logout/re-entry can
+unlock that saved session. Disabling Biometric Login deletes the saved token;
+an invalid/revoked refresh token also clears it and requires password sign-in.
+Local app logout retains enrollment intentionally; it is not a Supabase session
+revocation. Browser biometric sign-in is not implemented by the native plugin.
+
+Rebuild/reinstall the native app after plugin changes. On an Android emulator,
+enroll a fingerprint in Android Settings and supply a fingerprint touch when
+the system prompt appears. Run the mocked session-flow checks with
+`node --test src/app/biometric-session.test.mjs`; they do not verify device
+hardware or use real account credentials.
+
+Local Express development remains unchanged. Run the local rollback-only RPC
+regression check with:
+
+```powershell
+node database/verify-rest-api.mjs
+node --test src/app/api-fetch.test.mjs
+```
+
+The database check creates temporary Auth fixtures and runs attendance,
+settings, requests, employee CRUD, payroll parity, and employee authorization
+assertions inside a rolled-back local PostgreSQL transaction. It rejects remote
+hosts. Real password updates are tested with mocked Auth responses, not live
+account credentials. After deployment, verify representative RPC operations
+under authenticated database roles before releasing client builds.
 
 ## Smoke test
 

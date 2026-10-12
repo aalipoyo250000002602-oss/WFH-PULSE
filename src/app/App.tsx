@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch as fetch, resolveSupabaseAuthBaseUrl } from './api-fetch.mjs'
 import { Capacitor } from '@capacitor/core'
+import { SecureStorage, KeychainAccess } from '@aparajita/capacitor-secure-storage'
+import { createBiometricSession, mapSupabaseSession } from './biometric-session.mjs'
 import {
     AndroidBiometryStrength,
     BiometricAuth,
@@ -208,22 +210,20 @@ export default function App() {
         (import.meta as any).env?.VITE_SUPABASE_URL ?? ''
     )
     const isSupabaseBaseUrl = Boolean(supabaseAuthBaseUrl)
-    const [isBiometricLoginAvailable, setIsBiometricLoginAvailable] = useState(
-        () => {
-            if (typeof window === 'undefined') {
-                return false
-            }
-
-            const savedEnabled =
-                window.localStorage.getItem('wfh:biometricLoginEnabled') ===
-                'true'
-            const hasRememberedBiometricUser = Boolean(
-                window.localStorage.getItem('wfh:lastBiometricEmail')
-            )
-
-            return savedEnabled || hasRememberedBiometricUser
-        }
-    )
+    const [isBiometricLoginAvailable, setIsBiometricLoginAvailable] = useState(false)
+    const [biometricSession] = useState(() => createBiometricSession({
+        authBaseUrl: supabaseAuthBaseUrl,
+        publishableKey: supabasePublishableKey,
+        isNative: () => Capacitor.isNativePlatform(),
+        storage: SecureStorage,
+        keychainAccess: KeychainAccess.whenPasscodeSetThisDeviceOnly,
+        verifyIdentity: () => requestBiometricVerification({
+            reason: 'Unlock your saved WFH Pulse account.',
+            unavailableTitle: 'Biometric sign in unavailable',
+            failedTitle: 'Biometric sign in failed',
+        }),
+        fetchImplementation: fetch,
+    }))
     const [isLoggedIn, setIsLoggedIn] = useState(false)
     const [authSession, setAuthSession] = useState<AuthSession | null>(null)
     const [unreadRequestCounts, setUnreadRequestCounts] =
@@ -900,6 +900,7 @@ export default function App() {
                     userAgent: row.userAgent ?? null,
                 }))
             )
+            return Boolean(pref.biometricLogin)
         } catch {
             // Keep defaults when endpoint is unavailable.
         }
@@ -953,6 +954,13 @@ export default function App() {
                 'wfh:biometricLoginEnabled',
                 String(nextBiometricLogin)
             )
+            if (isSupabaseBaseUrl && Capacitor.isNativePlatform()) {
+                await biometricSession.remember({
+                    access_token: authSession.accessToken,
+                    refresh_token: authSession.refreshToken,
+                    user: { id: authSession.sessionId },
+                }, nextBiometricLogin)
+            }
             return true
         } catch {
             toast.error('Security preferences update failed', {
@@ -1676,6 +1684,13 @@ export default function App() {
         const loadBiometricAvailability = async () => {
             if (isSupabaseBaseUrl) {
                 setIsBiometricLoginAvailable(false)
+                if (!Capacitor.isNativePlatform()) return
+                try {
+                    const biometry = await BiometricAuth.checkBiometry()
+                    const enabled = window.localStorage.getItem('wfh:biometricLoginEnabled') === 'true'
+                    setIsBiometricLoginAvailable(enabled && (biometry.isAvailable || biometry.deviceIsSecure)
+                        && await biometricSession.available())
+                } catch {}
                 return
             }
 
@@ -1700,7 +1715,7 @@ export default function App() {
         }
 
         void loadBiometricAvailability()
-    }, [apiBaseUrl, isSupabaseBaseUrl])
+    }, [apiBaseUrl, isSupabaseBaseUrl, biometricSession])
 
     const completeSignIn = async (
         payload: Partial<LoginResponsePayload>,
@@ -1749,7 +1764,21 @@ export default function App() {
             await loadEmploymentOptions(payload.accessToken)
             await loadLeaveCreditTypes(payload.accessToken)
             await loadCompanyWorkingHours(payload.accessToken)
-            await loadSecurityPreferences(payload.accessToken)
+            const biometricEnabled = await loadSecurityPreferences(payload.accessToken)
+            if (isSupabaseBaseUrl && Capacitor.isNativePlatform()) {
+                try {
+                    await biometricSession.remember({
+                        access_token: payload.accessToken,
+                        refresh_token: payload.refreshToken,
+                        user: { id: payload.sessionId },
+                    }, Boolean(biometricEnabled))
+                } catch {
+                    setIsBiometricLoginAvailable(false)
+                    toast.warning('Biometric sign-in could not be saved', {
+                        description: 'Secure device storage is unavailable. Email and password sign-in still works.',
+                    })
+                }
+            }
             await loadCalendarData(payload.accessToken)
             await loadTodayAttendance(payload.accessToken)
         }
@@ -1806,19 +1835,7 @@ export default function App() {
             if (isSupabaseBaseUrl) {
                 const supabasePayload =
                     payload as Partial<SupabaseLoginResponsePayload>
-                const mappedPayload: Partial<LoginResponsePayload> = {
-                    accessToken: supabasePayload.access_token ?? '',
-                    refreshToken: supabasePayload.refresh_token ?? '',
-                    sessionId:
-                        supabasePayload.user?.id ??
-                        `${Date.now()}-${Math.random()}`,
-                    user: {
-                        email: supabasePayload.user?.email ?? email,
-                        fullName:
-                            supabasePayload.user?.user_metadata?.full_name ??
-                            null,
-                    },
-                }
+                const mappedPayload = mapSupabaseSession(supabasePayload)
 
                 const didSignIn = await completeSignIn(mappedPayload)
                 if (!didSignIn) {
@@ -1859,7 +1876,7 @@ export default function App() {
 
         try {
             const biometry = await BiometricAuth.checkBiometry()
-            if (!biometry.isAvailable) {
+            if (!biometry.isAvailable && !biometry.deviceIsSecure) {
                 toast.error(options?.unavailableTitle || 'Biometric unavailable', {
                     description:
                         biometry.reason ||
@@ -1922,10 +1939,19 @@ export default function App() {
 
     const handleBiometricLogin = async () => {
         if (isSupabaseBaseUrl) {
-            toast.error('Biometric sign in unavailable', {
-                description:
-                    'Biometric sign-in requires your custom API auth route. Use email and password for Supabase Auth mode.',
-            })
+            try {
+                const payload = await biometricSession.signIn()
+                if (!payload) return
+                if (!await completeSignIn(payload)) return
+                toast.success('Biometric sign in successful', {
+                    description: 'Signed in with your saved Supabase session.',
+                })
+            } catch (error) {
+                setIsBiometricLoginAvailable(await biometricSession.available().catch(() => false))
+                toast.error('Biometric sign in failed', {
+                    description: error instanceof Error ? error.message : 'Please sign in with email and password again.',
+                })
+            }
             return
         }
 

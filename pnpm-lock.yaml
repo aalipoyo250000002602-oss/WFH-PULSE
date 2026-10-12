@@ -14,6 +14,9 @@ importers:
       '@aparajita/capacitor-biometric-auth':
         specifier: ^10.0.0
         version: 10.0.0
+      '@aparajita/capacitor-secure-storage':
+        specifier: 8.0.1
+        version: 8.0.1
       '@capacitor/android':
         specifier: ^8.4.2
         version: 8.4.2(@capacitor/core@8.4.2)
@@ -238,6 +241,10 @@ packages:
     resolution: {integrity: sha512-azjWaRucB8x1/gSzSTp/NxelaOZyg+m765gSzjwUkSQgg30RrZPmPq6pyLeeXVSZNDY3Rxf5Hj8obgZaXirCFQ==}
     engines: {node: '>=20.0.0'}
 
+  '@aparajita/capacitor-secure-storage@8.0.1':
+    resolution: {integrity: sha512-NSYIQtH6TyBgL3myumQGcCE3iecq2PtGNFlGxl1fJKEU37Dv5DudzDlwg42cgbVxCm1ay72g4X7rTSAvKULsVg==}
+    engines: {node: '>=20.0.0'}
+
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
     engines: {node: '>=6.9.0'}
@@ -347,6 +354,11 @@ packages:
     resolution: {integrity: sha512-HnnV92Jl8+3x0JUloXUMjFcUsQI8wHFVsKwkLn72DfRZXYGZW11tQbmNOWOnRTljaU18FdI1b9ipT09SzzPDNw==}
     peerDependencies:
       '@capacitor/core': ^8.5.0
+
+  '@capacitor/keyboard@8.0.6':
+    resolution: {integrity: sha512-Bbe+9V0qaT6dzEFJEK7BUWR01l2+vZE8FM5ITF/WgKtx+G6eGZ6d5+YiSMRJBAK0VGjdO59v8yiQ10Doa5KyvQ==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   '@colors/colors@1.5.0':
     resolution: {integrity: sha512-ooWCrlZP11i8GImSjTHYHLkvFDP48nS4+204nGb1RiX/WXYHmJA2III9/e2DWVabCESdW7hBAEzHRqUn9OUVvQ==}
@@ -3546,6 +3558,14 @@ snapshots:
       '@capacitor/core': 8.4.2
       '@capacitor/ios': 8.5.3(@capacitor/core@8.4.2)
 
+  '@aparajita/capacitor-secure-storage@8.0.1':
+    dependencies:
+      '@capacitor/android': 8.4.2(@capacitor/core@8.4.2)
+      '@capacitor/app': 8.1.2(@capacitor/core@8.4.2)
+      '@capacitor/core': 8.4.2
+      '@capacitor/ios': 8.5.3(@capacitor/core@8.4.2)
+      '@capacitor/keyboard': 8.0.6(@capacitor/core@8.4.2)
+
   '@babel/code-frame@7.29.7':
     dependencies:
       '@babel/helper-validator-identifier': 7.29.7
@@ -3695,6 +3715,10 @@ snapshots:
       tslib: 2.8.1
 
   '@capacitor/ios@8.5.3(@capacitor/core@8.4.2)':
+    dependencies:
+      '@capacitor/core': 8.4.2
+
+  '@capacitor/keyboard@8.0.6(@capacitor/core@8.4.2)':
     dependencies:
       '@capacitor/core': 8.4.2
 

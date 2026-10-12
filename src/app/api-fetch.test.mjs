@@ -116,3 +116,44 @@ test('RPC database errors are reported without masking their status', async () =
     assert.equal(response.status, 403)
     assert.equal((await response.json()).error, 'permission denied')
 })
+
+test('password updates use Supabase Auth and never send the password to the REST RPC', async () => {
+    const calls = []
+    const apiFetch = createApiFetch({
+        apiBaseUrls: [baseUrl], publishableKey: 'sb_publishable_test',
+        fetchImplementation: async (input, init) => {
+            calls.push({ input, init })
+            return input.endsWith('/auth/v1/user') ? Response.json({ id: 'fixture-user' })
+                : Response.json({ status: 200, body: { ok: true } })
+        },
+    })
+    const response = await apiFetch(`${baseUrl}/me/security-preferences/password`, {
+        method: 'POST', headers: { Authorization: 'Bearer fixture-token' },
+        body: JSON.stringify({ newPassword: 'Fixture123!', waivePassword: false }),
+    })
+    assert.equal(response.status, 200)
+    assert.equal(calls[0].input, 'https://example.supabase.co/auth/v1/user')
+    assert.equal(calls[0].init.method, 'PUT')
+    assert.equal(calls[0].init.headers.get('authorization'), 'Bearer fixture-token')
+    assert.equal(calls[0].init.headers.has('content-profile'), false)
+    assert.deepEqual(JSON.parse(calls[0].init.body), { password: 'Fixture123!' })
+    const rpcBody = JSON.parse(calls[1].init.body)
+    assert.equal(rpcBody.p_body.passwordUpdated, true)
+    assert.equal(calls[1].init.body.includes('Fixture123!'), false)
+})
+
+test('failed Auth password updates do not write audit records', async () => {
+    let requests = 0
+    const apiFetch = createApiFetch({
+        apiBaseUrls: [baseUrl], publishableKey: 'sb_publishable_test',
+        fetchImplementation: async () => {
+            requests += 1
+            return Response.json({ message: 'Recent sign-in required' }, { status: 401 })
+        },
+    })
+    const response = await apiFetch(`${baseUrl}/me/security-preferences/password`, {
+        method: 'POST', body: JSON.stringify({ newPassword: 'Fixture123!' }),
+    })
+    assert.equal(response.status, 401)
+    assert.equal(requests, 1)
+})

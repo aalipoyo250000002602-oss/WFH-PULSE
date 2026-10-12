@@ -41,8 +41,9 @@ pnpm.cmd run dev:prod
 
 The web app reads `.env.prod`, signs in through Supabase Auth, and uses
 `/rest/v1/` as its data API base. Install `database/07_supabase_rest_api.sql`
-to enable the authenticated read RPC in schema `api`. Write operations and
-advanced analytics/payroll routes still require migration. See `api/README.md`.
+to enable authenticated attendance, request workflows, settings, employee
+management, analytics, and payroll through the RPC in schema `api`.
+See `api/README.md` for deployment, verification, and external-service limits.
 Local development remains available through `pnpm.cmd run local:all`.
 
 ### Option B: Run as Android App (Emulator)
