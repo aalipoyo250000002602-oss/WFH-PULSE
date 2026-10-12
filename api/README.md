@@ -69,6 +69,46 @@ When `GEMINI_API_KEY` is unset or credits are unavailable, the planner automatic
 corepack pnpm run api:dev
 ```
 
+## Production Supabase Data API
+
+Production web and Android configuration uses:
+
+```text
+https://tuypfaqcqsxzuswiglyw.supabase.co/rest/v1/
+```
+
+Login remains on Supabase Auth's `/auth/v1/token` endpoint. Data API requests
+include the publishable key as `apikey` and the signed-in user's access token
+as `Authorization: Bearer ...`. Never use a secret key in the frontend.
+
+The shared frontend request adapter translates Express-style paths to
+`/rest/v1/rpc/wfh_pulse_request`, with `Content-Profile: api` and
+`Accept-Profile: api`. Install `database/07_supabase_rest_api.sql` in the
+Supabase SQL Editor before using this configuration. The function signature is
+`api.wfh_pulse_request(p_path text, p_method text, p_query jsonb, p_body jsonb)`.
+The script reloads the PostgREST schema cache after installation.
+
+The installed RPC supports the main read endpoints: profile, attendance today,
+attendance history, calendar, employment options, employees, leave requests,
+adjustment/overtime requests, security preferences, working hours, leave types,
+and admin holiday reads. Unmigrated operations explicitly return HTTP 501;
+write operations, analytics, advanced attendance aggregation, and payroll
+reports are not yet supported. No Edge Function deployment is used.
+
+The database stores application data in `app`, not `public`. The exposed
+`api` wrapper is security-invoker; the private `wfh_private` handler derives
+identity from `auth.uid()` and reads roles from `app_auth.user_roles`. It
+permits only active linked accounts, filters self-service queries by the
+resolved employee, and checks stored HR/admin roles for privileged reads.
+Linking by email requires a confirmed Supabase email and an application account
+that has not already been linked to a different Supabase identity.
+Anonymous RPC execution is revoked. The script does not grant direct table
+access, expose `app_auth.users`, or disable existing RLS policies.
+
+Local Express development remains unchanged. A full production release still
+requires migrating and verifying the remaining operations with employee and
+HR/admin accounts, including write validation and approval workflows.
+
 ## Smoke test
 
 Start API first, then:
