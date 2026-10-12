@@ -33,13 +33,17 @@ Open:
 - Local browser: `http://localhost:{id}`
 - Android Emulator browser: `http://10.0.2.2:{id}`
 
-Use the production Supabase API and database:
+Use the production Supabase configuration:
 
 ```powershell
-corepack pnpm run prod:all
+pnpm.cmd run dev:prod
 ```
 
-This starts the local Node API at `http://localhost:8787`, configured to use the Supabase database, and the web app with `.env.prod`.
+The web app reads `.env.prod`, signs in through Supabase Auth, and uses
+`/rest/v1/` as its data API base. Install `database/07_supabase_rest_api.sql`
+to enable the authenticated read RPC in schema `api`. Write operations and
+advanced analytics/payroll routes still require migration. See `api/README.md`.
+Local development remains available through `pnpm.cmd run local:all`.
 
 ### Option B: Run as Android App (Emulator)
 

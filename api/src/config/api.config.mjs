@@ -34,8 +34,10 @@ function loadApiEnv() {
 loadApiEnv()
 
 export function getApiConfig() {
+    const resolvedPort = Number(process.env.PORT ?? process.env.API_PORT ?? '8787')
+
     return {
-        port: Number(process.env.API_PORT ?? '8787'),
+        port: Number.isFinite(resolvedPort) ? resolvedPort : 8787,
         jwtSecret: process.env.API_JWT_SECRET ?? 'dev-only-change-me',
         envPath,
         supabase: getSupabaseApiConfig(),

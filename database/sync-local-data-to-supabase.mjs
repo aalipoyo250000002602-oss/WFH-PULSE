@@ -1,6 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
+import { spawnSync } from 'node:child_process'
+import { createServer } from 'node:http'
+import { randomUUID } from 'node:crypto'
 import { Client } from 'pg'
 
 const rootDir = process.cwd()
@@ -278,7 +281,200 @@ function printCounts(label, tables, counts) {
     }
 }
 
+function runPgDump(config, args) {
+    const executable = process.env.PG_DUMP_PATH ?? path.join(
+        process.env.ProgramFiles ?? 'C:\\Program Files', 'PostgreSQL', '18', 'bin', 'pg_dump.exe'
+    )
+    const connection = config.connectionString ? new URL(config.connectionString) : null
+    const result = spawnSync(executable, [
+        '--no-password', '--no-owner', '--no-privileges',
+        '--host', connection?.hostname ?? config.host,
+        '--port', String(connection?.port || config.port || 5432),
+        '--username', connection ? decodeURIComponent(connection.username) : config.user,
+        '--dbname', connection ? connection.pathname.slice(1) : config.database,
+        ...args,
+    ], {
+        env: {
+            ...process.env,
+            PGPASSWORD: connection ? decodeURIComponent(connection.password) : config.password,
+            PGSSLMODE: config.ssl ? 'require' : 'disable',
+        },
+        encoding: 'utf8',
+    })
+    if (result.error || result.status !== 0) {
+        throw new Error('PostgreSQL export failed. Check pg_dump availability and local database access.')
+    }
+}
+
+async function exportLocalSql(directory) {
+    const resolvedDirectory = path.resolve(directory)
+    const relativeDirectory = path.relative(rootDir, resolvedDirectory)
+    if (!relativeDirectory.startsWith('..') && !path.isAbsolute(relativeDirectory)) {
+        throw new Error('Export application data outside the repository to keep it out of web assets and source control.')
+    }
+    const config = getClientConfig(localEnvPath)
+    const source = new Client(config)
+    try {
+        await source.connect()
+        await source.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        const tables = await getTables(source)
+        const counts = await getCounts(source, tables)
+        const manifest = []
+        for (const table of tables) {
+            manifest.push({ ...table, columns: await getColumns(source, table), count: counts.get(tableKey(table)) })
+        }
+        const snapshot = await source.query('SELECT pg_export_snapshot() AS snapshot')
+        fs.mkdirSync(resolvedDirectory, { recursive: true, mode: 0o700 })
+        const dumpPath = path.join(resolvedDirectory, 'data.sql')
+        runPgDump(config, [
+            '--data-only', '--inserts', '--column-inserts', '--rows-per-insert=100',
+            ...managedSchemas.map(schema => `--schema=${schema}`),
+            `--snapshot=${snapshot.rows[0].snapshot}`, `--file=${dumpPath}`,
+        ])
+        const sql = fs.readFileSync(dumpPath, 'utf8').split(/\r?\n/)
+            .filter(line => !/^\\(?:un)?restrict\s+[A-Za-z0-9]+\s*$/.test(line)).join('\n')
+        fs.writeFileSync(dumpPath, sql, { mode: 0o600 })
+        fs.writeFileSync(path.join(resolvedDirectory, 'manifest.json'), JSON.stringify(manifest, null, 2), { mode: 0o600 })
+        await source.query('ROLLBACK')
+        printCounts('Exported local snapshot row counts', tables, counts)
+        console.log(`\nExport directory: ${resolvedDirectory}`)
+        console.log(`SQL export size: ${Buffer.byteLength(sql)} bytes`)
+    } finally {
+        await source.end()
+    }
+}
+
+function prepareBrowserImport(directory, live) {
+    const sourceTables = JSON.parse(fs.readFileSync(path.join(directory, 'manifest.json'), 'utf8'))
+    if (!Array.isArray(live.tables) || !Array.isArray(live.externalReferences) || live.externalReferences.length) {
+        throw new Error('Live inventory is invalid or external foreign-key dependencies prevent safe replacement.')
+    }
+    const targetByKey = new Map(live.tables.map(table => [tableKey(table), table]))
+    const missingTables = []
+    for (const table of sourceTables) {
+        const target = targetByKey.get(tableKey(table))
+        if (!target) missingTables.push(table)
+        else if ([...table.columns].sort().join('\n') !== [...target.columns].sort().join('\n')) {
+            throw new Error(`Column mismatch for ${tableKey(table)}. No import was prepared.`)
+        }
+        if (!Number.isSafeInteger(table.count) || table.count < 0) throw new Error('Invalid source row count.')
+    }
+    if (live.tables.some(table => !sourceTables.some(source => tableKey(source) === tableKey(table)))) {
+        throw new Error('Live-only tables require an explicit migration plan before replacement.')
+    }
+    const stripMetaCommands = sql => sql.split(/\r?\n/)
+        .filter(line => !/^\\(?:un)?restrict\s+[A-Za-z0-9]+\s*$/.test(line)).join('\n')
+    let schemaSql = ''
+    if (missingTables.length) {
+        const schemaPath = path.join(directory, 'missing-tables.sql')
+        runPgDump(getClientConfig(localEnvPath), [
+            '--schema-only', ...missingTables.map(table => `--table=${tableKey(table)}`), `--file=${schemaPath}`,
+        ])
+        schemaSql = stripMetaCommands(fs.readFileSync(schemaPath, 'utf8'))
+    }
+    const backupSchema = `wfh_backup_${new Date().toISOString().slice(0, 10).replaceAll('-', '')}_${randomUUID().slice(0, 8)}`
+    const statements = [
+        'BEGIN;', "SET LOCAL lock_timeout = '15s';", "SET LOCAL statement_timeout = '120s';",
+        `LOCK TABLE ${live.tables.map(quoteTable).join(', ')} IN ACCESS EXCLUSIVE MODE;`,
+        `CREATE SCHEMA ${quoteIdentifier(backupSchema)};`,
+        `REVOKE ALL ON SCHEMA ${quoteIdentifier(backupSchema)} FROM PUBLIC, anon, authenticated;`,
+        'CREATE TEMP TABLE wfh_sync_auth_count ON COMMIT DROP AS SELECT count(*) AS count FROM auth.users;',
+        ...live.tables.map(table => `CREATE TABLE ${quoteIdentifier(backupSchema)}.${quoteIdentifier(`${table.schema}__${table.name}`)} AS TABLE ${quoteTable(table)};`),
+        `REVOKE ALL ON ALL TABLES IN SCHEMA ${quoteIdentifier(backupSchema)} FROM PUBLIC, anon, authenticated;`,
+        schemaSql,
+        `CREATE TEMP TABLE wfh_sync_triggers ON COMMIT DROP AS
+         SELECT n.nspname AS schema_name, c.relname AS table_name, t.tgname, t.tgenabled
+         FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace
+         WHERE n.nspname IN ('app','app_auth') AND NOT t.tgisinternal;`,
+        ...sourceTables.map(table => `ALTER TABLE ${quoteTable(table)} DISABLE TRIGGER USER;`),
+        `TRUNCATE TABLE ${sourceTables.map(quoteTable).join(', ')} RESTART IDENTITY;`,
+        stripMetaCommands(fs.readFileSync(path.join(directory, 'data.sql'), 'utf8')),
+        `UPDATE app_auth.users u SET supabase_auth_user_id = NULL
+         WHERE u.supabase_auth_user_id IS NOT NULL AND NOT EXISTS (
+           SELECT 1 FROM auth.users a WHERE a.id=u.supabase_auth_user_id
+             AND lower(a.email)=lower(u.email::text) AND a.email_confirmed_at IS NOT NULL);`,
+        `UPDATE app_auth.users u SET supabase_auth_user_id = a.id FROM auth.users a
+         WHERE lower(a.email)=lower(u.email::text) AND a.email_confirmed_at IS NOT NULL
+           AND u.supabase_auth_user_id IS DISTINCT FROM a.id;`,
+        `DO $restore_triggers$ DECLARE trigger_row record; BEGIN
+         FOR trigger_row IN SELECT * FROM pg_temp.wfh_sync_triggers LOOP
+           EXECUTE format('ALTER TABLE %I.%I %s TRIGGER %I', trigger_row.schema_name, trigger_row.table_name,
+             CASE trigger_row.tgenabled WHEN 'D' THEN 'DISABLE' WHEN 'R' THEN 'ENABLE REPLICA' WHEN 'A' THEN 'ENABLE ALWAYS' ELSE 'ENABLE' END,
+             trigger_row.tgname);
+         END LOOP; END; $restore_triggers$;`,
+        `DO $verify_counts$ BEGIN
+         ${sourceTables.map(table => `IF (SELECT count(*) FROM ${quoteTable(table)}) <> ${table.count} THEN RAISE EXCEPTION 'Row count mismatch for ${tableKey(table)}'; END IF;`).join('\n')}
+         IF (SELECT count(*) FROM auth.users) <> (SELECT count FROM pg_temp.wfh_sync_auth_count) THEN
+           RAISE EXCEPTION 'Supabase Auth account count changed during sync'; END IF;
+         IF to_regprocedure('api.wfh_pulse_request(text,text,jsonb,jsonb)') IS NULL THEN RAISE EXCEPTION 'REST RPC is missing'; END IF;
+         END; $verify_counts$;`,
+        `SELECT jsonb_build_object('status','synced','tables',${sourceTables.length},
+           'rows',${sourceTables.reduce((total, table) => total + table.count, 0)},
+           'employees',(SELECT count(*) FROM app.employees), 'attendance',(SELECT count(*) FROM app.attendance_records),
+           'supabaseAuthUsers',(SELECT count(*) FROM auth.users), 'backupSchema','${backupSchema}',
+           'linkedAccounts',(SELECT count(*) FROM app_auth.users WHERE supabase_auth_user_id IS NOT NULL)) AS sync_result;`,
+        'COMMIT;',
+    ]
+    fs.writeFileSync(path.join(directory, 'import.sql'), statements.join('\n\n'), { mode: 0o600 })
+    const summary = { backupSchema, tables: sourceTables.length, rows: sourceTables.reduce((total, table) => total + table.count, 0), migratedTables: missingTables.map(tableKey) }
+    fs.writeFileSync(path.join(directory, 'import-summary.json'), JSON.stringify(summary, null, 2), { mode: 0o600 })
+    return summary
+}
+
+function serveBrowserExport(directory) {
+    const prefix = `/${randomUUID()}`
+    const server = createServer(async (request, response) => {
+        const url = new URL(request.url, 'http://127.0.0.1')
+        const origin = `http://127.0.0.1:${server.address().port}`
+        if (!url.pathname.startsWith(`${prefix}/`) || (request.headers.origin && request.headers.origin !== origin)) {
+            response.writeHead(403).end()
+            return
+        }
+        response.setHeader('Cache-Control', 'no-store')
+        response.setHeader('X-Content-Type-Options', 'nosniff')
+        try {
+            if (request.method === 'POST' && url.pathname === `${prefix}/prepare`) {
+                const chunks = []
+                let size = 0
+                for await (const chunk of request) {
+                    size += chunk.length
+                    if (size > 1000000) throw new Error('Inventory payload is too large.')
+                    chunks.push(chunk)
+                }
+                const summary = prepareBrowserImport(directory, JSON.parse(Buffer.concat(chunks).toString('utf8')))
+                response.setHeader('Content-Type', 'application/json')
+                response.end(JSON.stringify(summary))
+            } else if (request.method === 'GET' && url.pathname === `${prefix}/`) {
+                response.setHeader('Content-Type', 'text/html')
+                response.end('<!doctype html><title>Local migration transfer</title>')
+            } else if (request.method === 'GET' && ['import.sql', 'manifest.json'].some(name => url.pathname === `${prefix}/${name}`)) {
+                const fileName = url.pathname.split('/').pop()
+                response.setHeader('Content-Type', 'text/plain; charset=utf-8')
+                response.end(fs.readFileSync(path.join(directory, fileName)))
+            } else response.writeHead(404).end()
+        } catch (error) {
+            response.writeHead(400, { 'Content-Type': 'application/json' })
+            response.end(JSON.stringify({ error: error.message }))
+        }
+    })
+    server.listen(0, '127.0.0.1', () => console.log(`Private transfer URL: http://127.0.0.1:${server.address().port}${prefix}/`))
+}
+
 async function main() {
+    const serveIndex = process.argv.indexOf('--serve-export')
+    if (serveIndex >= 0) {
+        const directory = process.argv[serveIndex + 1]
+        if (!directory || directory.startsWith('--')) throw new Error('Provide an export directory after --serve-export.')
+        serveBrowserExport(path.resolve(directory))
+        return
+    }
+    const exportIndex = process.argv.indexOf('--export-sql')
+    if (exportIndex >= 0) {
+        const directory = process.argv[exportIndex + 1]
+        if (!directory || directory.startsWith('--')) throw new Error('Provide an external directory after --export-sql.')
+        await exportLocalSql(directory)
+        return
+    }
     const dryRun = process.argv.slice(2).includes('--dry-run')
     const source = new Client(getClientConfig(localEnvPath))
     const target = new Client(getClientConfig(supabaseEnvPath))

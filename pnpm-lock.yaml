@@ -113,6 +113,9 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: 1.1.8
         version: 1.1.8(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@supabase/server':
+        specifier: ^1.9.1
+        version: 1.9.1(@supabase/supabase-js@2.117.3)(pg@8.22.0)
       canvas-confetti:
         specifier: 1.9.4
         version: 1.9.4
@@ -1528,6 +1531,69 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@supabase/auth-js@2.117.3':
+    resolution: {integrity: sha512-XOZV+jllcU2Hzij8SwgM78zl0lOEr6BTjzi2MYkBb39nOAQzb5AelGpMUvVj7lwGSB11JmpAs/FEQroAyFzWEA==}
+    engines: {node: '>=22.0.0'}
+
+  '@supabase/functions-js@2.117.3':
+    resolution: {integrity: sha512-6GuizbP4N5xWaxEVUsI+UQpJdmMmn0t3sYNpObo9gCAldvM22gFjnYzRVmkHxp5ylU21azEYmiWVwk9iDgCMkQ==}
+    engines: {node: '>=22.0.0'}
+
+  '@supabase/middleware@1.0.0':
+    resolution: {integrity: sha512-ecA+z/o5E9sB+quuupGt8d7QjrnD4BBwZr+Qthm0uj6CtL/+yvAUTDlknhGuTbUidvx5CxBHJ1R3H96UjDpgyg==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      typescript: '>=5.4'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+
+  '@supabase/phoenix@0.4.5':
+    resolution: {integrity: sha512-aAn9H9ovVyeApKy11OWOrrOGq8DV68yWeH4ud2lN9fzn4aO8Zb5GLL9m1pUg9nLqIcT+ZDfAcsZe0E/nqdv2lw==}
+
+  '@supabase/postgrest-js@2.117.3':
+    resolution: {integrity: sha512-NpyTgullu6tw11ojYKTdZg9HannZ4mu4FUlhc9V5zDXOVllUJzEmuyLM+WWoYF0BurfrRvarimpm3SR8P0Gzfw==}
+    engines: {node: '>=22.0.0'}
+
+  '@supabase/realtime-js@2.117.3':
+    resolution: {integrity: sha512-4W4ISbreRygNXbhwqxeqyuRul8RPx+SF+Hp2IT8wctebQEHSVCULfKatiRiEhmasfoXvYm2AHV4XFsOxhoousA==}
+    engines: {node: '>=22.0.0'}
+
+  '@supabase/server@1.9.1':
+    resolution: {integrity: sha512-AW/8aZrX5nHP3OwYMamA1hxERuL+RO7yw0h3oUfdXYKIxkdoRVm0ELzzv8wLGCk97aeVjBQ4ixZ2h66jPCfJjA==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      '@nestjs/common': ^10.0.0 || ^11.0.0
+      '@supabase/supabase-js': ^2.0.0
+      elysia: ^1.4.0
+      h3: ^2.0.0
+      hono: ^4.0.0
+      pg: ^8.0.0
+    peerDependenciesMeta:
+      '@nestjs/common':
+        optional: true
+      elysia:
+        optional: true
+      h3:
+        optional: true
+      hono:
+        optional: true
+      pg:
+        optional: true
+
+  '@supabase/storage-js@2.117.3':
+    resolution: {integrity: sha512-QhUxFC33Crlw6WDeA4hLADdi1PzjI3c4UJs7ivWHHEnU7ulmCWEZSDaRCuIfmsjUwbHYaIfRNFQNsm+IsGYS6w==}
+    engines: {node: '>=22.0.0'}
+
+  '@supabase/supabase-js@2.117.3':
+    resolution: {integrity: sha512-K+f8PimXDunPWQ63CKRXaF5pbVPJxmfw5ryAnh0s9S9PkwcuqBjiSpIaqpF7KLDljeYwXIL85ST8QxaO0+XuvA==}
+    engines: {node: '>=22.0.0'}
+    peerDependencies:
+      '@opentelemetry/api': '>=1.0.0'
+    peerDependenciesMeta:
+      '@opentelemetry/api':
+        optional: true
+
   '@tailwindcss/node@4.1.12':
     resolution: {integrity: sha512-3hm9brwvQkZFe++SBt+oLjo4OLDtkvlE8q2WalaD/7QWaeM7KEJbAiY/LJZUaCs7Xa8aUu4xy3uoyX4q54UVdQ==}
 
@@ -2297,6 +2363,10 @@ packages:
     resolution: {integrity: sha512-uhSZLPPD2VXXOSN8Cni3kIsoFHaU2pT/nySEU/fHr/ePbqHYr0jeiQRmUKLEirC09SFPsdMoA7LU7UXMd/w0Kw==}
     engines: {node: '>= 6.15.1'}
 
+  iceberg-js@0.8.1:
+    resolution: {integrity: sha512-1dhVQZXhcHje7798IVM+xoo/1ZdVfzOMIc8/rgVSijRK38EDqOJoGula9N/8ZI5RD8QTxNQtK/Gozpr+qUqRRA==}
+    engines: {node: '>=20.0.0'}
+
   iconv-lite@0.4.24:
     resolution: {integrity: sha512-v3MXnZAcvnywkTUEZomIActle7RXXeedOR31wwl7VlyoXO4Qi9arvSenNQWne1TcRwhCL1HwLI21bEqdpj8/rA==}
     engines: {node: '>=0.10.0'}
@@ -2369,6 +2439,9 @@ packages:
 
   jose@4.14.4:
     resolution: {integrity: sha512-j8GhLiKmUAh+dsFXlX1aJCbt5KMibuKb+d7j1JaOJG6s2UjX1PQlW+OKB/sD4a/5ZYF4RcmYmLSndOoU3Lt/3g==}
+
+  jose@6.2.12:
+    resolution: {integrity: sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==}
 
   js-md4@0.3.2:
     resolution: {integrity: sha512-/GDnfQYsltsjRswQhN9fhv3EMw2sCpUdrdxyWDOUK7eyD++r3gRhzgiQgc/x4MAv2i1iuQ4lxO5mvqM3vj4bwA==}
@@ -3192,6 +3265,9 @@ packages:
   statuses@2.0.2:
     resolution: {integrity: sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw==}
     engines: {node: '>= 0.8'}
+
+  std-env@4.3.0:
+    resolution: {integrity: sha512-OtU/EgQ1kIm5KwqQpBC6ZEMXrZRui11w8zgfTWp8cdO9B8OaPsbA8bTHO2P+HNo1VlUTGMVBwPhydu6poeXiag==}
 
   stream-length@1.0.2:
     resolution: {integrity: sha512-aI+qKFiwoDV4rsXiS7WRoCt+v2RX1nUj17+KJC5r2gfh5xoSJIfP6Y3Do/HtvesFcTSWthIuJ3l1cvKQY/+nZg==}
@@ -4728,6 +4804,52 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.62.2':
     optional: true
 
+  '@supabase/auth-js@2.117.3':
+    dependencies:
+      tslib: 2.8.1
+
+  '@supabase/functions-js@2.117.3':
+    dependencies:
+      tslib: 2.8.1
+
+  '@supabase/middleware@1.0.0':
+    dependencies:
+      std-env: 4.3.0
+
+  '@supabase/phoenix@0.4.5': {}
+
+  '@supabase/postgrest-js@2.117.3':
+    dependencies:
+      tslib: 2.8.1
+
+  '@supabase/realtime-js@2.117.3':
+    dependencies:
+      '@supabase/phoenix': 0.4.5
+      tslib: 2.8.1
+
+  '@supabase/server@1.9.1(@supabase/supabase-js@2.117.3)(pg@8.22.0)':
+    dependencies:
+      '@supabase/middleware': 1.0.0
+      '@supabase/supabase-js': 2.117.3
+      jose: 6.2.12
+    optionalDependencies:
+      pg: 8.22.0
+    transitivePeerDependencies:
+      - typescript
+
+  '@supabase/storage-js@2.117.3':
+    dependencies:
+      iceberg-js: 0.8.1
+      tslib: 2.8.1
+
+  '@supabase/supabase-js@2.117.3':
+    dependencies:
+      '@supabase/auth-js': 2.117.3
+      '@supabase/functions-js': 2.117.3
+      '@supabase/postgrest-js': 2.117.3
+      '@supabase/realtime-js': 2.117.3
+      '@supabase/storage-js': 2.117.3
+
   '@tailwindcss/node@4.1.12':
     dependencies:
       '@jridgewell/remapping': 2.3.5
@@ -5484,6 +5606,8 @@ snapshots:
 
   httpreq@1.1.1: {}
 
+  iceberg-js@0.8.1: {}
+
   iconv-lite@0.4.24:
     dependencies:
       safer-buffer: 2.1.2
@@ -5535,6 +5659,8 @@ snapshots:
   jiti@2.7.0: {}
 
   jose@4.14.4: {}
+
+  jose@6.2.12: {}
 
   js-md4@0.3.2: {}
 
@@ -6417,6 +6543,8 @@ snapshots:
   stack-trace@0.0.9: {}
 
   statuses@2.0.2: {}
+
+  std-env@4.3.0: {}
 
   stream-length@1.0.2:
     dependencies:

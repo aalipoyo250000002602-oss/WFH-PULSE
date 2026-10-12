@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { apiFetch as fetch, resolveSupabaseAuthBaseUrl } from './api-fetch.mjs'
 import { Capacitor } from '@capacitor/core'
 import {
     AndroidBiometryStrength,
@@ -181,7 +182,7 @@ type WorkingDayKey = (typeof orderedWorkingDayKeys)[number]
 type WorkingDaysState = Record<WorkingDayKey, boolean>
 
 function resolveApiBaseUrl() {
-    const apiBaseUrl = (import.meta as any).env?.VITE_API_BASE_URL ?? ''
+    const apiBaseUrl = ((import.meta as any).env?.VITE_API_BASE_URL ?? '').replace(/\/+$/, '')
 
     if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
         try {
@@ -190,7 +191,7 @@ function resolveApiBaseUrl() {
             }
         } catch {}
 
-        return (import.meta as any).env?.VITE_API_BASE_URL_ANDROID ?? apiBaseUrl
+        return ((import.meta as any).env?.VITE_API_BASE_URL_ANDROID ?? apiBaseUrl).replace(/\/+$/, '')
     }
 
     return apiBaseUrl
@@ -202,13 +203,11 @@ export default function App() {
         (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY ??
         (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ??
         ''
-    const isSupabaseBaseUrl = (() => {
-        try {
-            return new URL(apiBaseUrl).hostname.endsWith('.supabase.co')
-        } catch {
-            return false
-        }
-    })()
+    const supabaseAuthBaseUrl = resolveSupabaseAuthBaseUrl(
+        apiBaseUrl,
+        (import.meta as any).env?.VITE_SUPABASE_URL ?? ''
+    )
+    const isSupabaseBaseUrl = Boolean(supabaseAuthBaseUrl)
     const [isBiometricLoginAvailable, setIsBiometricLoginAvailable] = useState(
         () => {
             if (typeof window === 'undefined') {
@@ -529,6 +528,9 @@ export default function App() {
 
         const payload = await response.json()
         setUserProfile(mapApiProfileToState(payload?.profile ?? null, fallback))
+        if (payload?.role === 'admin' || payload?.role === 'hr_manager' || payload?.role === 'employee') {
+            setAuthSession(current => current ? { ...current, role: payload.role } : current)
+        }
     }
 
     const updateSelfProfile = async (updates: Record<string, unknown>) => {
@@ -1759,7 +1761,7 @@ export default function App() {
     const handleLogin = async (email: string, password: string) => {
         try {
             const loginUrl = isSupabaseBaseUrl
-                ? `${apiBaseUrl}/auth/v1/token?grant_type=password`
+                ? `${supabaseAuthBaseUrl}/token?grant_type=password`
                 : `${apiBaseUrl}/auth/login`
             const headers: Record<string, string> = {
                 'Content-Type': 'application/json',
@@ -1767,7 +1769,6 @@ export default function App() {
 
             if (isSupabaseBaseUrl && supabasePublishableKey) {
                 headers.apikey = supabasePublishableKey
-                headers.Authorization = `Bearer ${supabasePublishableKey}`
             }
 
             const response = await fetch(loginUrl, {
@@ -1819,9 +1820,7 @@ export default function App() {
                     },
                 }
 
-                const didSignIn = await completeSignIn(mappedPayload, {
-                    skipBootstrap: true,
-                })
+                const didSignIn = await completeSignIn(mappedPayload)
                 if (!didSignIn) {
                     return
                 }
