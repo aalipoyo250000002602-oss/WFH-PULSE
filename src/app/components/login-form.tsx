@@ -5,7 +5,7 @@ import { Label } from './ui/label'
 import { Separator } from './ui/separator'
 import { ScanFace, Loader2 } from 'lucide-react'
 // @ts-ignore
-import logoImage from 'figma:asset/80b7a2d7f7164e79d1aa41e678d57bd410cbb0ae.png'
+import logoImage from '../../assets/logo.png'
 
 interface LoginFormProps {
     onLogin: (email: string, password: string) => Promise<void>

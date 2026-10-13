@@ -476,7 +476,7 @@ export function AnalyticsPage({
           }
           
           <div class="footer">
-            This is an automatically generated analytics report from the Attendance Tracker System.
+            This is an automatically generated analytics report from the WFH Pulse.
           </div>
         </body>
       </html>

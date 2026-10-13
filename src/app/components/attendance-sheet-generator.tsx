@@ -26,7 +26,7 @@ import { Label } from './ui/label'
 import { Textarea } from './ui/textarea'
 import { Switch } from './ui/switch'
 // @ts-ignore
-import logoImage from 'figma:asset/80b7a2d7f7164e79d1aa41e678d57bd410cbb0ae.png'
+import logoImage from '../../assets/logo.png'
 import {
     FileText,
     Search,
