@@ -47,7 +47,7 @@ const supabaseTokenExchangeSchema = z.object({
 })
 
 const biometricLoginSchema = z.object({
-    email: z.string().email().optional(),
+    email: z.string().email(),
 })
 
 const allowedRoleNames = new Set(['admin', 'hr_manager', 'employee'])
@@ -1543,6 +1543,7 @@ registerAuthRoutes(app, {
 
 registerMeRoutes(app, {
     requireAuth,
+    requireRole,
     query,
     pool,
     withRlsContext,

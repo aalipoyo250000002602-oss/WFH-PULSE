@@ -1,6 +1,7 @@
 export function registerMeProfileRoutes(app, deps) {
     const {
         requireAuth,
+        requireRole,
         query,
         pool,
         selfProfileUpdateSchema,
@@ -66,7 +67,7 @@ export function registerMeProfileRoutes(app, deps) {
             }
         })
         
-        app.patch('/me/profile', requireAuth, async (req, res) => {
+        app.patch('/me/profile', requireAuth, requireRole('admin'), async (req, res) => {
             const parsed = selfProfileUpdateSchema.safeParse(req.body)
             if (!parsed.success) {
                 return res.status(400).json({ error: parsed.error.flatten() })

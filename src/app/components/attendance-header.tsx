@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Moon, Sun, User, LogOut } from 'lucide-react'
 import { Button } from './ui/button'
-import { Avatar, AvatarFallback } from './ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar'
 import {
 	Dialog,
 	DialogContent,
@@ -12,12 +12,16 @@ import {
 
 interface AttendanceHeaderProps {
 	isDarkMode: boolean
+	firstName?: string
+	profileImageUrl?: string
 	onToggleTheme: () => void
 	onLogout: () => void
 }
 
 export function AttendanceHeader({
 	isDarkMode,
+	firstName,
+	profileImageUrl,
 	onToggleTheme,
 	onLogout,
 }: AttendanceHeaderProps) {
@@ -46,18 +50,29 @@ export function AttendanceHeader({
 		onLogout()
 	}
 
+	const greetingName =
+		firstName && firstName.trim() && firstName !== 'N/A'
+			? firstName.trim()
+			: 'there'
+
 	return (
 		<>
 			<header className="fixed top-0 left-1/2 z-40 flex w-full max-w-md -translate-x-1/2 items-center justify-between border-b border-border bg-card p-4">
 				<div className="flex items-center gap-3">
 					<Avatar className="h-10 w-10">
+						{profileImageUrl ? (
+							<AvatarImage
+								src={profileImageUrl}
+								alt={`${greetingName} profile`}
+							/>
+						) : null}
 						<AvatarFallback className="bg-vibrant-blue text-vibrant-blue-foreground">
 							<User className="h-5 w-5" />
 						</AvatarFallback>
 					</Avatar>
 					<div>
 						<h1 className="text-lg font-semibold">
-							{getGreeting()} Alex!
+							{getGreeting()} {greetingName}!
 						</h1>
 						<p className="text-sm text-muted-foreground">
 							{currentDate}

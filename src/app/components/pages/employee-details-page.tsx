@@ -310,6 +310,8 @@ export function EmployeeDetailsPage({
 
     // Edit form states
     const [contactFormData, setContactFormData] = useState({
+        firstName: employee?.firstName || '',
+        lastName: employee?.lastName || '',
         email: employee?.email || '',
         phone: employee?.phone || '',
         birthday: employee?.birthday || '',
@@ -741,6 +743,8 @@ export function EmployeeDetailsPage({
 
     const handleUpdateContact = () => {
         if (
+            !contactFormData.firstName ||
+            !contactFormData.lastName ||
             !contactFormData.email ||
             !contactFormData.phone ||
             !contactFormData.birthday ||
@@ -759,6 +763,8 @@ export function EmployeeDetailsPage({
         void (async () => {
             const didUpdate = await updateEmployeeOnApi(
                 {
+                    firstName: contactFormData.firstName.trim(),
+                    lastName: contactFormData.lastName.trim(),
                     email: contactFormData.email.trim(),
                     phone: contactFormData.phone,
                     birthday: contactFormData.birthday,
@@ -1444,28 +1450,37 @@ export function EmployeeDetailsPage({
                                         <ChevronDown className="h-4 w-4 text-muted-foreground" />
                                     )}
                                 </CollapsibleTrigger>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    disabled={!isContactOpen}
-                                    onClick={() => {
-                                        setContactFormData({
-                                            email: employee.email || '',
-                                            phone: employee.phone || '',
-                                            birthday: employee.birthday || '',
-                                            gender: employee.gender || 'Male',
-                                            nationality:
-                                                employee.nationality || '',
-                                            maritalStatus:
-                                                employee.maritalStatus ||
-                                                'Single',
-                                            address: employee.address || '',
-                                        })
-                                        setShowEditContactDialog(true)
-                                    }}
-                                >
-                                    <Edit className="h-4 w-4" />
-                                </Button>
+                                {currentUserRole === 'admin' ? (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        disabled={!isContactOpen}
+                                        onClick={() => {
+                                            setContactFormData({
+                                                firstName:
+                                                    employee.firstName || '',
+                                                lastName:
+                                                    employee.lastName || '',
+                                                email: employee.email || '',
+                                                phone: employee.phone || '',
+                                                birthday:
+                                                    employee.birthday || '',
+                                                gender:
+                                                    employee.gender || 'Male',
+                                                nationality:
+                                                    employee.nationality || '',
+                                                maritalStatus:
+                                                    employee.maritalStatus ||
+                                                    'Single',
+                                                address:
+                                                    employee.address || '',
+                                            })
+                                            setShowEditContactDialog(true)
+                                        }}
+                                    >
+                                        <Edit className="h-4 w-4" />
+                                    </Button>
+                                ) : null}
                             </div>
                         </CardHeader>
                         <CollapsibleContent>
@@ -1811,6 +1826,32 @@ export function EmployeeDetailsPage({
                     </DialogHeader>
 
                     <div className="space-y-4">
+                        <div>
+                            <Label htmlFor="edit-firstName">First Name *</Label>
+                            <Input
+                                id="edit-firstName"
+                                value={contactFormData.firstName}
+                                onChange={e =>
+                                    setContactFormData({
+                                        ...contactFormData,
+                                        firstName: e.target.value,
+                                    })
+                                }
+                            />
+                        </div>
+                        <div>
+                            <Label htmlFor="edit-lastName">Last Name *</Label>
+                            <Input
+                                id="edit-lastName"
+                                value={contactFormData.lastName}
+                                onChange={e =>
+                                    setContactFormData({
+                                        ...contactFormData,
+                                        lastName: e.target.value,
+                                    })
+                                }
+                            />
+                        </div>
                         <div>
                             <Label htmlFor="edit-email">Email *</Label>
                             <Input

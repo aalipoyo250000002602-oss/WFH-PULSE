@@ -1969,14 +1969,19 @@ export default function App() {
             const rememberedEmail =
                 window.localStorage.getItem('wfh:lastBiometricEmail') ||
                 undefined
+            if (!rememberedEmail) {
+                toast.error('Biometric sign in failed', {
+                    description:
+                        'No remembered account found on this device. Sign in with email and password first.',
+                })
+                return
+            }
             const response = await fetch(`${apiBaseUrl}/auth/biometric-login`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(
-                    rememberedEmail ? { email: rememberedEmail } : {}
-                ),
+                body: JSON.stringify({ email: rememberedEmail }),
             })
 
             let payload:
@@ -2476,6 +2481,9 @@ export default function App() {
                         employmentOptions={employmentOptions}
                         onUpdateProfile={updateSelfProfile}
                         leaveCreditTypes={leaveCreditTypes}
+                        canEditContactInformation={
+                            authSession?.role === 'admin'
+                        }
                         canEditLeaveCreditTypes={authSession?.role === 'admin'}
                         onUpdateLeaveCreditTypes={updateLeaveCreditTypes}
                     />
@@ -2513,8 +2521,15 @@ export default function App() {
     return (
         <div className="min-h-screen bg-background text-foreground">
             <div className="max-w-md mx-auto bg-background shadow-2xl min-h-screen relative">
+                {/* Use the current profile name so header greeting reflects the signed-in user. */}
                 <AttendanceHeader
                     isDarkMode={isDarkMode}
+                    firstName={
+                        userProfile.name && userProfile.name !== 'N/A'
+                            ? userProfile.name.trim().split(/\s+/)[0]
+                            : undefined
+                    }
+                    profileImageUrl={userProfile.profilePicture}
                     onToggleTheme={handleToggleTheme}
                     onLogout={handleLogout}
                 />

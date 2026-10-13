@@ -705,6 +705,15 @@ export function registerEmployeeCoreRoutes(app, deps) {
                 return res.status(400).json({ error: 'Invalid employeeId' })
             }
 
+            const isUpdatingName =
+                Object.prototype.hasOwnProperty.call(payload, 'firstName') ||
+                Object.prototype.hasOwnProperty.call(payload, 'lastName')
+            if (isUpdatingName && req.auth.role !== 'admin') {
+                return res.status(403).json({
+                    error: 'Only admin users can update employee first and last name',
+                })
+            }
+
             const fieldMap = {
                 firstName: 'first_name',
                 lastName: 'last_name',

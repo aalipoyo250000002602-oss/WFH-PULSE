@@ -152,6 +152,7 @@ interface SettingsPageProps {
         name: string
         defaultLimitDays: number
     }>
+    canEditContactInformation: boolean
     canEditLeaveCreditTypes: boolean
     onUpdateLeaveCreditTypes: (
         updates: Array<{ leaveTypeId: string; defaultLimitDays: number }>
@@ -173,6 +174,7 @@ export function SettingsPage({
     employmentOptions,
     onUpdateProfile,
     leaveCreditTypes,
+    canEditContactInformation,
     canEditLeaveCreditTypes,
     onUpdateLeaveCreditTypes,
 }: SettingsPageProps) {
@@ -398,6 +400,11 @@ export function SettingsPage({
     }
 
     const handleUpdateContact = async () => {
+        if (!canEditContactInformation) {
+            toast.error('Only admin users can edit contact information')
+            return
+        }
+
         if (
             !contactFormData.email ||
             !contactFormData.phone ||
@@ -508,6 +515,11 @@ export function SettingsPage({
     }
 
     const handleClearContactDetails = async () => {
+        if (!canEditContactInformation) {
+            toast.error('Only admin users can edit contact information')
+            return
+        }
+
         await withProfileSaving(async () => {
             const didUpdate = await onUpdateProfile({
                 phone: null,
@@ -1013,20 +1025,24 @@ export function SettingsPage({
                                             <Mail className="h-4 w-4 text-vibrant-blue" />
                                             Contact Information
                                         </h3>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => {
-                                                setContactFormData({
-                                                    ...buildContactFormData(
-                                                        localProfile
-                                                    ),
-                                                })
-                                                setShowEditContactDialog(true)
-                                            }}
-                                        >
-                                            <Edit className="h-4 w-4" />
-                                        </Button>
+                                        {canEditContactInformation ? (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => {
+                                                    setContactFormData({
+                                                        ...buildContactFormData(
+                                                            localProfile
+                                                        ),
+                                                    })
+                                                    setShowEditContactDialog(
+                                                        true
+                                                    )
+                                                }}
+                                            >
+                                                <Edit className="h-4 w-4" />
+                                            </Button>
+                                        ) : null}
                                     </div>
                                     <div className="space-y-3">
                                         <div className="flex items-start gap-3">

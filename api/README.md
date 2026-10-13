@@ -108,6 +108,17 @@ token; only audit metadata is sent to the RPC. The SQL handler never receives
 or stores the new password. Production AI and Slack handlers are defined in
 `database/08_external_integrations.sql` and read secrets only from Supabase
 Vault: `gemini_api_key` and `slack_attendance_webhook`.
+Use the project's **Integrations > Vault > Secrets** page, not **Edge Functions
+> Secrets**. Edge Function environment variables are a separate secret store
+and are not available to `vault.decrypted_secrets` in PostgreSQL. Add the same
+two names and values directly in Vault; do not put values in SQL source or chat.
+Check configuration without revealing secret contents:
+
+```sql
+SELECT name FROM vault.secrets
+WHERE name IN ('gemini_api_key', 'slack_attendance_webhook');
+```
+
 Until those entries are configured, AI returns 503 so the built-in planner
 fallback remains available, and the Slack trigger safely skips delivery. Slack
 events are queued post-commit with `pg_net`; asynchronous delivery results are
