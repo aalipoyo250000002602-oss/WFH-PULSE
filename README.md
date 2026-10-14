@@ -17,6 +17,7 @@ Choose your path:
 
 - [ ] **Web app (browser/dev mode)**
 - [ ] **Android emulator app (Capacitor)**
+- [ ] **iOS app (Capacitor + Xcode on macOS)**
 
 ### Option A: Run as Web App
 
@@ -62,6 +63,32 @@ corepack pnpm run android:run:local:emu
 
 The emulator reaches the API on your computer through `10.0.2.2:8787`; the API connects to PostgreSQL using `database/.env.local.postgres`. The app does not connect directly to PostgreSQL.
 
+### Option C: Prepare and Build as iOS App
+
+Prepare iOS assets and native project files:
+
+```powershell
+corepack pnpm run ios:sync
+```
+
+Use local env assets for iOS instead:
+
+```powershell
+corepack pnpm run ios:sync:local
+```
+
+Open the native iOS project in Xcode:
+
+```powershell
+corepack pnpm run ios:open
+```
+
+Then on a Mac in Xcode:
+
+- Open `ios/App/App.xcworkspace`
+- Select an iPhone simulator for debug testing, or a real device for release signing
+- Use **Product > Archive** to create a distributable iOS build (IPA/TestFlight/App Store)
+
 ## Script Shortcuts
 
 | Script                                    | What it does                                                                       |
@@ -82,6 +109,9 @@ The emulator reaches the API on your computer through `10.0.2.2:8787`; the API c
 | `corepack pnpm run android:run:local`     | Build with `.env.local` + sync + deploy to first connected Android device/emulator |
 | `corepack pnpm run android:run:emu`       | Build + sync + deploy to `emulator-5554`                                           |
 | `corepack pnpm run android:run:local:emu` | Build locally configured assets + deploy to `emulator-5554`                        |
+| `corepack pnpm run ios:sync`              | Build with `.env.prod` + add/sync iOS Capacitor project                             |
+| `corepack pnpm run ios:sync:local`        | Build with `.env.local` + add/sync iOS Capacitor project                            |
+| `corepack pnpm run ios:open`              | Open `ios/` project in Xcode (macOS)                                                |
 | `corepack pnpm run api:dev:local`         | Starts the API with local PostgreSQL explicitly selected                           |
 | `corepack pnpm run android:open`          | Open `android/` project in Android Studio                                          |
 
@@ -107,7 +137,8 @@ src/                 React app source
 src/app/components/  UI and page modules
 src/assets/          Web assets used by UI/PDF/login/reporting
 android/             Capacitor Android native project
-scripts/             PowerShell helpers for Android run/sync/open
+ios/                 Capacitor iOS native project (generated after ios:sync)
+scripts/             PowerShell helpers for Android and iOS sync/open workflows
 ```
 
 ## Demo GIF
@@ -158,6 +189,17 @@ If your shell still points to Java 8, set Android Studio JBR first:
 $env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
 $env:Path="$env:JAVA_HOME\bin;$env:Path"
 ```
+
+</details>
+
+## iOS Notes
+
+<details>
+<summary>Can I build an iOS IPA on Windows?</summary>
+
+No. Apple signing and IPA archive export require Xcode on macOS.
+
+You can still run `corepack pnpm run ios:sync` on Windows to keep web assets and Capacitor iOS files in sync, then open/build on a Mac.
 
 </details>
 

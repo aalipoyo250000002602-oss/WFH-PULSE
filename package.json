@@ -31,6 +31,10 @@
         "android:apk:prod:raw": "powershell -ExecutionPolicy Bypass -File ./scripts/android-build-prod-apk.ps1",
         "android:apk:prod": "pnpm.cmd run exec:prod -- android:apk:prod:raw",
         "android:open": "powershell -ExecutionPolicy Bypass -File ./scripts/android-open.ps1",
+        "ios:sync:raw": "powershell -ExecutionPolicy Bypass -File ./scripts/ios-sync.ps1",
+        "ios:sync": "pnpm.cmd run exec:prod -- ios:sync:raw",
+        "ios:sync:local": "pnpm.cmd run exec:local -- ios:sync:raw",
+        "ios:open": "powershell -ExecutionPolicy Bypass -File ./scripts/ios-open.ps1",
         "android:build:Pixel7": "pnpm.cmd run android:run --target Pixel_7",
         "android:build:Pixel10Pro": "pnpm.cmd run android:run --target Pixel_10_Pro",
         "android:full": "powershell -ExecutionPolicy Bypass -Command \"pnpm.cmd run build; pnpm.cmd run android:sync; pnpm.cmd run android:run:auto\"",
@@ -67,8 +71,9 @@
     "dependencies": {
         "@aparajita/capacitor-biometric-auth": "^10.0.0",
         "@aparajita/capacitor-secure-storage": "8.0.1",
-        "@capacitor/android": "^8.4.2",
-        "@capacitor/core": "^8.4.2",
+        "@capacitor/android": "^8.5.3",
+        "@capacitor/core": "^8.5.3",
+        "@capacitor/ios": "^8.5.3",
         "@emotion/react": "11.14.0",
         "@emotion/styled": "11.14.1",
         "@mui/icons-material": "7.3.5",
@@ -134,7 +139,7 @@
         "zod": "^3.25.76"
     },
     "devDependencies": {
-        "@capacitor/cli": "^8.4.2",
+        "@capacitor/cli": "^8.5.3",
         "@tailwindcss/vite": "4.1.12",
         "@vitejs/plugin-react": "4.7.0",
         "newman": "^6.2.1",
