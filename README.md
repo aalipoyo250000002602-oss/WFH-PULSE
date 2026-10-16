@@ -13,6 +13,10 @@ Interactive project guide for local web development and Android simulator runs.
 
 ## Quick Start
 
+Use Node.js 22 or newer (required by Capacitor 8). The `packageManager` field
+pins pnpm to 10.32.1 so Corepack and CI use the same version instead of
+automatically selecting the latest pnpm release.
+
 Choose your path:
 
 - [ ] **Web app (browser/dev mode)**
@@ -104,9 +108,21 @@ corepack pnpm run ios:open
 
 Then on a Mac in Xcode:
 
-- Open `ios/App/App.xcworkspace`
+- Open `ios/App/App.xcodeproj` (this project uses Swift Package Manager, not CocoaPods)
 - Select an iPhone simulator for debug testing, or a real device for release signing
 - Use **Product > Archive** to create a distributable iOS build (IPA/TestFlight/App Store)
+
+The [iOS simulator workflow](.github/workflows/ios.yml) runs on pushes and pull
+requests to `main`, and can also be started manually. It uses Node 22 and the
+pinned pnpm version, builds the web assets with relative paths and the production
+API URL, runs `cap sync ios`, then builds the `App` scheme for a generic iOS
+Simulator without signing. macOS native dependencies are included in
+`pnpm-workspace.yaml`.
+
+This is a compile check, not an IPA release or native test run: the project has no
+iOS test target yet. Push builds use the `VITE_SUPABASE_PUBLISHABLE_KEY` repository
+secret; fork pull requests can compile without that secret but cannot authenticate
+at runtime.
 
 ## Script Shortcuts
 

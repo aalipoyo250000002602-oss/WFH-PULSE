@@ -1,15 +1,20 @@
-name: iOS starter workflow
+name: iOS simulator build
 
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    name: Build and Test default scheme using any available iPhone simulator
+    name: Build Capacitor app for iOS Simulator
     runs-on: macos-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -18,86 +23,33 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
 
-      - name: Enable Corepack
-        run: corepack enable
+      - name: Setup pinned pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
-        # If this repo uses npm instead of pnpm, replace with:
-        # run: npm ci
 
-      - name: Install CocoaPods dependencies
-        working-directory: ios
-        run: |
-          sudo gem install cocoapods -v '>= 1.11' || true
-          pod install --repo-update
-
-      - name: Set Default Scheme
-        run: |
-          set -euo pipefail
-
-          ws=$(find . -maxdepth 3 -name '*.xcworkspace' -print -quit || true)
-          proj=$(find . -maxdepth 3 -name '*.xcodeproj' -print -quit || true)
-
-          if [ -n "$ws" ]; then
-            echo "Found workspace: $ws"
-            filetype_parameter="workspace"
-            file_to_build="$ws"
-            xcode_cmd=(xcodebuild -workspace "$ws" -list -json)
-          elif [ -n "$proj" ]; then
-            echo "Found project: $proj"
-            filetype_parameter="project"
-            file_to_build="$proj"
-            xcode_cmd=(xcodebuild -project "$proj" -list -json)
-          else
-            echo "::error::No .xcworkspace or .xcodeproj found (searched maxdepth 3). Add the Xcode project or update the workflow's working-directory."
-            exit 1
-          fi
-
-          scheme_list=$("${xcode_cmd[@]}" 2>/dev/null | tr -d '\n' || true)
-
-          if [ -z "$scheme_list" ]; then
-            echo "::error::xcodebuild returned empty output when listing schemes for $file_to_build"
-            echo "Raw xcodebuild run (stderr+stdout):"
-            "${xcode_cmd[@]}" || true
-            exit 1
-          fi
-
-          default=$(echo "$scheme_list" | ruby -e "require 'json'; j=JSON.parse(STDIN.read); puts (j.dig('workspace','schemes') || j.dig('project','schemes') || j.dig('project','targets'))&.first")
-
-          if [ -z "$default" ]; then
-            echo "::error::Unable to determine default scheme from xcodebuild output for $file_to_build"
-            echo "$scheme_list"
-            exit 1
-          fi
-
-          echo "$default" > default
-          echo "$filetype_parameter" > filetype_parameter
-          echo "$file_to_build" > file_to_build
-          echo "Using default scheme: $default"
-
-      - name: Build
+      - name: Build web assets
         env:
-          platform: iOS Simulator
-        run: |
-          set -euo pipefail
-          device=$(xcrun xctrace list devices 2>&1 | grep -oE 'iPhone.*?[^\\(]+' | head -1 | sed -e 's/ Simulator$//' | awk '{$1=$1;print}')
-          scheme=$(cat default)
-          filetype_parameter=$(cat filetype_parameter)
-          file_to_build=$(cat file_to_build)
-          file_to_build=$(echo "$file_to_build" | awk '{$1=$1;print}')
-          xcodebuild build-for-testing -scheme "$scheme" -"$filetype_parameter" "$file_to_build" -destination "platform=iOS Simulator,name=$device"
+          VITE_BASE_PATH: ./
+          VITE_API_BASE_URL: https://tuypfaqcqsxzuswiglyw.supabase.co/rest/v1/
+          VITE_API_BASE_URL_ANDROID: https://tuypfaqcqsxzuswiglyw.supabase.co/rest/v1/
+          VITE_SUPABASE_URL: https://tuypfaqcqsxzuswiglyw.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: pnpm run build
 
-      - name: Test
-        env:
-          platform: iOS Simulator
+      - name: Sync Capacitor and Swift packages
+        run: pnpm exec cap sync ios
+
+      - name: Build iOS Simulator app
         run: |
           set -euo pipefail
-          device=$(xcrun xctrace list devices 2>&1 | grep -oE 'iPhone.*?[^\\(]+' | head -1 | sed -e 's/ Simulator$//' | awk '{$1=$1;print}')
-          scheme=$(cat default)
-          filetype_parameter=$(cat filetype_parameter)
-          file_to_build=$(cat file_to_build)
-          file_to_build=$(echo "$file_to_build" | awk '{$1=$1;print}')
-          xcodebuild test-without-building -scheme "$scheme" -"$filetype_parameter" "$file_to_build" -destination "platform=iOS Simulator,name=$device"
+          xcodebuild build \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/ios-build" \
+            CODE_SIGNING_ALLOWED=NO

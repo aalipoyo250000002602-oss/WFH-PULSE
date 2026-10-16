@@ -7,6 +7,7 @@ allowBuilds:
     esbuild: true
 supportedArchitectures:
     os:
+        - darwin
         - linux
         - win32
     cpu:
