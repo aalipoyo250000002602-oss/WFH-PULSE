@@ -124,9 +124,33 @@ has no iOS test target yet. Push builds use the `VITE_SUPABASE_PUBLISHABLE_KEY` 
 secret; fork pull requests can compile without that secret but cannot authenticate
 at runtime.
 
+### Download an Unsigned IPA (No Apple Signing Secrets)
+
+You do not need a Mac or a paid Apple Developer membership to build and download
+this artifact: GitHub's macOS runner builds it. Keep the existing
+`VITE_SUPABASE_PUBLISHABLE_KEY` repository secret for the production API; no Apple
+certificate, certificate password, or provisioning profile is needed.
+
+1. Open **Actions > iOS build > Run workflow** and select **main**.
+2. Enable **Build an unsigned IPA for external signing**, leaving the signed
+   Ad Hoc option unchecked.
+3. Download **WFH-Pulse-Unsigned-\<run number\>** from the successful run's
+   **Artifacts** section. Unzip the artifact download to obtain `WFH-Pulse-Unsigned.ipa`.
+
+The workflow archives an unsigned Release app for physical iOS devices, verifies
+the platform and ARM64 executable, and packages it as `Payload/App.app` inside
+the IPA. It does not use `xcodebuild -exportArchive`, which requires signing for
+device distribution. Artifacts expire after 7 days.
+
+**This IPA is not directly installable.** Sign it afterward with a compatible
+Windows sideloading tool and your Apple ID. Free-account signing is subject to
+Apple's device/app restrictions and generally requires re-signing every 7 days.
+This skips signing during the CI build; it does not bypass iOS signature checks.
+The signed Ad Hoc option below remains available for registered-device distribution.
+
 ### Download a Signed Ad Hoc IPA
 
-IPA export requires an Apple Developer Program membership, an **Apple Distribution**
+Signed IPA export requires an Apple Developer Program membership, an **Apple Distribution**
 certificate exported as a password-protected `.p12` **including its private key**,
 and an **Ad Hoc provisioning profile** for `com.wfh.pulse`. The profile must include
 that certificate and the UDIDs of the iPhones you want to install on.
