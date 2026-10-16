@@ -118,7 +118,7 @@ jobs:
             exit 1
           fi
           executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")
-          lipo -verify_arch arm64 "$app/$executable"
+          lipo "$app/$executable" -verify_arch arm64
           packaging="$RUNNER_TEMP/ios-unsigned/package"
           mkdir -p "$packaging/Payload"
           ditto "$app" "$packaging/Payload/App.app"
