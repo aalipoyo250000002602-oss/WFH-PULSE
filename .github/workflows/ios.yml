@@ -1,4 +1,4 @@
-name: iOS simulator build
+name: iOS build
 
 on:
   push:
@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
+    inputs:
+      export_ipa:
+        description: Export a signed Ad Hoc IPA (requires Apple signing secrets)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -14,11 +19,31 @@ jobs:
   build:
     name: Build Capacitor app for iOS Simulator
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate IPA configuration
+        if: github.event_name == 'workflow_dispatch' && inputs.export_ipa
+        env:
+          IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          IOS_ADHOC_PROFILE_BASE64: ${{ secrets.IOS_ADHOC_PROFILE_BASE64 }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo "::error::IPA export is only supported from main."
+            exit 1
+          fi
+          for name in IOS_DISTRIBUTION_CERTIFICATE_BASE64 IOS_DISTRIBUTION_CERTIFICATE_PASSWORD IOS_ADHOC_PROFILE_BASE64 VITE_SUPABASE_PUBLISHABLE_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Set the $name repository secret before exporting an IPA."
+              exit 1
+            fi
+          done
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -53,3 +78,118 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/ios-build" \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Install Ad Hoc signing credentials
+        if: github.event_name == 'workflow_dispatch' && inputs.export_ipa
+        env:
+          IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          IOS_ADHOC_PROFILE_BASE64: ${{ secrets.IOS_ADHOC_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          signing_dir="$RUNNER_TEMP/ios-signing"
+          mkdir -p "$signing_dir"
+          printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_BASE64" | base64 --decode > "$signing_dir/certificate.p12"
+          printf '%s' "$IOS_ADHOC_PROFILE_BASE64" | base64 --decode > "$signing_dir/profile.mobileprovision"
+          security cms -D -i "$signing_dir/profile.mobileprovision" > "$signing_dir/profile.plist"
+
+          team_id=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$signing_dir/profile.plist")
+          profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$signing_dir/profile.plist")
+          app_prefix=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationIdentifierPrefix:0' "$signing_dir/profile.plist")
+          app_id=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$signing_dir/profile.plist")
+          debug_allowed=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:get-task-allow' "$signing_dir/profile.plist")
+          first_device=$(/usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices:0' "$signing_dir/profile.plist")
+          if [[ ! "$team_id" =~ ^[A-Z0-9]{10}$ || ! "$profile_uuid" =~ ^[A-Fa-f0-9-]{36}$ ||
+                "$app_id" != "$app_prefix.com.wfh.pulse" || "$debug_allowed" != false || -z "$first_device" ]]; then
+            echo "::error::Provide an Ad Hoc distribution profile for com.wfh.pulse with registered devices."
+            exit 1
+          fi
+
+          keychain_path="$signing_dir/build.keychain-db"
+          keychain_password=$(openssl rand -hex 32)
+          echo "::add-mask::$keychain_password"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$signing_dir/certificate.p12" -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          identities=$(security find-identity -v -p codesigning "$keychain_path")
+          identity=$(printf '%s\n' "$identities" | awk '/"(Apple|iPhone) Distribution:/ {print $2}')
+          if [[ ! "$identity" =~ ^[A-Fa-f0-9]{40}$ ]]; then
+            echo "::error::The P12 must contain exactly one valid Apple Distribution identity and its private key."
+            exit 1
+          fi
+
+          profiles_dir="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+          mkdir -p "$profiles_dir"
+          cp "$signing_dir/profile.mobileprovision" "$profiles_dir/wfh-pulse-ci.mobileprovision"
+          {
+            echo "IOS_TEAM_ID=$team_id"
+            echo "IOS_PROFILE_UUID=$profile_uuid"
+            echo "IOS_SIGNING_IDENTITY=$identity"
+          } >> "$GITHUB_ENV"
+
+          options="$signing_dir/ExportOptions.plist"
+          plutil -create xml1 "$options"
+          /usr/libexec/PlistBuddy -c 'Add :method string release-testing' "$options"
+          /usr/libexec/PlistBuddy -c 'Add :destination string export' "$options"
+          /usr/libexec/PlistBuddy -c 'Add :signingStyle string manual' "$options"
+          /usr/libexec/PlistBuddy -c "Add :teamID string $team_id" "$options"
+          /usr/libexec/PlistBuddy -c "Add :signingCertificate string $identity" "$options"
+          /usr/libexec/PlistBuddy -c 'Add :provisioningProfiles dict' "$options"
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:com.wfh.pulse string $profile_uuid" "$options"
+          /usr/libexec/PlistBuddy -c 'Add :manageAppVersionAndBuildNumber bool false' "$options"
+
+      - name: Archive iOS app
+        if: github.event_name == 'workflow_dispatch' && inputs.export_ipa
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/ios-release/App.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/ios-release-derived" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="$IOS_TEAM_ID" \
+            CODE_SIGN_IDENTITY="$IOS_SIGNING_IDENTITY" \
+            PROVISIONING_PROFILE_SPECIFIER="$IOS_PROFILE_UUID"
+
+      - name: Export Ad Hoc IPA
+        if: github.event_name == 'workflow_dispatch' && inputs.export_ipa
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/ios-release/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ios-signing/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/ios-release/export"
+          shopt -s nullglob
+          ipas=("$RUNNER_TEMP/ios-release/export/"*.ipa)
+          if [[ ${#ipas[@]} -ne 1 ]]; then
+            echo "::error::Expected exactly one exported IPA."
+            exit 1
+          fi
+          unzip -t "${ipas[0]}" > /dev/null
+
+      - name: Upload iOS IPA
+        if: github.event_name == 'workflow_dispatch' && inputs.export_ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: WFH-Pulse-AdHoc-${{ github.run_number }}
+          path: ${{ runner.temp }}/ios-release/export/*.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Clean up signing credentials
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.export_ipa
+        run: |
+          set -euo pipefail
+          signing_dir="$RUNNER_TEMP/ios-signing"
+          rm -f "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/wfh-pulse-ci.mobileprovision"
+          rm -f "$signing_dir/certificate.p12" "$signing_dir/profile.mobileprovision" "$signing_dir/profile.plist" "$signing_dir/ExportOptions.plist"
+          if [[ -f "$signing_dir/build.keychain-db" ]]; then
+            security delete-keychain "$signing_dir/build.keychain-db"
+          fi

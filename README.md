@@ -119,10 +119,51 @@ API URL, runs `cap sync ios`, then builds the `App` scheme for a generic iOS
 Simulator without signing. macOS native dependencies are included in
 `pnpm-workspace.yaml`.
 
-This is a compile check, not an IPA release or native test run: the project has no
-iOS test target yet. Push builds use the `VITE_SUPABASE_PUBLISHABLE_KEY` repository
+By default this is a compile check, not an IPA release or native test run: the project
+has no iOS test target yet. Push builds use the `VITE_SUPABASE_PUBLISHABLE_KEY` repository
 secret; fork pull requests can compile without that secret but cannot authenticate
 at runtime.
+
+### Download a Signed Ad Hoc IPA
+
+IPA export requires an Apple Developer Program membership, an **Apple Distribution**
+certificate exported as a password-protected `.p12` **including its private key**,
+and an **Ad Hoc provisioning profile** for `com.wfh.pulse`. The profile must include
+that certificate and the UDIDs of the iPhones you want to install on.
+
+Under **Settings > Secrets and variables > Actions**, add these repository secrets:
+
+| Secret | Value |
+| --- | --- |
+| `IOS_DISTRIBUTION_CERTIFICATE_BASE64` | Base64-encoded distribution `.p12` file |
+| `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD` | Password protecting the `.p12` |
+| `IOS_ADHOC_PROFILE_BASE64` | Base64-encoded Ad Hoc `.mobileprovision` file |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Production Supabase publishable key, also used by Pages |
+
+On Windows, copy each file's Base64 value directly to the clipboard, then paste it
+into its GitHub secret (do not commit the files or encoded values):
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\path\distribution.p12')) | Set-Clipboard
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\path\adhoc.mobileprovision')) | Set-Clipboard
+```
+
+Run the two commands separately, saving the corresponding secret after each one.
+
+1. Open **Actions > iOS build > Run workflow**.
+2. Select **main** and enable **Export a signed Ad Hoc IPA**.
+3. After the run succeeds, download **WFH-Pulse-AdHoc-\<run number\>** from its
+   **Artifacts** section and unzip it to obtain the `.ipa`. Artifacts expire after 7 days.
+
+The workflow derives the team and profile identifiers from the supplied profile,
+creates a temporary signing keychain, archives the physical-device `App` scheme in
+Release mode, and generates the export plist using Xcode's `release-testing`
+(Ad Hoc) method. Export failures or a missing IPA fail the job. Signing credentials
+are cleaned up even if the build fails; only the IPA is uploaded.
+
+Ad Hoc IPAs install only on devices registered in the profile. They are not
+simulator builds, App Store/TestFlight submissions, or universally installable apps.
+Normal push/PR builds do not import Apple signing secrets or export an IPA.
 
 ## Script Shortcuts
 
