@@ -15,6 +15,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+        # If this repo uses npm instead of pnpm, replace with:
+        # run: npm ci
+
+      - name: Install CocoaPods dependencies
+        working-directory: ios
+        run: |
+          sudo gem install cocoapods -v '>= 1.11' || true
+          pod install --repo-update
+
       - name: Set Default Scheme
         run: |
           set -euo pipefail
