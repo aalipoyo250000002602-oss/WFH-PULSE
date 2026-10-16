@@ -13,14 +13,23 @@ permissions:
 
 concurrency:
     group: pages
-    cancel-in-progress: true
+    cancel-in-progress: false
 
 jobs:
     build:
         runs-on: ubuntu-latest
+        env:
+            VITE_BASE_PATH: /WFH-PULSE/
+            VITE_API_BASE_URL: https://tuypfaqcqsxzuswiglyw.supabase.co/rest/v1/
+            VITE_API_BASE_URL_ANDROID: https://tuypfaqcqsxzuswiglyw.supabase.co/rest/v1/
+            VITE_SUPABASE_URL: https://tuypfaqcqsxzuswiglyw.supabase.co
+            VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
         steps:
             - name: Checkout
               uses: actions/checkout@v4
+
+            - name: Configure Pages
+              uses: actions/configure-pages@v5
 
             - name: Setup Node
               uses: actions/setup-node@v4
@@ -31,17 +40,18 @@ jobs:
               run: corepack enable
 
             - name: Install dependencies
-              run: corepack pnpm install
+              run: corepack pnpm install --frozen-lockfile
 
             - name: Build
-              env:
-                  VITE_BASE_PATH: /WFH-PULSE/
-                  VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
-                  VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
               run: |
-                  test -n "$VITE_API_BASE_URL"
-                  test -n "$VITE_SUPABASE_PUBLISHABLE_KEY"
+                  if [ -z "$VITE_SUPABASE_PUBLISHABLE_KEY" ]; then
+                    echo "::error::Set the VITE_SUPABASE_PUBLISHABLE_KEY repository secret to the production publishable key."
+                    exit 1
+                  fi
                   corepack pnpm run build
+
+            - name: Verify Pages build
+              run: node scripts/verify-pages-build.mjs
 
             - name: Upload Pages artifact
               uses: actions/upload-pages-artifact@v3

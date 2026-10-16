@@ -47,6 +47,25 @@ management, analytics, and payroll through the RPC in schema `api`.
 See `api/README.md` for deployment, verification, and external-service limits.
 Local development remains available through `pnpm.cmd run local:all`.
 
+### Deploy the Web App to GitHub Pages
+
+1. In repository **Settings > Pages > Build and deployment**, set **Source**
+   to **GitHub Actions**, not **Deploy from a branch**. Branch deployment serves
+   the source `index.html` and overwrites the compiled app, causing a blank page
+   with a `/src/main.tsx` 404.
+2. In **Settings > Secrets and variables > Actions**, set the repository secret
+   `VITE_SUPABASE_PUBLISHABLE_KEY` to the production project's **publishable**
+   key. Never use a Supabase secret or service-role key in the frontend.
+3. Push to `main`, or manually run **Deploy to GitHub Pages** from **Actions**.
+
+The [Pages workflow](.github/workflows/deploy-pages.yml) builds the app with
+`/WFH-PULSE/` asset paths and explicitly uses the production API
+`https://tuypfaqcqsxzuswiglyw.supabase.co/rest/v1/`. It does not depend on the
+ignored `.env.prod` file or the old `VITE_API_BASE_URL` repository secret.
+Only the compiled `dist` artifact is deployed. The workflow verifies the
+asset paths, production API URL, and publishable key before uploading it.
+Local development and native build configuration are unchanged.
+
 ### Option B: Run as Android App (Emulator)
 
 Start the local API (connected to local PostgreSQL) and web server in one terminal:
