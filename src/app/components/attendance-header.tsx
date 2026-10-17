@@ -57,8 +57,11 @@ export function AttendanceHeader({
 
 	return (
 		<>
-			<header className="fixed top-0 left-1/2 z-40 flex w-full max-w-md -translate-x-1/2 items-center justify-between border-b border-border bg-card p-4">
-				<div className="flex items-center gap-3">
+			<header
+				className="sticky top-0 z-40 flex w-full items-center justify-between gap-3 border-b border-border bg-card p-4"
+				style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))' }}
+			>
+				<div className="flex min-w-0 flex-1 items-center gap-3">
 					<Avatar className="h-10 w-10">
 						{profileImageUrl ? (
 							<AvatarImage
@@ -70,7 +73,7 @@ export function AttendanceHeader({
 							<User className="h-5 w-5" />
 						</AvatarFallback>
 					</Avatar>
-					<div>
+					<div className="min-w-0 break-words">
 						<h1 className="text-lg font-semibold">
 							{getGreeting()} {greetingName}!
 						</h1>
@@ -80,12 +83,13 @@ export function AttendanceHeader({
 					</div>
 				</div>
 
-				<div className="flex items-center gap-2">
+				<div className="flex shrink-0 items-center gap-2">
 					<Button
 						variant="outline"
 						size="icon"
 						onClick={onToggleTheme}
 						className="h-9 w-9"
+						aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
 					>
 						{isDarkMode ? (
 							<Sun className="h-4 w-4" />
@@ -98,6 +102,7 @@ export function AttendanceHeader({
 						size="icon"
 						onClick={handleLogoutClick}
 						className="h-9 w-9"
+						aria-label="Log out"
 					>
 						<LogOut className="h-4 w-4" />
 					</Button>
