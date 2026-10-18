@@ -1,5 +1,7 @@
 # WFH PULSE : EMPOWERING REMOTE TEAMS
 
+https://github.com/user-attachments/assets/380a547a-966d-46ae-96bd-371a25767ba8
+
 Interactive project guide for local web development and Android simulator runs.
 
 [![Vite](https://img.shields.io/badge/Vite-6.3.5-646CFF?logo=vite&logoColor=fff)](#)
