@@ -284,19 +284,25 @@ export default function App() {
         }
 
         try {
-            const [leave, adjustment, overtime] = await Promise.all([
+            const results = await Promise.allSettled([
                 loadCount('/hr/leave-requests'),
                 loadCount('/hr/adjustment-requests'),
                 loadCount('/hr/overtime-requests'),
             ])
-            setUnreadRequestCounts({ leave, adjustment, overtime })
+            const kinds = ['leave', 'adjustment', 'overtime'] as const
+            setUnreadRequestCounts(previous => {
+                const next = { ...previous }
+                results.forEach((result, index) => {
+                    if (result.status === 'fulfilled') {
+                        next[kinds[index]] = result.value
+                    } else {
+                        console.error(`Failed to load ${kinds[index]} notification count.`, result.reason)
+                    }
+                })
+                return next
+            })
         } catch (error) {
             console.error('Failed to load unread request counts.', error)
-            setUnreadRequestCounts({
-                leave: 0,
-                adjustment: 0,
-                overtime: 0,
-            })
         }
     }, [apiBaseUrl, authSession?.accessToken, authSession?.role])
 
@@ -309,20 +315,18 @@ export default function App() {
         const refreshInterval = window.setInterval(refreshCounts, 30_000)
 
         window.addEventListener('focus', refreshCounts)
-        window.addEventListener(
+        const requestEvents = [
             'wfh-pulse:leave-updated',
-            refreshCounts as EventListener
-        )
+            'wfh-pulse:overtime-updated',
+        ]
+        requestEvents.forEach(event => window.addEventListener(event, refreshCounts))
 
         return () => {
             window.clearInterval(refreshInterval)
             window.removeEventListener('focus', refreshCounts)
-            window.removeEventListener(
-                'wfh-pulse:leave-updated',
-                refreshCounts as EventListener
-            )
+            requestEvents.forEach(event => window.removeEventListener(event, refreshCounts))
         }
-    }, [loadUnreadRequestCounts])
+    }, [loadUnreadRequestCounts, currentPage])
 
     // Settings state
     const [workingHours, setWorkingHours] = useState({

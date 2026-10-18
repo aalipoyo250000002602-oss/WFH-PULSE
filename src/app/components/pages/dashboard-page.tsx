@@ -1,4 +1,5 @@
-﻿import { useState, useEffect, useMemo, useCallback } from 'react'
+﻿import { saveReport } from '../../save-report'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { apiFetch as fetch } from '../../api-fetch.mjs'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Badge } from '../ui/badge'
@@ -807,7 +808,7 @@ export function DashboardPage({
         }
     }
 
-    const exportToCSV = () => {
+    const exportToCSV = async () => {
         const headers = [
             'Employee ID',
             'Last Name',
@@ -859,23 +860,14 @@ export function DashboardPage({
         ].join('\n')
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-        const link = document.createElement('a')
-        const url = URL.createObjectURL(blob)
-
-        link.setAttribute('href', url)
-        link.setAttribute(
-            'download',
-            `employee-status-${new Date().toISOString().split('T')[0]}.csv`
+        await saveReport(
+            blob,
+            `employee-status-${new Date().toISOString().split('T')[0]}.csv`,
+            'CSV report exported successfully'
         )
-        link.style.visibility = 'hidden'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-
-        toast.success('CSV report exported successfully')
     }
 
-    const exportToPDF = () => {
+    const exportToPDF = async () => {
         // Create a simple HTML representation for PDF
         const htmlContent = `
       <!DOCTYPE html>
@@ -970,20 +962,11 @@ export function DashboardPage({
     `
 
         const blob = new Blob([htmlContent], { type: 'text/html' })
-        const url = URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.setAttribute('href', url)
-        link.setAttribute(
-            'download',
-            `employee-status-${new Date().toISOString().split('T')[0]}.html`
+        await saveReport(
+            blob,
+            `employee-status-${new Date().toISOString().split('T')[0]}.html`,
+            'Report downloaded successfully'
         )
-        link.style.visibility = 'hidden'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        URL.revokeObjectURL(url)
-
-        toast.success('Report downloaded successfully')
     }
 
     const getStatusColor = (status: Employee['status']) => {
@@ -1578,6 +1561,7 @@ export function DashboardPage({
                                 Leave Requests
                                 <RequestNotificationBadge
                                     count={unreadRequestCounts.leave}
+                                    variant="dot"
                                 />
                             </CardTitle>
                             <div className="flex items-center gap-2">
@@ -1795,6 +1779,7 @@ export function DashboardPage({
                                 Adjustment Requests
                                 <RequestNotificationBadge
                                     count={unreadRequestCounts.adjustment}
+                                    variant="dot"
                                 />
                             </CardTitle>
                             <div className="flex items-center gap-2">
@@ -1915,6 +1900,7 @@ export function DashboardPage({
                                 Overtime Requests
                                 <RequestNotificationBadge
                                     count={unreadRequestCounts.overtime}
+                                    variant="dot"
                                 />
                             </CardTitle>
                             <div className="flex items-center gap-2">

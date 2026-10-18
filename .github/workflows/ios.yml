@@ -65,6 +65,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Test report downloads
+        run: node --test src/app/report-download.test.mjs
+
       - name: Build web assets
         env:
           VITE_BASE_PATH: ./

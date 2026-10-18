@@ -1,4 +1,5 @@
-﻿import { useState, useEffect } from 'react'
+﻿import { saveReport } from '../save-report'
+import { useState, useEffect } from 'react'
 import { Button } from './ui/button'
 import {
     Dialog,
@@ -69,7 +70,7 @@ export function EmployeeProfilePDFGenerator({
         convertImageToBase64()
     }, [])
 
-    const generateProfilePDF = () => {
+    const generateProfilePDF = async () => {
         const formatCurrency = (amount: number) => {
             return `Php ${amount.toLocaleString('en-US', {
                 minimumFractionDigits: 2,
@@ -442,20 +443,11 @@ export function EmployeeProfilePDFGenerator({
     `
 
         const blob = new Blob([htmlContent], { type: 'text/html' })
-        const url = URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.setAttribute('href', url)
-        link.setAttribute(
-            'download',
-            `employee-profile-${employee.id}-${new Date().toISOString().split('T')[0]}.html`
+        await saveReport(
+            blob,
+            `employee-profile-${employee.id}-${new Date().toISOString().split('T')[0]}.html`,
+            'Employee profile report downloaded successfully'
         )
-        link.style.visibility = 'hidden'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        URL.revokeObjectURL(url)
-
-        toast.success('Employee profile report downloaded successfully')
     }
 
     const handleAddCc = () => {

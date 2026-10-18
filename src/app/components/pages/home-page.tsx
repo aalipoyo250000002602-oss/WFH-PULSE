@@ -25,6 +25,7 @@ import {
     AttendanceAdjustmentRequest,
 } from '../attendance-details-data'
 import { toast } from 'sonner'
+import { getOvertimeSaveError } from '../../overtime-validation.mjs'
 
 interface HomePageProps {
     isClockedIn: boolean
@@ -790,10 +791,11 @@ export function HomePage({
 
             const payload = await response.json().catch(() => ({}))
             if (!response.ok) {
-                toast.error(payload?.error || 'Unable to save overtime request')
+                toast.error(getOvertimeSaveError(payload))
                 return false
             }
 
+            window.dispatchEvent(new CustomEvent('wfh-pulse:overtime-updated'))
             const savedRequest = mapApiOvertimeRequest(payload?.request)
             if (savedRequest) {
                 upsertOvertimeRequest(savedRequest)
@@ -839,6 +841,7 @@ export function HomePage({
 
             removeOvertimeRequest(requestId)
             setEditingOvertimeRequest(null)
+            window.dispatchEvent(new CustomEvent('wfh-pulse:overtime-updated'))
 
             if (onCalendarRefresh) {
                 await onCalendarRefresh()
@@ -875,6 +878,7 @@ export function HomePage({
                 return false
             }
 
+            window.dispatchEvent(new CustomEvent('wfh-pulse:overtime-updated'))
             const revokedRequest = mapApiOvertimeRequest(payload?.request)
             if (revokedRequest) {
                 upsertOvertimeRequest(revokedRequest)
@@ -1195,13 +1199,14 @@ export function HomePage({
                         className="pb-3 cursor-pointer hover:bg-accent/50 transition-colors"
                         onClick={() => setIsHolidaysOpen(!isHolidaysOpen)}
                     >
-                        <div className="flex items-center justify-between">
-                            <CardTitle className="flex items-center gap-2">
-                                <CalendarIcon className="h-5 w-5 text-vibrant-purple" />
+                        <div className="flex items-center justify-between gap-3">
+                            <CardTitle className="flex min-w-0 items-center gap-2 leading-snug">
+                                <CalendarIcon className="h-5 w-5 shrink-0 text-vibrant-purple" />
                                 Upcoming Holidays & Celebrations
                             </CardTitle>
                             <motion.div
                                 animate={{ rotate: isHolidaysOpen ? 180 : 0 }}
+                                className="shrink-0"
                                 transition={{
                                     duration: 0.3,
                                     ease: 'easeInOut',
@@ -1220,6 +1225,9 @@ export function HomePage({
                                 </Button>
                             </motion.div>
                         </div>
+                        <p className="text-xs text-muted-foreground">
+                            Showing today and the next 6 months only.
+                        </p>
                     </CardHeader>
                     <AnimatePresence initial={false}>
                         {isHolidaysOpen && (

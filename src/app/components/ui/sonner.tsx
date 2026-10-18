@@ -10,6 +10,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
         <Sonner
             theme={theme as ToasterProps['theme']}
             className="toaster group"
+            // Keep notifications below the notch on phones and tablets.
+            offset={{ top: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}
+            mobileOffset={{ top: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}
             style={
                 {
                     '--normal-bg': 'var(--popover)',

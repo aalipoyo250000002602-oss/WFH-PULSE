@@ -7,7 +7,8 @@ import {
     Sparkles,
     WandSparkles,
 } from 'lucide-react'
-import { format, addDays, isWeekend } from 'date-fns'
+import { format, addMonths, startOfMonth } from 'date-fns'
+import { generateLeavePlans, filterLeavePlans } from '../leave-plans.mjs'
 import { toast } from 'sonner'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
@@ -94,11 +95,6 @@ function buildPlanKey(startDate: Date, endDate: Date) {
 }
 
 function buildFallbackAiInsight(plan: SuggestedPlan): PlanAiInsight {
-    const holidayHint =
-        plan.holidayNames.length > 0
-            ? `Registered holiday overlap: ${plan.holidayNames.join(', ')}.`
-            : 'No registered company holiday overlaps in this range.'
-
     const offset = plan.startDate.getMonth() % fallbackRegionalEvents.length
     const events = Array.from({ length: FALLBACK_EVENT_LIMIT }, (_, index) => {
         const eventIndex = (offset + index) % fallbackRegionalEvents.length
@@ -107,7 +103,6 @@ function buildFallbackAiInsight(plan: SuggestedPlan): PlanAiInsight {
 
     const bullets = [
         `Includes ${plan.weekendDays} weekend day${plan.weekendDays === 1 ? '' : 's'} to stretch your time away.`,
-        holidayHint,
     ]
 
     return {
@@ -127,6 +122,10 @@ export function SmartLeavePlanner({
 }: SmartLeavePlannerProps) {
     const [leaveTypeId, setLeaveTypeId] = useState('')
     const [hasGenerated, setHasGenerated] = useState(false)
+    const [monthFilter, setMonthFilter] = useState('all')
+    const [holidayFilter, setHolidayFilter] = useState('all')
+    const [sortBy, setSortBy] = useState('best')
+    const [page, setPage] = useState(0)
     const [selectedPlanKey, setSelectedPlanKey] = useState('')
     const [aiInsights, setAiInsights] = useState<Record<string, PlanAiInsight>>(
         {}
@@ -136,114 +135,41 @@ export function SmartLeavePlanner({
     const hasShownAiUnavailableToast = useRef(false)
 
     const selectedLeaveType = leaveTypes.find(type => type.id === leaveTypeId)
-    const holidayByDate = useMemo(
-        () => new Map(holidays.map(holiday => [holiday.date, holiday.name])),
-        [holidays]
-    )
     const canFetchLiveInsights = Boolean(apiBaseUrl && accessToken)
-
-    const plans = useMemo<SuggestedPlan[]>(() => {
-        if (!hasGenerated || !selectedLeaveType) {
-            return []
-        }
-
-        const requestedCredits = Math.max(
-            1,
-            Math.ceil(selectedLeaveType.credits / 2)
-        )
-        if (!Number.isInteger(requestedCredits) || requestedCredits < 1) {
-            return []
-        }
-        const holidayDateSet = new Set(
-            holidays.map(holiday => holiday.date).filter(Boolean)
-        )
-
-        const blockedRanges = requests
-            .filter(
-                request =>
-                    request.status === 'approved' ||
-                    request.status === 'pending'
-            )
-            .map(request => ({
-                start: request.startDateKey,
-                end: request.endDateKey,
-            }))
-
-        const today = new Date()
-        const candidates: SuggestedPlan[] = []
-        for (
-            let offset = 1;
-            offset <= 90 && candidates.length < 20;
-            offset += 1
-        ) {
-            const startDate = addDays(today, offset)
-            let endDate = startDate
-            let leaveCreditsUsed = 0
-            let spanDays = 0
-            const holidayNames: string[] = []
-            let weekendDays = 0
-
-            while (leaveCreditsUsed < requestedCredits && spanDays < 45) {
-                const currentDate = addDays(startDate, spanDays)
-                const currentDateKey = dateKey(currentDate)
-                const isWeekendDay = isWeekend(currentDate)
-                const isHolidayDay = holidayDateSet.has(currentDateKey)
-
-                if (isWeekendDay) {
-                    weekendDays += 1
-                } else if (!isHolidayDay) {
-                    leaveCreditsUsed += 1
-                }
-
-                const holidayName = holidayByDate.get(currentDateKey)
-                if (holidayName) {
-                    holidayNames.push(holidayName)
-                }
-
-                endDate = currentDate
-                spanDays += 1
+    const monthOptions = useMemo(() => {
+        const firstMonth = startOfMonth(new Date())
+        return Array.from({ length: 7 }, (_, index) => {
+            const date = addMonths(firstMonth, index)
+            return {
+                value: format(date, 'yyyy-MM'),
+                label: format(date, 'MMMM yyyy'),
             }
-
-            if (leaveCreditsUsed < requestedCredits) {
-                continue
-            }
-
-            const startKey = dateKey(startDate)
-            const endKey = dateKey(endDate)
-            const overlapsExistingRequest = blockedRanges.some(
-                range => startKey <= range.end && endKey >= range.start
-            )
-
-            if (overlapsExistingRequest) {
-                continue
-            }
-
-            candidates.push({
-                startDate,
-                endDate,
-                spanDays,
-                leaveCreditsUsed,
-                weekendDays,
-                holidayNames,
-            })
-        }
-
-        return candidates
-            .sort(
-                (a, b) =>
-                    b.weekendDays +
-                    b.holidayNames.length -
-                    (a.weekendDays + a.holidayNames.length)
-            )
-            .slice(0, 3)
-    }, [
-        hasGenerated,
-        holidayByDate,
-        holidays,
-        leaveTypeId,
-        requests,
-        selectedLeaveType,
-    ])
+        })
+    }, [])
+    const allPlans = useMemo<SuggestedPlan[]>(() => {
+        if (!hasGenerated || !selectedLeaveType) return []
+        return generateLeavePlans({
+            credits: selectedLeaveType.credits,
+            holidays,
+            requests,
+        })
+    }, [hasGenerated, selectedLeaveType, holidays, requests])
+    const matchingPlans = useMemo<SuggestedPlan[]>(
+        () =>
+            filterLeavePlans(allPlans, {
+                month: monthFilter,
+                holidayOnly: holidayFilter === 'holidays',
+                sort: sortBy,
+            }),
+        [allPlans, monthFilter, holidayFilter, sortBy]
+    )
+    const pageCount = Math.ceil(matchingPlans.length / 3)
+    const currentPage = Math.min(page, Math.max(0, pageCount - 1))
+    // Keep native/mobile pages short and live AI requests within the API's three-plan limit.
+    const plans = useMemo(
+        () => matchingPlans.slice(currentPage * 3, currentPage * 3 + 3),
+        [matchingPlans, currentPage]
+    )
 
     useEffect(() => {
         if (!plans.length) {
@@ -270,6 +196,8 @@ export function SmartLeavePlanner({
         }
 
         const controller = new AbortController()
+        setAiInsights(fallbackInsights)
+        setIsUsingLiveAi(false)
         setIsAiLoading(true)
 
         const fetchAiContext = async () => {
@@ -370,7 +298,11 @@ export function SmartLeavePlanner({
                 }, {})
 
                 setAiInsights(mergedInsights)
-                setIsUsingLiveAi(true)
+                setIsUsingLiveAi(
+                    Object.values(mergedInsights).some(
+                        insight => insight.source === 'gemini'
+                    )
+                )
                 setIsAiLoading(false)
             } catch (error) {
                 if (controller.signal.aborted) {
@@ -400,6 +332,8 @@ export function SmartLeavePlanner({
     }, [accessToken, apiBaseUrl, canFetchLiveInsights, plans])
 
     const handleGenerate = () => {
+        setPage(0)
+        setSelectedPlanKey('')
         setHasGenerated(true)
     }
 
@@ -412,22 +346,27 @@ export function SmartLeavePlanner({
                 </CardTitle>
                 <CardDescription>
                     Find leave dates that maximize long weekends and avoid
-                    conflicts with your existing requests.
+                    conflicts with your existing requests. Browse schedules from
+                    tomorrow through the next 6 months.
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
                     <div className="min-w-0 space-y-2">
-                        <Label>Leave type</Label>
+                        <Label htmlFor="planner-leave-type">Leave type</Label>
                         <Select
                             value={leaveTypeId}
                             onValueChange={value => {
                                 setLeaveTypeId(value)
                                 setHasGenerated(false)
                                 setSelectedPlanKey('')
+                                setPage(0)
                             }}
                         >
-                            <SelectTrigger className="w-full">
+                            <SelectTrigger
+                                id="planner-leave-type"
+                                className="w-full"
+                            >
                                 <SelectValue placeholder="Choose leave type" />
                             </SelectTrigger>
                             <SelectContent>
@@ -445,7 +384,9 @@ export function SmartLeavePlanner({
                     </div>
                     <Button
                         onClick={handleGenerate}
-                        disabled={!selectedLeaveType}
+                        disabled={
+                            !selectedLeaveType || selectedLeaveType.credits < 1
+                        }
                         className="w-full whitespace-nowrap bg-vibrant-purple hover:bg-vibrant-purple/90 md:w-auto"
                     >
                         <WandSparkles className="mr-2 h-4 w-4" />
@@ -453,10 +394,101 @@ export function SmartLeavePlanner({
                     </Button>
                 </div>
 
-                {hasGenerated && plans.length === 0 && (
-                    <p className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
-                        Choose a leave type with available credits to generate
-                        recommendations.
+                <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="min-w-0 space-y-2">
+                        <Label htmlFor="planner-month">Start month</Label>
+                        <Select
+                            value={monthFilter}
+                            onValueChange={value => {
+                                setMonthFilter(value)
+                                setPage(0)
+                            }}
+                        >
+                            <SelectTrigger
+                                id="planner-month"
+                                className="w-full"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">
+                                    Next 6 months (all dates)
+                                </SelectItem>
+                                {monthOptions.map(month => (
+                                    <SelectItem
+                                        key={month.value}
+                                        value={month.value}
+                                    >
+                                        {month.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="min-w-0 space-y-2">
+                        <Label htmlFor="planner-holidays">
+                            Holiday preference
+                        </Label>
+                        <Select
+                            value={holidayFilter}
+                            onValueChange={value => {
+                                setHolidayFilter(value)
+                                setPage(0)
+                            }}
+                        >
+                            <SelectTrigger
+                                id="planner-holidays"
+                                className="w-full"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">
+                                    All schedules
+                                </SelectItem>
+                                <SelectItem value="holidays">
+                                    Includes a holiday
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="min-w-0 space-y-2 sm:col-span-2">
+                        <Label htmlFor="planner-sort">
+                            Sort recommendations
+                        </Label>
+                        <Select
+                            value={sortBy}
+                            onValueChange={value => {
+                                setSortBy(value)
+                                setPage(0)
+                            }}
+                        >
+                            <SelectTrigger id="planner-sort" className="w-full">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="best">
+                                    Most time off
+                                </SelectItem>
+                                <SelectItem value="soonest">
+                                    Soonest first
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                    All suggested schedules start and end within the next 6
+                    months. Month filters use the schedule’s start date.
+                </p>
+                {hasGenerated && matchingPlans.length === 0 && (
+                    <p
+                        className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground"
+                        role="status"
+                    >
+                        {!selectedLeaveType || selectedLeaveType.credits < 1
+                            ? 'Choose a leave type with available credits to generate recommendations.'
+                            : 'No available schedules match these filters. Try another month or choose all schedules.'}
                     </p>
                 )}
 
@@ -471,7 +503,7 @@ export function SmartLeavePlanner({
                                 variant="secondary"
                                 className="border border-vibrant-blue/20 bg-vibrant-blue/10 text-vibrant-blue"
                             >
-                                Top 3 options
+                                {matchingPlans.length} options
                             </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground">
@@ -482,6 +514,17 @@ export function SmartLeavePlanner({
                                   : canFetchLiveInsights
                                     ? 'Built-in schedule guidance is shown while live AI context is unavailable.'
                                     : 'Live AI context needs a signed-in session and API connection.'}
+                        </p>
+                        <p
+                            className="text-xs text-muted-foreground"
+                            aria-live="polite"
+                        >
+                            Showing {currentPage * 3 + 1}–
+                            {Math.min(
+                                currentPage * 3 + 3,
+                                matchingPlans.length
+                            )}{' '}
+                            of {matchingPlans.length} schedules
                         </p>
                         {plans.map(plan => {
                             const planStart = dateKey(plan.startDate)
@@ -542,10 +585,6 @@ export function SmartLeavePlanner({
                                                 </Badge>
                                             ))}
                                         </div>
-                                        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                                            {planInsight.bullets[1] ??
-                                                planInsight.bullets[0]}
-                                        </p>
                                     </div>
                                     <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-vibrant-blue/20 bg-gradient-to-b from-vibrant-blue/10 to-vibrant-blue/5 p-3">
                                         <div className="space-y-2.5">
@@ -574,11 +613,6 @@ export function SmartLeavePlanner({
                                                         : 's'}
                                                 </Badge>
                                             </div>
-                                            {planInsight.bullets[1] && (
-                                                <p className="rounded-md bg-background/70 p-2 text-[11px] leading-relaxed text-muted-foreground">
-                                                    {planInsight.bullets[1]}
-                                                </p>
-                                            )}
                                             <Popover>
                                                 <PopoverTrigger asChild>
                                                     <Button
@@ -661,6 +695,32 @@ export function SmartLeavePlanner({
                                 </div>
                             )
                         })}
+                        {pageCount > 1 && (
+                            <div
+                                className="flex items-center justify-between gap-2"
+                                aria-label="Recommendation pages"
+                            >
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={currentPage === 0}
+                                    onClick={() => setPage(currentPage - 1)}
+                                >
+                                    Previous
+                                </Button>
+                                <span className="text-xs text-muted-foreground">
+                                    {currentPage + 1} / {pageCount}
+                                </span>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={currentPage + 1 >= pageCount}
+                                    onClick={() => setPage(currentPage + 1)}
+                                >
+                                    Next options
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 )}
             </CardContent>

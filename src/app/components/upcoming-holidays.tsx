@@ -1,6 +1,8 @@
 import { Calendar, Cake } from 'lucide-react'
 import { Badge } from './ui/badge'
 import { motion } from 'motion/react'
+import { parseISO } from 'date-fns'
+import { getUpcomingEvents } from '../upcoming-events.mjs'
 
 interface Holiday {
 	id: string
@@ -28,19 +30,13 @@ export function UpcomingHolidays({
 	holidays,
 	celebrations,
 }: UpcomingHolidaysProps) {
-	const upcomingHolidays = holidays
-		.filter(holiday => holiday.daysUntil >= 0)
-		.sort((a, b) => a.daysUntil - b.daysUntil)
-		.slice(0, 8)
-
-	const upcomingBirthdays = celebrations
-		.filter(item => item.daysUntil >= 0)
-		.sort((a, b) => a.daysUntil - b.daysUntil)
-		.slice(0, 8)
+	const today = new Date()
+	const upcomingHolidays = getUpcomingEvents(holidays, today)
+	const upcomingBirthdays = getUpcomingEvents(celebrations, today)
 
 	return (
 		<div className="space-y-4">
-			{/* Upcoming Birthdays (Current Year) */}
+			{/* Celebrations within the same six-month window as holidays. */}
 			{upcomingBirthdays.length > 0 && (
 				<motion.div
 					initial={{ opacity: 0, y: 10 }}
@@ -64,23 +60,24 @@ export function UpcomingHolidays({
 								}}
 							>
 								<Cake className="h-4 w-4 text-vibrant-pink flex-shrink-0" />
-								<div className="flex-1">
-									<p className="text-sm font-medium">
+								<div className="flex-1 min-w-0">
+									<p className="text-sm font-medium break-words">
 										{item.name} 🎂
 									</p>
 									<p className="text-xs text-muted-foreground">
-										{new Date(item.date).toLocaleDateString(
+										{parseISO(item.date).toLocaleDateString(
 											'en-US',
 											{
 												month: 'short',
 												day: 'numeric',
+												year: 'numeric',
 											}
 										)}
 									</p>
 								</div>
 								<Badge
 									variant="outline"
-									className="border-vibrant-pink text-vibrant-pink"
+									className="border-vibrant-pink text-vibrant-pink shrink-0 whitespace-nowrap"
 								>
 									{item.daysUntil === 0
 										? 'Today'
@@ -112,7 +109,7 @@ export function UpcomingHolidays({
 						{upcomingHolidays.map((holiday, index) => (
 							<motion.div
 								key={holiday.id}
-								className="flex items-center justify-between p-3 rounded-lg bg-muted/30"
+								className="flex items-center justify-between gap-3 p-3 rounded-lg bg-muted/30"
 								initial={{ opacity: 0, x: -20 }}
 								animate={{ opacity: 1, x: 0 }}
 								transition={{
@@ -125,18 +122,19 @@ export function UpcomingHolidays({
 										index * 0.05,
 								}}
 							>
-								<div className="flex items-center gap-3">
-									<Calendar className="h-4 w-4 text-vibrant-purple" />
-									<div>
-										<p className="font-medium">
+								<div className="flex items-center gap-3 min-w-0">
+									<Calendar className="h-4 w-4 text-vibrant-purple shrink-0" />
+									<div className="min-w-0">
+										<p className="font-medium break-words">
 											{holiday.name}
 										</p>
 										<p className="text-sm text-muted-foreground">
-											{new Date(
+											{parseISO(
 												holiday.date
 											).toLocaleDateString('en-US', {
 												month: 'short',
 												day: 'numeric',
+												year: 'numeric',
 											})}
 											{holiday.countryName
 												? ` • ${holiday.countryName}`
@@ -144,7 +142,7 @@ export function UpcomingHolidays({
 										</p>
 									</div>
 								</div>
-								<div className="text-right">
+								<div className="text-right shrink-0 whitespace-nowrap">
 									<Badge
 										variant="outline"
 										className={`${
@@ -174,7 +172,7 @@ export function UpcomingHolidays({
 						animate={{ opacity: 1 }}
 						transition={{ duration: 0.3, delay: 0.1 }}
 					>
-						No upcoming celebrations or holidays
+							No holidays or celebrations in the next 6 months.
 					</motion.p>
 				)}
 		</div>

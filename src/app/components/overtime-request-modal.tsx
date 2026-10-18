@@ -27,6 +27,11 @@ import {
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 import { cn } from './ui/utils'
+import {
+	getOvertimePurposeError,
+	OVERTIME_PURPOSE_MIN_LENGTH,
+	OVERTIME_PURPOSE_MAX_LENGTH,
+} from '../overtime-validation.mjs'
 
 type RequestStatus = 'pending' | 'approved' | 'denied' | 'cancelled'
 
@@ -83,10 +88,12 @@ export function OvertimeRequestModal({
 	const [startTime, setStartTime] = useState('')
 	const [endTime, setEndTime] = useState('')
 	const [purpose, setPurpose] = useState('')
+	const [purposeTouched, setPurposeTouched] = useState(false)
 	const [attachments, setAttachments] = useState<string[]>([])
 	const [showLogs, setShowLogs] = useState(false)
 	const [isSubmitting, setIsSubmitting] = useState(false)
 	const fileInputRef = useRef<HTMLInputElement | null>(null)
+	const purposeError = getOvertimePurposeError(purpose)
 
 	useEffect(() => {
 		if (!open) {
@@ -94,6 +101,7 @@ export function OvertimeRequestModal({
 		}
 
 		if (existingRequest) {
+			setPurposeTouched(false)
 			setStartTime(existingRequest.startTime ?? '')
 			setEndTime(existingRequest.endTime ?? '')
 			setPurpose(existingRequest.purpose ?? '')
@@ -109,6 +117,7 @@ export function OvertimeRequestModal({
 		setStartTime('')
 		setEndTime('')
 		setPurpose('')
+		setPurposeTouched(false)
 		setAttachments([])
 		setShowLogs(false)
 	}, [open, existingRequest])
@@ -195,8 +204,9 @@ export function OvertimeRequestModal({
 			return
 		}
 
-		if (!purpose.trim()) {
-			toast.error('Please enter a purpose.')
+		if (purposeError) {
+			setPurposeTouched(true)
+			document.getElementById('ot-purpose')?.focus()
 			return
 		}
 
@@ -388,10 +398,41 @@ export function OvertimeRequestModal({
 							id="ot-purpose"
 							value={purpose}
 							onChange={e => setPurpose(e.target.value)}
-							placeholder="Enter here.."
+							onBlur={() => setPurposeTouched(true)}
+							minLength={OVERTIME_PURPOSE_MIN_LENGTH}
+							maxLength={OVERTIME_PURPOSE_MAX_LENGTH}
+							aria-invalid={
+								purposeTouched && Boolean(purposeError)
+							}
+							aria-describedby={
+								isReadOnly
+									? undefined
+									: purposeTouched && purposeError
+										? 'ot-purpose-error'
+										: 'ot-purpose-hint'
+							}
+							placeholder="Describe why overtime is needed"
 							rows={4}
 							disabled={isReadOnly || hasBusyState}
 						/>
+						{!isReadOnly &&
+							(purposeTouched && purposeError ? (
+								<p
+									id="ot-purpose-error"
+									role="alert"
+									className="text-sm text-destructive"
+								>
+									{purposeError}
+								</p>
+							) : (
+								<p
+									id="ot-purpose-hint"
+									className="text-xs text-muted-foreground"
+								>
+									3–5,000 characters. Surrounding spaces do
+									not count.
+								</p>
+							))}
 					</div>
 
 					<div className="space-y-2">

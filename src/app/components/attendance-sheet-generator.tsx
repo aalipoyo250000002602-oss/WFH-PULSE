@@ -1,4 +1,5 @@
-﻿import { useState, useEffect, useMemo } from 'react'
+﻿import { saveReport } from '../save-report'
+import { useState, useEffect, useMemo } from 'react'
 import { apiFetch as fetch } from '../api-fetch.mjs'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
@@ -728,7 +729,7 @@ export function AttendanceSheetGenerator({
         return summary
     }
 
-    const exportToCSV = () => {
+    const exportToCSV = async () => {
         if (
             !selectedEmployee ||
             !generatedReport ||
@@ -785,23 +786,14 @@ export function AttendanceSheetGenerator({
         const blob = new Blob([BOM + csvContent], {
             type: 'text/csv;charset=utf-8;',
         })
-        const link = document.createElement('a')
-        const url = URL.createObjectURL(blob)
-
-        link.setAttribute('href', url)
-        link.setAttribute(
-            'download',
-            `attendance-${selectedEmployee.id}-${format(dateRange.from, 'yyyyMMdd')}-${format(dateRange.to, 'yyyyMMdd')}.csv`
+        await saveReport(
+            blob,
+            `attendance-${selectedEmployee.id}-${format(dateRange.from, 'yyyyMMdd')}-${format(dateRange.to, 'yyyyMMdd')}.csv`,
+            'CSV report exported successfully'
         )
-        link.style.visibility = 'hidden'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-
-        toast.success('CSV report exported successfully')
     }
 
-    const exportToPDF = () => {
+    const exportToPDF = async () => {
         if (
             !selectedEmployee ||
             !generatedReport ||
@@ -969,27 +961,18 @@ export function AttendanceSheetGenerator({
     `
 
         const blob = new Blob([htmlContent], { type: 'text/html' })
-        const url = URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.setAttribute('href', url)
-        link.setAttribute(
-            'download',
-            `attendance-${selectedEmployee.id}-${format(dateRange.from, 'yyyyMMdd')}-${format(dateRange.to, 'yyyyMMdd')}.html`
+        await saveReport(
+            blob,
+            `attendance-${selectedEmployee.id}-${format(dateRange.from, 'yyyyMMdd')}-${format(dateRange.to, 'yyyyMMdd')}.html`,
+            'Report downloaded successfully'
         )
-        link.style.visibility = 'hidden'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        URL.revokeObjectURL(url)
-
-        toast.success('Report downloaded successfully')
     }
 
     const calculatePayroll = () => {
         return calculatedPayroll
     }
 
-    const exportPayslipToCSV = () => {
+    const exportPayslipToCSV = async () => {
         if (
             !selectedEmployee ||
             !generatedReport ||
@@ -1046,23 +1029,14 @@ export function AttendanceSheetGenerator({
         const blob = new Blob([BOM + csvContent], {
             type: 'text/csv;charset=utf-8;',
         })
-        const link = document.createElement('a')
-        const url = URL.createObjectURL(blob)
-
-        link.setAttribute('href', url)
-        link.setAttribute(
-            'download',
-            `payslip-${selectedEmployee.id}-${format(dateRange.from, 'yyyyMMdd')}-${format(dateRange.to, 'yyyyMMdd')}.csv`
+        await saveReport(
+            blob,
+            `payslip-${selectedEmployee.id}-${format(dateRange.from, 'yyyyMMdd')}-${format(dateRange.to, 'yyyyMMdd')}.csv`,
+            'Payslip CSV exported successfully'
         )
-        link.style.visibility = 'hidden'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-
-        toast.success('Payslip CSV exported successfully')
     }
 
-    const exportPayslipToPDF = () => {
+    const exportPayslipToPDF = async () => {
         if (
             !selectedEmployee ||
             !generatedReport ||
@@ -1382,20 +1356,11 @@ export function AttendanceSheetGenerator({
     `
 
         const blob = new Blob([htmlContent], { type: 'text/html' })
-        const url = URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.setAttribute('href', url)
-        link.setAttribute(
-            'download',
-            `payslip-${selectedEmployee.id}-${format(dateRange.from, 'yyyyMMdd')}-${format(dateRange.to, 'yyyyMMdd')}.html`
+        await saveReport(
+            blob,
+            `payslip-${selectedEmployee.id}-${format(dateRange.from, 'yyyyMMdd')}-${format(dateRange.to, 'yyyyMMdd')}.html`,
+            'Payslip downloaded successfully'
         )
-        link.style.visibility = 'hidden'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        URL.revokeObjectURL(url)
-
-        toast.success('Payslip downloaded successfully')
     }
 
     const getDefaultEmailMessage = () => {

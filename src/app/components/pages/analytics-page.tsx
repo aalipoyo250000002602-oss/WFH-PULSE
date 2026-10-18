@@ -38,7 +38,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react'
 import { Badge } from '../ui/badge'
 import { toast } from 'sonner'
-import { Capacitor } from '@capacitor/core'
+import { saveReport } from '../../save-report'
 import { AttendanceSheetGenerator } from '../attendance-sheet-generator'
 
 interface AnalyticsPageProps {
@@ -175,25 +175,7 @@ export function AnalyticsPage({
     const isWeeklyView =
         selectedPeriod === 'thisMonth' || selectedPeriod === 'lastMonth'
 
-    const downloadReportFile = (blob: Blob, fileName: string) => {
-        if (Capacitor.isNativePlatform()) {
-            throw new Error(
-                'File download is not supported inside the mobile emulator WebView. Open the app in a desktop browser to export this report.'
-            )
-        }
-
-        const url = URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.setAttribute('href', url)
-        link.setAttribute('download', fileName)
-        link.style.visibility = 'hidden'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        URL.revokeObjectURL(url)
-    }
-
-    const exportAnalyticsToCSV = () => {
+    const exportAnalyticsToCSV = async () => {
         const periodLabel =
             selectedPeriod === 'thisMonth'
                 ? 'This Month'
@@ -239,11 +221,10 @@ export function AnalyticsPage({
             const blob = new Blob([BOM + csvContent], {
                 type: 'text/csv;charset=utf-8;',
             })
-            downloadReportFile(
+            await saveReport(
                 blob,
                 `analytics-report-${new Date().toISOString().split('T')[0]}.csv`
             )
-            toast.success('CSV report exported successfully')
         } catch (error) {
             toast.error(
                 error instanceof Error
@@ -253,7 +234,7 @@ export function AnalyticsPage({
         }
     }
 
-    const exportAnalyticsToPDF = () => {
+    const exportAnalyticsToPDF = async () => {
         const periodLabel =
             selectedPeriod === 'thisMonth'
                 ? 'This Month'
@@ -484,11 +465,10 @@ export function AnalyticsPage({
 
         try {
             const blob = new Blob([htmlContent], { type: 'text/html' })
-            downloadReportFile(
+            await saveReport(
                 blob,
                 `attendance-analytics-${new Date().toISOString().split('T')[0]}.html`
             )
-            toast.success('Report downloaded successfully')
         } catch (error) {
             toast.error(
                 error instanceof Error
