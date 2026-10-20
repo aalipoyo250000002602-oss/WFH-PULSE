@@ -19,6 +19,28 @@ RETURNS jsonb LANGUAGE sql STABLE SET search_path = '' AS $$
 $$;
 REVOKE ALL ON FUNCTION wfh_private.attendance_json(app.attendance_records) FROM PUBLIC, anon, authenticated;
 
+CREATE OR REPLACE FUNCTION wfh_private.calendar_payload(p_attendance jsonb, p_holidays jsonb)
+RETURNS jsonb LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path = '' AS $$
+  SELECT jsonb_build_object(
+    'attendance', COALESCE((SELECT jsonb_agg(
+      (item - 'attendanceDate') || jsonb_build_object('date', item->'attendanceDate')
+      ORDER BY item->>'attendanceDate' DESC)
+      FROM jsonb_array_elements(COALESCE(p_attendance, '[]'::jsonb)) item), '[]'::jsonb),
+    'attendanceByDate', COALESCE((SELECT jsonb_object_agg(item->>'attendanceDate', item->'status')
+      FROM jsonb_array_elements(COALESCE(p_attendance, '[]'::jsonb)) item
+      WHERE item->>'attendanceDate' IS NOT NULL), '{}'::jsonb),
+    'holidays', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+      'id', item->'holiday_id', 'name', item->'name', 'date', item->'holiday_date',
+      'type', item->'holiday_type', 'countryCode', item->'country_code',
+      'countryName', item->'country_name', 'subdivisionCode', item->'subdivision_code',
+      'subdivisionName', item->'subdivision_name',
+      'scope', CASE WHEN item ? 'subdivision_code' THEN 'subdivision' ELSE 'national' END)
+      ORDER BY item->>'holiday_date')
+      FROM jsonb_array_elements(COALESCE(p_holidays, '[]'::jsonb)) item), '[]'::jsonb)
+  );
+$$;
+REVOKE ALL ON FUNCTION wfh_private.calendar_payload(jsonb, jsonb) FROM PUBLIC, anon, authenticated;
+
 CREATE OR REPLACE FUNCTION wfh_private.active_session_minutes(p_row app.attendance_records)
 RETURNS integer LANGUAGE sql STABLE SET search_path = '' AS $$
   WITH session_window AS (
@@ -811,7 +833,9 @@ BEGIN
       SELECT to_jsonb(h) AS items FROM app.holidays h WHERE (v_from IS NULL OR h.holiday_date>=v_from) AND (v_to IS NULL OR h.holiday_date<=v_to)
       UNION ALL SELECT to_jsonb(h)||jsonb_build_object('holiday_id',h.subdivision_holiday_id) FROM app.holiday_subdivision_holidays h
         WHERE (v_from IS NULL OR h.holiday_date>=v_from) AND (v_to IS NULL OR h.holiday_date<=v_to)) holidays;
-    v_result := jsonb_build_object('attendance', v_rows, 'holidays', v_extra);
+    v_result := CASE WHEN p_path = '/me/calendar'
+      THEN wfh_private.calendar_payload(v_rows, v_extra)
+      ELSE jsonb_build_object('attendance', v_rows, 'holidays', v_extra) END;
 
   ELSIF p_path IN ('/employees', '/hr/employees') AND p_method = 'GET' THEN
     SELECT jsonb_build_object('employees', COALESCE(jsonb_agg(items), '[]'::jsonb)) INTO v_result FROM (
@@ -853,7 +877,7 @@ BEGIN
 
   ELSIF p_path IN ('/me/attendance-adjustments', '/me/overtime-requests', '/hr/adjustment-requests', '/hr/overtime-requests') AND p_method = 'GET' THEN
     SELECT jsonb_build_object('requests', COALESCE(jsonb_agg(items), '[]'::jsonb)) INTO v_result FROM (
-      SELECT jsonb_build_object('requestId', r.request_id, 'employeeId', r.employee_id, 'employeeName', r.employee_name,
+      SELECT to_jsonb(r) || jsonb_build_object('requestId', r.request_id, 'employeeId', r.employee_id, 'employeeName', r.employee_name,
         'position', r.position, 'department', r.department, 'requestDate', r.request_date, 'shiftDateFrom', r.shift_date_from,
         'shiftDateTo', r.shift_date_to, 'clockInTime', r.clock_in_time, 'clockOutTime', r.clock_out_time,
         'startTime', r.clock_in_time, 'endTime', r.clock_out_time, 'purpose', regexp_replace(COALESCE(r.message, ''), '^.*Purpose:\s*', '', 's'),
