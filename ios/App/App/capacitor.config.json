@@ -1,0 +1,9 @@
+{
+	"appId": "com.wfh.pulse",
+	"appName": "WFH Pulse",
+	"webDir": "dist",
+	"packageClassList": [
+		"BiometricAuthNative",
+		"SecureStorage"
+	]
+}
