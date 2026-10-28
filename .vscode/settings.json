@@ -5,7 +5,10 @@
     "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.formatOnSave": true,
     "npm.packageManager": "pnpm",
-    "npm.scriptRunner": "pnpm.cmd",
+    "npm.scriptRunner": "npm",
+    "terminal.integrated.env.osx": {
+        "PATH": "/tmp/node-v22.23.4-darwin-arm64/bin:${env:PATH}"
+    },
     "prettier.useTabs": false,
     "prettier.tabWidth": 4,
     "[typescript]": {
