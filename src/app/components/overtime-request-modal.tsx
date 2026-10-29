@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
+import { getOfflineSyncStatus } from '../api-fetch.mjs'
 import { cn } from './ui/utils'
 import {
 	getOvertimePurposeError,
@@ -229,10 +230,10 @@ export function OvertimeRequestModal({
 			return
 		}
 
-		toast.success(
+		if (!getOfflineSyncStatus().pendingCount) toast.success(
 			existingRequest
 				? 'Overtime request updated.'
-				: 'Overtime request submitted.'
+				: 'Overtime request saved.'
 		)
 		onClose()
 	}

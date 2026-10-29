@@ -882,7 +882,7 @@ export function CalendarPage({
 
                 await loadLeaveData()
                 notifyLeaveDataUpdated()
-                toast.success('Leave request submitted successfully')
+                if (response.status !== 202) toast.success('Leave request submitted successfully')
                 setShowLeaveRequestDialog(false)
                 handleCancelLeaveMode()
             } catch (error) {

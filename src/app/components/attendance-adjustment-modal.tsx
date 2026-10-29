@@ -35,6 +35,7 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
+import { getOfflineSyncStatus } from '../api-fetch.mjs'
 import { AttendanceAdjustmentRequest } from './attendance-details-data'
 import { cn } from './ui/utils'
 
@@ -303,10 +304,10 @@ export function AttendanceAdjustmentModal({
         setIsSubmitting(false)
 
         if (saved) {
-            toast.success(
+            if (!getOfflineSyncStatus().pendingCount) toast.success(
                 existingRequest
                     ? 'Adjustment request updated successfully'
-                    : 'Adjustment request submitted successfully'
+                    : 'Adjustment request saved successfully'
             )
             onClose()
         }

@@ -130,6 +130,7 @@
     "@capacitor/cli": "^8.5.3",
     "@tailwindcss/vite": "4.1.12",
     "@vitejs/plugin-react": "4.7.0",
+    "fake-indexeddb": "^6.2.6",
     "newman": "^6.2.1",
     "prettier": "^3.9.6",
     "tailwindcss": "4.1.12",

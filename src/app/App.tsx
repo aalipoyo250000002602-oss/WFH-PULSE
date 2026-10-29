@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { apiFetch as fetch, resolveSupabaseAuthBaseUrl } from './api-fetch.mjs'
+import { apiFetch as fetch, resolveSupabaseAuthBaseUrl, configureMobileOfflineSession, clearMobileOfflineSession } from './api-fetch.mjs'
+import { createOfflineSessionVault } from './offline-session.mjs'
 import { canAccessPage, getRolePermissions } from './permissions.mjs'
 import { Capacitor } from '@capacitor/core'
 import { PushNotifications } from '@capacitor/push-notifications'
@@ -139,6 +140,7 @@ interface CalendarAttendanceDetailState {
 }
 
 interface AttendanceActivityLogState {
+    syncStatus?: 'pending' | 'failed'
     activityId: number
     action: string
     loggedAt: string
@@ -227,6 +229,12 @@ export default function App() {
         }),
         fetchImplementation: fetch,
     }))
+    const [offlineSessionVault] = useState(() => createOfflineSessionVault({
+        storage: SecureStorage, key: `wfh:offline-session:${apiBaseUrl}`,
+        keychainAccess: KeychainAccess.whenUnlockedThisDeviceOnly,
+    }))
+    const authSessionLive = useRef<AuthSession | null>(null)
+    const loginGeneration = useRef(0)
     const [isLoggedIn, setIsLoggedIn] = useState(false)
     const [authSession, setAuthSession] = useState<AuthSession | null>(null)
     const [unreadRequestCounts, setUnreadRequestCounts] =
@@ -582,6 +590,7 @@ export default function App() {
         const payload = await response.json()
         setUserProfile(mapApiProfileToState(payload?.profile ?? null, fallback))
         if (payload?.role === 'admin' || payload?.role === 'hr_manager' || payload?.role === 'employee') {
+            if (authSessionLive.current) authSessionLive.current = { ...authSessionLive.current, role: payload.role }
             setAuthSession(current => current ? { ...current, role: payload.role } : current)
         }
     }
@@ -1424,6 +1433,7 @@ export default function App() {
                               activityId,
                               action,
                               loggedAt,
+                              syncStatus: row?.syncStatus,
                           } as AttendanceActivityLogState
                       })
                       .filter(Boolean)
@@ -1782,6 +1792,31 @@ export default function App() {
         void loadBiometricAvailability()
     }, [apiBaseUrl, isSupabaseBaseUrl, biometricSession])
 
+    const initializeMobileOffline = async (session: AuthSession) => {
+        if (!Capacitor.isNativePlatform() || !isSupabaseBaseUrl) return
+        authSessionLive.current = session
+        await configureMobileOfflineSession({
+            baseUrl: apiBaseUrl, accountId: session.sessionId, accessToken: session.accessToken,
+            refreshSession: async () => {
+                const current = authSessionLive.current
+                if (!current || current.sessionId !== session.sessionId) return null
+                const response = await fetch(`${supabaseAuthBaseUrl}/token?grant_type=refresh_token`, {
+                    method: 'POST', headers: { apikey: supabasePublishableKey, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: current.refreshToken }), signal: AbortSignal.timeout(12000),
+                })
+                if (!response.ok) return null
+                const payload = await response.json()
+                if (payload.user?.id !== current.sessionId || !payload.access_token || !payload.refresh_token ||
+                    authSessionLive.current?.sessionId !== current.sessionId) return null
+                const next = { ...current, accessToken: payload.access_token, refreshToken: payload.refresh_token }
+                authSessionLive.current = next
+                setAuthSession(next)
+                await offlineSessionVault.remember(next)
+                return { accountId: next.sessionId, accessToken: next.accessToken }
+            },
+        })
+    }
+
     const completeSignIn = async (
         payload: Partial<LoginResponsePayload>,
         options: { skipBootstrap?: boolean } = {}
@@ -1798,15 +1833,16 @@ export default function App() {
             return false
         }
 
-        setAuthSession({
+        const nextSession: AuthSession = {
             accessToken: payload.accessToken,
             refreshToken: payload.refreshToken,
             sessionId: payload.sessionId,
-            role:
-                payload.role === 'admin' || payload.role === 'hr_manager'
-                    ? payload.role
-                    : 'employee',
-        })
+            role: payload.role === 'admin' || payload.role === 'hr_manager' ? payload.role : 'employee',
+        }
+        authSessionLive.current = nextSession
+        try { await initializeMobileOffline(nextSession) }
+        catch { console.warn('Offline saving is unavailable; online attendance still works.') }
+        setAuthSession(authSessionLive.current ?? nextSession)
 
         if (payload.user?.email) {
             window.localStorage.setItem(
@@ -1849,10 +1885,16 @@ export default function App() {
         }
 
         setIsLoggedIn(true)
+        if (Capacitor.isNativePlatform() && isSupabaseBaseUrl && authSessionLive.current) {
+            await offlineSessionVault.remember(authSessionLive.current).catch(() => {
+                console.warn('This session could not be saved for offline use.')
+            })
+        }
         return true
     }
 
     const handleLogin = async (email: string, password: string) => {
+        loginGeneration.current++
         try {
             const loginUrl = isSupabaseBaseUrl
                 ? `${supabaseAuthBaseUrl}/token?grant_type=password`
@@ -1908,7 +1950,7 @@ export default function App() {
                 }
 
                 toast.success('Welcome back!', {
-                    description: 'Signed in with Supabase Auth.',
+                    description: 'You are now signed in.',
                 })
                 return
             }
@@ -2003,13 +2045,14 @@ export default function App() {
     )
 
     const handleBiometricLogin = async () => {
+        loginGeneration.current++
         if (isSupabaseBaseUrl) {
             try {
                 const payload = await biometricSession.signIn()
                 if (!payload) return
                 if (!await completeSignIn(payload)) return
                 toast.success('Biometric sign in successful', {
-                    description: 'Signed in with your saved Supabase session.',
+                    description: 'You are now signed in.',
                 })
             } catch (error) {
                 setIsBiometricLoginAvailable(await biometricSession.available().catch(() => false))
@@ -2084,6 +2127,10 @@ export default function App() {
     }
 
     const handleLogout = async () => {
+        loginGeneration.current++
+        authSessionLive.current = null
+        await clearMobileOfflineSession()
+        if (Capacitor.isNativePlatform() && isSupabaseBaseUrl) await offlineSessionVault.forget().catch(() => {})
         try { await mobilePush.current?.stop() }
         catch { console.warn('Device notification registration could not be removed; native push was unregistered.') }
         setAuthSession(null)
@@ -2135,6 +2182,8 @@ export default function App() {
             await loadTodayAttendance(authSession.accessToken)
             await loadCalendarData(authSession.accessToken)
 
+            if (payload.queued) return
+
             const displayTime = payload?.attendance?.clockIn
                 ? formatTimeForDisplay(String(payload.attendance.clockIn))
                 : ''
@@ -2185,6 +2234,8 @@ export default function App() {
             syncAttendanceStateFromApi(payload?.attendance ?? null)
             await loadTodayAttendance(authSession.accessToken)
             await loadCalendarData(authSession.accessToken)
+
+            if (payload.queued) return
 
             const displayTime = payload?.attendance?.clockOut
                 ? formatTimeForDisplay(String(payload.attendance.clockOut))
@@ -2238,6 +2289,8 @@ export default function App() {
             syncAttendanceStateFromApi(payload?.attendance ?? null)
             await loadTodayAttendance(authSession.accessToken)
             await loadCalendarData(authSession.accessToken)
+
+            if (payload.queued) return
 
             if (isOnBreak) {
                 const breakMinutes = Number(
@@ -2444,6 +2497,39 @@ export default function App() {
 
         return `${formatTime(startTime)} - ${formatTime(endTime)}`
     }
+
+    useEffect(() => {
+        if (!Capacitor.isNativePlatform() || !isSupabaseBaseUrl) return
+        let cancelled = false
+        const generation = loginGeneration.current
+        const restore = async () => {
+            const saved = await offlineSessionVault.read()
+            if (cancelled || generation !== loginGeneration.current || authSessionLive.current ||
+                !saved?.sessionId || !saved?.accessToken || !saved?.refreshToken) return
+            await initializeMobileOffline(saved)
+            if (cancelled || generation !== loginGeneration.current) return
+            authSessionLive.current = saved
+            setAuthSession(saved)
+            setIsLoggedIn(true)
+            await Promise.allSettled([
+                loadSelfProfile(saved.accessToken), loadEmploymentOptions(saved.accessToken),
+                loadLeaveCreditTypes(saved.accessToken), loadCompanyWorkingHours(saved.accessToken),
+                loadCalendarData(saved.accessToken), loadTodayAttendance(saved.accessToken),
+            ])
+        }
+        void restore().catch(() => {})
+        return () => { cancelled = true }
+    }, [])
+
+    useEffect(() => {
+        if (!isLoggedIn || !authSession?.accessToken) return
+        const refresh = () => {
+            void loadTodayAttendance(authSession.accessToken)
+            void loadCalendarData(authSession.accessToken)
+        }
+        window.addEventListener('wfh-pulse:offline-synced', refresh)
+        return () => window.removeEventListener('wfh-pulse:offline-synced', refresh)
+    }, [isLoggedIn, authSession?.accessToken])
 
     const handleEmployeeClick = (employeeId: string) => {
         if (!permissions.canManageTeam) return

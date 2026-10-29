@@ -1,6 +1,6 @@
 export function mapSupabaseSession(session) {
     if (!session?.access_token || !session?.refresh_token || !session?.user?.id) {
-        throw new Error('Supabase did not return a complete sign-in session.')
+        throw new Error('Sign-in could not be completed. Please try again.')
     }
     return {
         accessToken: session.access_token,

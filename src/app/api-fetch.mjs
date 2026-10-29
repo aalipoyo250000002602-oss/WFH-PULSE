@@ -1,3 +1,6 @@
+import { createOfflineStore } from './offline-store.mjs'
+import { createOfflineSync } from './offline-sync.mjs'
+
 export function resolveSupabaseAuthBaseUrl(apiBaseUrl, supabaseUrl = '') {
     try {
         const apiUrl = new URL(apiBaseUrl)
@@ -76,7 +79,7 @@ export function createApiFetch({
                 })
                 if (!authResponse.ok) {
                     const authError = await authResponse.json().catch(() => ({}))
-                    return Response.json({ error: authError.msg ?? authError.message ?? 'Unable to update the Supabase Auth password.' }, {
+                    return Response.json({ error: authError.msg ?? authError.message ?? 'Unable to update your password. Please try again.' }, {
                         status: authResponse.status,
                     })
                 }
@@ -113,7 +116,62 @@ export function createApiFetch({
 
 const env = import.meta.env ?? {}
 
-export const apiFetch = createApiFetch({
+const rawApiFetch = createApiFetch({
     apiBaseUrls: [env.VITE_API_BASE_URL, env.VITE_API_BASE_URL_ANDROID],
     publishableKey: env.VITE_SUPABASE_PUBLISHABLE_KEY ?? env.VITE_SUPABASE_ANON_KEY ?? '',
 })
+
+let mobileOffline
+let offlineBase
+let deviceStore
+const statusListeners = new Set()
+let offlineStatus = { enabled: false, connected: true, syncing: false, pendingCount: 0, failedCount: 0, error: '', operations: [] }
+const emitStatus = value => { offlineStatus = value; for (const listener of statusListeners) listener(value) }
+export const getOfflineSyncStatus = () => offlineStatus
+export const subscribeOfflineSync = listener => { statusListeners.add(listener); return () => { statusListeners.delete(listener) } }
+export const retryOfflineSync = () => mobileOffline?.sync(true)
+export const discardOfflineOperation = id => mobileOffline?.discard(id)
+export const apiFetch = (input, init) => mobileOffline ? mobileOffline.fetch(input, init) : rawApiFetch(input, init)
+export async function configureMobileOfflineSession({ baseUrl, accountId, accessToken, refreshSession }) {
+    if (mobileOffline?.accountId === accountId && offlineBase === baseUrl) {
+        mobileOffline.updateToken(accessToken)
+        return
+    }
+    await mobileOffline?.stop()
+    deviceStore ??= createOfflineStore()
+    const scope = `${new URL(baseUrl.replace(/\/+$/, '')).href}|${accountId}`
+    const saved = await deviceStore.read(scope)
+    let supported = saved.serverSupportsOffline === true
+    if (globalThis.navigator?.onLine !== false) {
+        try {
+            const response = await rawApiFetch(`${baseUrl}/me/offline-sync/capabilities`, {
+                headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(5000),
+            })
+            if (response.ok && (await response.json()).offlineSync === true) {
+                supported = true
+                await deviceStore.update(scope, state => { state.serverSupportsOffline = true })
+            }
+        } catch { /* A previously verified server can still be used offline. */ }
+    }
+    if (!supported) throw new Error('Production offline sync has not been enabled for this device.')
+    mobileOffline = createOfflineSync({ baseUrl, accountId, accessToken, refreshSession, store: deviceStore,
+        fetchImplementation: rawApiFetch, onStatus: emitStatus,
+        onSynced: () => {
+            for (const event of ['offline-synced', 'leave-updated', 'overtime-updated']) {
+                globalThis.dispatchEvent?.(new CustomEvent(`wfh-pulse:${event}`))
+            }
+        },
+    })
+    offlineBase = baseUrl
+    try { await mobileOffline.start() }
+    catch (error) {
+        await mobileOffline.stop()
+        mobileOffline = undefined; offlineBase = undefined
+        throw error
+    }
+}
+export async function clearMobileOfflineSession() {
+    await mobileOffline?.stop()
+    mobileOffline = undefined; offlineBase = undefined
+    emitStatus({ enabled: false, connected: true, syncing: false, pendingCount: 0, failedCount: 0, error: '', operations: [] })
+}

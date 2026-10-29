@@ -343,3 +343,82 @@ create a request as employee A, confirm only admins receive it, change its statu
 an admin, confirm only A receives it, and confirm employee B receives neither event.
 Repeat with the apps backgrounded, with multiple devices, and after logout/account
 switching. Also test denied permission and a temporary provider/network outage.
+
+
+## Offline mobile attendance and requests
+
+The native production app can save clock-in, clock-out, break start/end, leave,
+attendance-adjustment, and overtime actions while disconnected. Before any action
+is acknowledged, it is committed to an IndexedDB transaction in the app's device
+storage. The screen projects queued attendance and requests immediately. Each
+attendance activity has a synced check or unsynced cloud icon; the small sync icon beside the dark-mode button
+shows synced, unsynced, syncing, or attention states without routine sync toasts. Its dialog lists
+saved actions, server validation errors, a retry control, and explicit confirmation
+before discarding an invalid local item and its dependent request edits.
+
+Queues and cached reads are partitioned by production API URL and authenticated
+account. Credentials are never written to IndexedDB. A previously authenticated
+mobile session is kept separately in native secure storage so it can be reopened
+without a connection. Logging out clears that session but retains unsynced actions
+under the original account; they can sync only after that same user signs in again.
+Initial sign-in and first-time device setup require a connection. Cached information
+is available only after it has been fetched successfully on that account.
+
+### Enable in production
+
+Apply `database/11_offline_sync.sql` (migration `0028_offline_sync`) after
+`07_supabase_rest_api.sql` and `10_request_notifications.sql` (migration 0027).
+Keep the existing Slack attendance integration from
+`database/08_external_integrations.sql` and the Supabase Vault secret
+`slack_attendance_webhook` configured. Rebuild and sync the native apps. No Firebase
+or APNs configuration is needed for offline storage or Slack; those providers are
+needed separately for mobile request push notifications.
+
+The app probes `/me/offline-sync/capabilities` before enabling offline writes and
+remembers successful support on that device/account. Until the database migration
+is installed, normal online attendance still uses the existing endpoints. After
+installation, sign in online once on each device to enable cached sessions and
+confirm server capability. Reapply file 11 after reinstalling files 07 or 10,
+which define earlier versions of the REST dispatcher. The offline feature currently
+uses the production Supabase REST adapter; the local Express API and web app retain
+their existing online behavior.
+
+### Replay and timestamps
+
+Reconnection, an app resume, a 15-second foreground retry timer, or manual retry
+starts ordered synchronization. A closed/terminated native app cannot run this
+JavaScript queue; synchronization resumes when the user opens the app. Clock actions
+use the original device capture timestamp and Manila attendance date, including
+break timestamps. Local duration displays are provisional until production validates
+the action. Queued actions have no automatic expiry. Timestamps more than five minutes in
+the future or conflicts with newer attendance are retained locally
+with a visible error instead of overwriting production. The existing same-day shift
+model remains in effect.
+
+A server receipt, keyed by authenticated user and operation UUID, is committed in
+the same transaction as each successful action. Retrying after a lost response
+returns the original result without another mutation. Request creates reconcile
+temporary local IDs before replaying dependent edits/cancellations. Invalid actions
+stay visible for review; independent requests can still sync when an attendance
+chain is blocked. A temporary network/server failure retains the queue, and expired
+Supabase tokens are renewed only for the original account. The migration rollback
+disables the endpoint but preserves private receipts to prevent duplicate replay
+if offline sync is enabled again.
+
+Slack remains **clock-in/clock-out only**. The existing attendance-log trigger queues
+its Slack webhook after production receives the recorded action, never at the
+initial offline save. The same receipt prevents repeat attendance logs and duplicate
+Slack enqueues when the client retries. This guarantees one database enqueue per
+committed clock event; actual Slack delivery still depends on the configured Vault
+webhook and Supabase `pg_net`. Offline leave/adjustment/overtime requests do not post
+to Slack; their existing requester/admin mobile notification routing runs when the
+request commits.
+
+Verify with `node --test src/app/offline-sync.test.mjs src/app/offline-store.test.mjs`.
+`node database/test-offline-sync.mjs` creates a disposable PostgreSQL cluster,
+executes the production functions and Slack trigger with outbound HTTP mocked, and
+checks timestamp preservation, breaks, request notification targeting, receipt
+replay, account isolation, rollback, and one-time Slack enqueue. It never connects
+to production or sends a real Slack message. Final signed-device testing should
+include airplane mode, process restart, reconnect/resume, lost responses, account
+switching, expired authentication, and storage failure.

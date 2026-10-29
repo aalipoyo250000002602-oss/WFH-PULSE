@@ -7,6 +7,8 @@ import {
 	LogOut,
 	AlertCircle,
 	PauseCircle,
+	CheckCircle2,
+	CloudOff,
 } from 'lucide-react'
 import { Card, CardContent } from './ui/card'
 import { Badge } from './ui/badge'
@@ -30,6 +32,7 @@ interface AttendanceStatusProps {
 	currentWorkDurationMinutes: number
 	lateMinutes: number
 	activityLogs: Array<{
+		syncStatus?: 'pending' | 'failed'
 		activityId: number
 		action: string
 		loggedAt: string
@@ -301,6 +304,10 @@ export function AttendanceStatus({
 													)}
 												</div>
 
+                                                <span title={log.syncStatus === 'failed' ? 'Needs sync review' : log.syncStatus ? 'Saved on device; unsynced' : 'Synced'}>
+                                                    {log.syncStatus ? <CloudOff className="h-3.5 w-3.5 text-vibrant-orange" aria-label="Unsynced" />
+                                                        : <CheckCircle2 className="h-3.5 w-3.5 text-vibrant-green" aria-label="Synced" />}
+                                                </span>
 												<span className="text-xs font-medium text-muted-foreground tabular-nums">
 													{formatLogTime(
 														log.loggedAt

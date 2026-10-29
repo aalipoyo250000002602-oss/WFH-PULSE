@@ -36,6 +36,7 @@ interface HomePageProps {
     currentWorkDurationMinutes: number
     lateMinutesToday: number
     attendanceActivityLogs: Array<{
+        syncStatus?: 'pending' | 'failed'
         activityId: number
         action: string
         loggedAt: string

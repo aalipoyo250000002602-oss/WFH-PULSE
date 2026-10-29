@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Moon, Sun, User, LogOut } from 'lucide-react'
 import { Button } from './ui/button'
+import { OfflineSyncStatus } from './offline-sync-status'
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar'
 import {
 	Dialog,
@@ -84,6 +85,7 @@ export function AttendanceHeader({
 				</div>
 
 				<div className="flex shrink-0 items-center gap-2">
+					<OfflineSyncStatus />
 					<Button
 						variant="outline"
 						size="icon"
