@@ -152,6 +152,7 @@ interface SettingsPageProps {
         name: string
         defaultLimitDays: number
     }>
+    canManageWorkingHours: boolean
     canEditContactInformation: boolean
     canEditLeaveCreditTypes: boolean
     onUpdateLeaveCreditTypes: (
@@ -174,6 +175,7 @@ export function SettingsPage({
     employmentOptions,
     onUpdateProfile,
     leaveCreditTypes,
+    canManageWorkingHours,
     canEditContactInformation,
     canEditLeaveCreditTypes,
     onUpdateLeaveCreditTypes,
@@ -1427,7 +1429,7 @@ export function SettingsPage({
                 </Card>
 
                 {/* Working Hours - Collapsible */}
-                <Card>
+                {canManageWorkingHours && (<Card>
                     <CardHeader
                         className="pb-3 cursor-pointer hover:bg-accent/50 transition-colors"
                         onClick={() =>
@@ -1594,7 +1596,7 @@ export function SettingsPage({
                             </motion.div>
                         )}
                     </AnimatePresence>
-                </Card>
+                </Card>)}
 
                 {/* Security Preferences - Collapsible */}
                 <Card>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch as fetch, resolveSupabaseAuthBaseUrl } from './api-fetch.mjs'
+import { canAccessPage, getRolePermissions } from './permissions.mjs'
 import { Capacitor } from '@capacitor/core'
 import { SecureStorage, KeychainAccess } from '@aparajita/capacitor-secure-storage'
 import { createBiometricSession, mapSupabaseSession } from './biometric-session.mjs'
@@ -233,6 +234,9 @@ export default function App() {
             overtime: 0,
         })
     const [currentPage, setCurrentPage] = useState('home')
+    const currentUserRole = authSession?.role ?? 'employee'
+    const permissions = getRolePermissions(currentUserRole)
+    const accessiblePage = canAccessPage(currentPage, currentUserRole) ? currentPage : 'home'
     const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(
         null
     )
@@ -2395,6 +2399,7 @@ export default function App() {
     }
 
     const handleEmployeeClick = (employeeId: string) => {
+        if (!permissions.canManageTeam) return
         setSelectedEmployeeId(employeeId)
         setCurrentPage('employee-details')
     }
@@ -2405,10 +2410,11 @@ export default function App() {
     }
 
     const renderCurrentPage = () => {
-        switch (currentPage) {
+        switch (accessiblePage) {
             case 'home':
                 return (
                     <HomePage
+                        canManageTeam={permissions.canManageTeam}
                         isClockedIn={isClockedIn}
                         isOnBreak={isOnBreak}
                         clockInTime={clockInTime}
@@ -2467,6 +2473,7 @@ export default function App() {
             case 'analytics':
                 return (
                     <AnalyticsPage
+                        canManageTeam={permissions.canManageTeam}
                         apiBaseUrl={apiBaseUrl}
                         accessToken={authSession?.accessToken ?? ''}
                         employmentOptions={employmentOptions}
@@ -2475,6 +2482,7 @@ export default function App() {
             case 'settings':
                 return (
                     <SettingsPage
+                        canManageWorkingHours={permissions.canManageWorkingHours}
                         workingHours={workingHours}
                         workingDays={workingDays}
                         onUpdateWorkingHours={updateCompanyWorkingHours}
@@ -2497,10 +2505,8 @@ export default function App() {
                         employmentOptions={employmentOptions}
                         onUpdateProfile={updateSelfProfile}
                         leaveCreditTypes={leaveCreditTypes}
-                        canEditContactInformation={
-                            authSession?.role === 'admin'
-                        }
-                        canEditLeaveCreditTypes={authSession?.role === 'admin'}
+                        canEditContactInformation={permissions.canEditProfile}
+                        canEditLeaveCreditTypes={permissions.canEditLeaveCredits}
                         onUpdateLeaveCreditTypes={updateLeaveCreditTypes}
                     />
                 )
@@ -2553,8 +2559,11 @@ export default function App() {
                 <div className="px-0 pt-4 pb-20">{renderCurrentPage()}</div>
 
                 <BottomNavigation
-                    currentPage={currentPage}
-                    onPageChange={setCurrentPage}
+                    currentUserRole={currentUserRole}
+                    currentPage={accessiblePage}
+                    onPageChange={page => {
+                        if (canAccessPage(page, currentUserRole)) setCurrentPage(page)
+                    }}
                     unreadRequestCount={
                         unreadRequestCounts.leave +
                         unreadRequestCounts.adjustment +

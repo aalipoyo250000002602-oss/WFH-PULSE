@@ -1,13 +1,16 @@
 import { Home, Inbox, Calendar, BarChart3, Settings } from 'lucide-react'
+import { canAccessPage } from '../permissions.mjs'
 import { RequestNotificationBadge } from './request-notification-badge'
 
 interface BottomNavigationProps {
+    currentUserRole: 'admin' | 'hr_manager' | 'employee'
     currentPage: string
     onPageChange: (page: string) => void
     unreadRequestCount?: number
 }
 
 export function BottomNavigation({
+    currentUserRole,
     currentPage,
     onPageChange,
     unreadRequestCount = 0,
@@ -18,16 +21,16 @@ export function BottomNavigation({
         { id: 'calendar', label: 'Calendar', icon: Calendar },
         { id: 'analytics', label: 'Analytics', icon: BarChart3 },
         { id: 'settings', label: 'Settings', icon: Settings },
-    ]
+    ].filter(item => canAccessPage(item.id, currentUserRole))
 
     return (
         <nav className="fixed bottom-0 left-1/2 transform -translate-x-1/2 w-full max-w-md bg-card border-t border-border">
-            <div className="grid grid-cols-5 h-16">
+            <div className="flex h-16">
                 {navItems.map(({ id, label, icon: Icon }) => (
                     <button
                         key={id}
                         onClick={() => onPageChange(id)}
-                        className={`flex flex-col items-center justify-center gap-1 transition-all duration-200 ${
+                        className={`flex flex-1 flex-col items-center justify-center gap-1 transition-all duration-200 ${
                             currentPage === id
                                 ? 'text-vibrant-blue bg-vibrant-blue/10'
                                 : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'

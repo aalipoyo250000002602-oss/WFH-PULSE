@@ -42,6 +42,7 @@ import { saveReport } from '../../save-report'
 import { AttendanceSheetGenerator } from '../attendance-sheet-generator'
 
 interface AnalyticsPageProps {
+    canManageTeam: boolean
     apiBaseUrl: string
     accessToken: string
     employmentOptions: {
@@ -76,6 +77,7 @@ interface AnalyticsSummary {
 }
 
 export function AnalyticsPage({
+    canManageTeam,
     apiBaseUrl,
     accessToken,
     employmentOptions,
@@ -490,7 +492,7 @@ export function AnalyticsPage({
         <div className="space-y-6 pb-20">
             <div className="px-4 space-y-4">
                 {/* Attendance Sheet and Payroll - Collapsible */}
-                <Card>
+                {canManageTeam && (<Card>
                     <CardHeader
                         className="pb-3 cursor-pointer hover:bg-accent/50 transition-colors"
                         onClick={() =>
@@ -572,7 +574,7 @@ export function AnalyticsPage({
                             </motion.div>
                         )}
                     </AnimatePresence>
-                </Card>
+                </Card>)}
 
                 {/* Merged Analytics & Reports - Collapsible */}
                 <Card>

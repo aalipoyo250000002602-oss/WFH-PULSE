@@ -28,6 +28,7 @@ import { toast } from 'sonner'
 import { getOvertimeSaveError } from '../../overtime-validation.mjs'
 
 interface HomePageProps {
+    canManageTeam: boolean
     isClockedIn: boolean
     isOnBreak: boolean
     clockInTime: string
@@ -114,6 +115,7 @@ interface HomeLeaveRequestApiRow {
 }
 
 export function HomePage({
+    canManageTeam,
     isClockedIn,
     isOnBreak,
     clockInTime,
@@ -1099,7 +1101,7 @@ export function HomePage({
                 </Card>
 
                 {/* Employees Card with Animated Toggle */}
-                <Card>
+                {canManageTeam && (<Card>
                     <CardHeader
                         className="pb-3 cursor-pointer hover:bg-accent/50 transition-colors"
                         onClick={() => setIsEmployeesOpen(!isEmployeesOpen)}
@@ -1191,7 +1193,7 @@ export function HomePage({
                             </motion.div>
                         )}
                     </AnimatePresence>
-                </Card>
+                </Card>)}
 
                 {/* Upcoming Holidays with Animated Toggle */}
                 <Card>
