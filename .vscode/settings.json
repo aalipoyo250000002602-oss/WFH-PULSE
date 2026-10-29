@@ -7,7 +7,7 @@
     "npm.packageManager": "pnpm",
     "npm.scriptRunner": "npm",
     "terminal.integrated.env.osx": {
-        "PATH": "/tmp/node-v22.23.4-darwin-arm64/bin:${env:PATH}"
+        "PATH": "/Users/alexanderalipoyo/.local/share/node/node-v22.23.4-darwin-arm64/bin:${env:PATH}"
     },
     "prettier.useTabs": false,
     "prettier.tabWidth": 4,
@@ -22,5 +22,14 @@
     },
     "[javascriptreact]": {
         "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "terminal.integrated.automationProfile.osx": {
+        "path": "/bin/zsh",
+        "args": [
+            "-l"
+        ],
+        "env": {
+            "PATH": "/Users/alexanderalipoyo/.local/share/node/node-v22.23.4-darwin-arm64/bin:${env:PATH}"
+        }
     }
 }

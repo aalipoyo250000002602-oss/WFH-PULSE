@@ -157,3 +157,29 @@ test('failed Auth password updates do not write audit records', async () => {
     assert.equal(response.status, 401)
     assert.equal(requests, 1)
 })
+
+test('dark and light mode updates preserve the preference through the production RPC', async () => {
+    for (const darkModeEnabled of [true, false]) {
+        const apiFetch = createApiFetch({
+            apiBaseUrls: [baseUrl], publishableKey: 'sb_publishable_test',
+            fetchImplementation: async (url, init) => {
+                assert.equal(url, `${baseUrl}/rpc/wfh_pulse_request`)
+                assert.equal(init.method, 'POST')
+                assert.equal(init.headers.get('authorization'), 'Bearer user-token')
+                assert.deepEqual(JSON.parse(init.body), {
+                    p_path: '/me/security-preferences', p_method: 'PUT', p_query: {},
+                    p_body: { darkModeEnabled },
+                })
+                return Response.json({ status: 200, body: {
+                    preferences: { darkModeEnabled, biometricLogin: true },
+                } })
+            },
+        })
+        const response = await apiFetch(`${baseUrl}/me/security-preferences`, {
+            method: 'PUT', headers: { Authorization: 'Bearer user-token' },
+            body: JSON.stringify({ darkModeEnabled }),
+        })
+        assert.equal(response.status, 200)
+        assert.equal((await response.json()).preferences.darkModeEnabled, darkModeEnabled)
+    }
+})

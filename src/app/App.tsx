@@ -958,17 +958,29 @@ export default function App() {
                 'wfh:biometricLoginEnabled',
                 String(nextBiometricLogin)
             )
-            if (isSupabaseBaseUrl && Capacitor.isNativePlatform()) {
-                await biometricSession.remember({
-                    access_token: authSession.accessToken,
-                    refresh_token: authSession.refreshToken,
-                    user: { id: authSession.sessionId },
-                }, nextBiometricLogin)
+            // Only biometric changes need device credential storage.
+            if (isSupabaseBaseUrl && Capacitor.isNativePlatform() &&
+                Object.prototype.hasOwnProperty.call(updates, 'biometricLogin')) {
+                try {
+                    await biometricSession.remember({
+                        access_token: authSession.accessToken,
+                        refresh_token: authSession.refreshToken,
+                        user: { id: authSession.sessionId },
+                    }, nextBiometricLogin)
+                } catch {
+                    setIsBiometricLoginAvailable(false)
+                    toast.warning('Preferences saved; biometric sign-in is unavailable', {
+                        description: 'Secure device storage could not be updated. Sign in with email and password on this device.',
+                    })
+                }
             }
             return true
-        } catch {
+        } catch (error) {
+            console.error('Security preferences update failed:', error)
             toast.error('Security preferences update failed', {
-                description: 'Unable to reach the API server.',
+                description: error instanceof Error
+                    ? error.message
+                    : 'Unable to complete the preferences update.',
             })
             return false
         }

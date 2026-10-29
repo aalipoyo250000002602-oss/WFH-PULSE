@@ -16,8 +16,14 @@
             android:name=".MainActivity"
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:screenOrientation="portrait"
             android:launchMode="singleTask"
             android:exported="true">
+
+            <!-- Honor the portrait lock on large screens when targeting Android 16. -->
+            <property
+                android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+                android:value="true" />
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
