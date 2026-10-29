@@ -2,8 +2,19 @@
 	"appId": "com.wfh.pulse",
 	"appName": "WFH Pulse",
 	"webDir": "dist",
+	"plugins": {
+		"PushNotifications": {
+			"presentationOptions": [
+				"badge",
+				"sound",
+				"banner",
+				"list"
+			]
+		}
+	},
 	"packageClassList": [
 		"BiometricAuthNative",
-		"SecureStorage"
+		"SecureStorage",
+		"PushNotificationsPlugin"
 	]
 }

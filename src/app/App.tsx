@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiFetch as fetch, resolveSupabaseAuthBaseUrl } from './api-fetch.mjs'
 import { canAccessPage, getRolePermissions } from './permissions.mjs'
 import { Capacitor } from '@capacitor/core'
+import { PushNotifications } from '@capacitor/push-notifications'
+import { createMobilePushSession } from './mobile-push.mjs'
 import { SecureStorage, KeychainAccess } from '@aparajita/capacitor-secure-storage'
 import { createBiometricSession, mapSupabaseSession } from './biometric-session.mjs'
 import {
@@ -237,6 +239,49 @@ export default function App() {
     const currentUserRole = authSession?.role ?? 'employee'
     const permissions = getRolePermissions(currentUserRole)
     const accessiblePage = canAccessPage(currentPage, currentUserRole) ? currentPage : 'home'
+    const mobilePush = useRef<ReturnType<typeof createMobilePushSession> | null>(null)
+    const pushLifecycle = useRef(Promise.resolve())
+    useEffect(() => {
+        if (!isLoggedIn || !authSession?.accessToken || !Capacitor.isNativePlatform() ||
+            (import.meta as any).env?.VITE_PUSH_NOTIFICATIONS_ENABLED !== 'true') return
+        let cancelled = false
+        let controller: ReturnType<typeof createMobilePushSession> | undefined
+        pushLifecycle.current = pushLifecycle.current.then(async () => {
+            if (cancelled) return
+            let installationId = window.localStorage.getItem('wfh:pushInstallationId')
+            if (!installationId) {
+                installationId = crypto.randomUUID()
+                window.localStorage.setItem('wfh:pushInstallationId', installationId)
+            }
+            const refreshRequests = () => {
+                for (const name of ['leave', 'overtime']) {
+                    window.dispatchEvent(new CustomEvent(`wfh-pulse:${name}-updated`))
+                }
+                void loadUnreadRequestCounts()
+            }
+            controller = createMobilePushSession({
+                plugin: PushNotifications, platform: Capacitor.getPlatform(), installationId,
+                apnsEnvironment: (import.meta as any).env?.VITE_APNS_ENVIRONMENT ?? 'production',
+                apiBaseUrl, accessToken: authSession.accessToken, fetchImplementation: fetch,
+                onReceive: refreshRequests,
+                onOpen: (data: { page: string }) => {
+                    if (canAccessPage(data.page, currentUserRole)) setCurrentPage(data.page)
+                    refreshRequests()
+                },
+                onError: () => console.warn('Mobile request notifications could not be registered.'),
+            })
+            mobilePush.current = controller
+            await controller.start()
+        }).catch(() => console.warn('Mobile request notifications could not be started.'))
+        return () => {
+            cancelled = true
+            pushLifecycle.current = pushLifecycle.current.then(async () => {
+                if (controller) await controller.stop()
+                if (mobilePush.current === controller) mobilePush.current = null
+            }).catch(() => console.warn('Mobile notification registration cleanup failed.'))
+        }
+    }, [isLoggedIn, authSession?.accessToken, authSession?.sessionId, currentUserRole])
+
     const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(
         null
     )
@@ -2038,7 +2083,9 @@ export default function App() {
         }
     }
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
+        try { await mobilePush.current?.stop() }
+        catch { console.warn('Device notification registration could not be removed; native push was unregistered.') }
         setAuthSession(null)
         setIsLoggedIn(false)
         setIsDarkMode(false)

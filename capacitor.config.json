@@ -1,5 +1,15 @@
 {
   "appId": "com.wfh.pulse",
   "appName": "WFH Pulse",
-  "webDir": "dist"
+  "webDir": "dist",
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "banner",
+        "list"
+      ]
+    }
+  }
 }

@@ -25,3 +25,15 @@ services:
         sync: false
       - key: API_JWT_SECRET
         generateValue: true
+      - key: PUSH_NOTIFICATIONS_ENABLED
+        value: "false"
+      - key: FCM_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: APNS_KEY_ID
+        sync: false
+      - key: APNS_TEAM_ID
+        sync: false
+      - key: APNS_PRIVATE_KEY
+        sync: false
+      - key: APNS_TOPIC
+        value: com.wfh.pulse

@@ -13,6 +13,10 @@ import { registerMeRoutes } from './me.controller.mjs'
 import { registerEmployeeRoutes } from './employees.controller.mjs'
 import { registerSettingsRoutes } from './settings.controller.mjs'
 
+import { registerPushDeviceRoutes } from './push-devices.controller.mjs'
+import { createMobilePushSender } from '../services/mobile-push.service.mjs'
+import { startPushWorker } from '../services/request-push-worker.mjs'
+
 const app = express()
 const { port, envPath, supabase, database } = getApiConfig()
 
@@ -1630,6 +1634,17 @@ if (process.argv.includes('--check')) {
     process.exit(0)
 }
 
+registerPushDeviceRoutes(app, { requireAuth, query })
+let stopPushWorker = async () => {}
+if (process.env.PUSH_NOTIFICATIONS_ENABLED === 'true') {
+    const sender = createMobilePushSender()
+    if (sender.configuredPlatforms.length) {
+        stopPushWorker = startPushWorker(pool, sender)
+    } else {
+        console.warn('Mobile push is enabled but no APNs or FCM credentials are configured.')
+    }
+}
+
 const server = app.listen(port, () => {
     const hasSupabaseConfig =
         Boolean(supabase.url) &&
@@ -1647,11 +1662,14 @@ const server = app.listen(port, () => {
     console.log(`Database config loaded: ${hasDatabaseConfig}`)
 })
 
-process.on('SIGINT', async () => {
+const shutdown = async () => {
+    await stopPushWorker()
     server.close(async () => {
         await pool.end().catch(() => {
             // Ignore pool close errors.
         })
         process.exit(0)
     })
-})
+}
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)

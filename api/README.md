@@ -257,3 +257,89 @@ It will:
     - `SET LOCAL app.user_id`
     - `SET LOCAL app.user_role`
 - Self-service profile update accepts only contact/personal fields; protected fields are blocked by DB trigger.
+
+
+## Mobile request notifications
+
+New leave, attendance adjustment, and overtime requests notify active users with the
+`admin` role. A status change made by an admin or HR manager notifies only the
+original requester. A requester cancelling or resubmitting a request notifies
+admins. Other employees and other admins do not receive the requester's status
+notification. Editing a request without changing its status does not send another
+notification.
+
+Events are created by database triggers in the same transaction as the request.
+A rollback creates no notification. The requester is recorded from the authenticated
+transaction, not a client-supplied user ID. Historical requests are attributed only
+when their employee maps to one active application account. Maintenance writes
+without an authenticated actor do not send notifications.
+
+### Production setup
+
+1. Apply migration `0027_request_push_notifications`, or run
+   `database/10_request_notifications.sql` in Supabase SQL Editor **after**
+   `07_supabase_rest_api.sql`. Reapply file 10 if you reinstall file 07. This adds
+   private device registrations, recipient events, and delivery queues. Authenticated
+   users cannot read any device tokens or delivery queues directly.
+2. In Firebase, register Android application `com.wfh.pulse`, enable Cloud Messaging
+   HTTP v1, and download `google-services.json` into `android/app/`. Create a service
+   account with permission to send FCM messages. Set its JSON as the **server-only**
+   `FCM_SERVICE_ACCOUNT_JSON` environment variable.
+3. In Apple Developer, enable Push Notifications for the `com.wfh.pulse` App ID and
+   regenerate its provisioning profile. Create an APNs authentication key and set
+   server-only `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY` (PEM, actual newlines
+   or escaped `\n`), and `APNS_TOPIC=com.wfh.pulse`. The Xcode project includes push
+   entitlements and AppDelegate registration callbacks. Debug signing uses Apple's
+   development environment; Release signing uses production.
+4. Deploy the API service with `PUSH_NOTIFICATIONS_ENABLED=true`, a working production
+   `SUPABASE_DB_URL`, and the provider credentials. The API process runs the delivery
+   worker; the database and mobile app alone cannot deliver pushes. Supabase REST
+   remains the mobile app's API; device registration goes through the authenticated
+   REST RPC, while the worker reads the same database. If the direct database host
+   cannot resolve on the hosting network, use your project's Supabase session-pooler
+   connection string from the Supabase Connect dialog. Do not run migrations or
+   imports to work around a connection failure.
+5. Set `VITE_PUSH_NOTIFICATIONS_ENABLED=true` in the mobile build environment only
+   after native provider setup. Set `VITE_APNS_ENVIRONMENT=production` for signed
+   distribution builds, or `sandbox` for development provisioning. The selected
+   environment must match the signing entitlement, regardless of which API the app
+   connects to. Rebuild web assets, run `cap sync ios` and `cap sync android`, and
+   distribute the newly signed native apps. Sign in and allow notification permission
+   on each device. Push registration is disabled by default while credentials are
+   missing so existing Android builds do not attempt to initialize unconfigured FCM.
+
+Use `api/push-notifications.env.example` for the required variable names. Never put
+service-account JSON or the APNs private key in a `VITE_` variable or a mobile bundle.
+Provider setup: [Capacitor native push](https://capacitorjs.com/docs/apis/push-notifications),
+[Firebase HTTP v1](https://firebase.google.com/docs/cloud-messaging/send/v1-api),
+[APNs token authentication](https://developer.apple.com/documentation/usernotifications/establishing-a-token-based-connection-to-apns).
+
+### Delivery and account isolation
+
+The worker sends one token-targeted message per recipient/device, never an FCM topic
+or a company-wide broadcast. It rechecks active account, role, and device binding
+before each send. A device switched to another account cannot receive old queued
+jobs for the previous binding. Logout removes the signed-in account's registration,
+unregisters native push, and clears already-delivered notifications from that device.
+Late registration callbacks cannot rebind a logged-out account. Notification taps
+are accepted only for the current binding and follow the app's page permissions.
+
+Device permissions and provider configuration are required for lock-screen and
+background notifications. A device must register before an event occurs; users
+without a registered device still have their normal request history, but cannot
+receive a push. System notifications may already be in transit at logout; clearing
+delivered notifications and rotating the binding prevents reuse in the app. Delivery
+is at-least-once, retries transient failures with backoff, and stops after eight
+attempts. Invalid tokens are removed. Notification payloads contain request type,
+status, and identifiers, without leave reasons, attachments, or payroll details.
+
+For verification, run `node --test src/app/mobile-push.test.mjs
+api/src/services/mobile-push.test.mjs`. Run `node database/test-request-notifications.mjs`
+for recipient, RLS, retry, account-switching, and migration rollback tests in a
+**disposable local PostgreSQL cluster** (set `PG_BIN` to the directory containing
+`initdb` and `pg_ctl` if needed). These tests send no real pushes and never connect
+to production. Final device verification needs signed apps and real provider keys:
+create a request as employee A, confirm only admins receive it, change its status as
+an admin, confirm only A receives it, and confirm employee B receives neither event.
+Repeat with the apps backgrounded, with multiple devices, and after logout/account
+switching. Also test denied permission and a temporary provider/network outage.
