@@ -1,6 +1,12 @@
 # WFH PULSE : EMPOWERING REMOTE TEAMS
 
-https://github.com/user-attachments/assets/380a547a-966d-46ae-96bd-371a25767ba8
+<div align="center">
+  <video
+    src="https://github.com/user-attachments/assets/c343c444-cf8e-4faa-b3bc-7ab8fc7d245e"
+    width="360"
+    controls>
+  </video>
+</div>
 
 Interactive project guide for local web development and Android simulator runs.
 
