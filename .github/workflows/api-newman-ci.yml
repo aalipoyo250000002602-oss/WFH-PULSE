@@ -76,7 +76,7 @@ jobs:
                   EOF
 
             - name: Run migrations
-              run: corepack pnpm run db:migrate
+              run: corepack pnpm run db:migrate --ci-supabase-fixture
 
             - name: Start API
               run: |

@@ -3,6 +3,7 @@ import path from "node:path";
 import process from "node:process";
 import { Client } from "pg";
 import { getPostgresConfig, getSafeConfigPreview } from "./db.config.mjs";
+import { prepareCiSupabaseFixture } from "./ci-supabase-fixture.mjs";
 
 const migrationsDir = path.resolve(process.cwd(), "database", "migrations");
 
@@ -12,6 +13,7 @@ function parseArgs(argv) {
   return {
     command,
     dryRun: options.has("--dry-run"),
+    ciSupabaseFixture: options.has("--ci-supabase-fixture"),
   };
 }
 
@@ -117,7 +119,7 @@ async function runDryMode(command) {
 }
 
 async function run() {
-  const { command, dryRun } = parseArgs(process.argv.slice(2));
+  const { command, dryRun, ciSupabaseFixture } = parseArgs(process.argv.slice(2));
 
   if (!new Set(["up", "down", "status"]).has(command)) {
     throw new Error("Invalid command. Use: up | down | status");
@@ -151,6 +153,9 @@ async function run() {
       }
 
       for (const version of pending) {
+        if (ciSupabaseFixture && version === "0027_request_push_notifications") {
+          await prepareCiSupabaseFixture(client, getSafeConfigPreview());
+        }
         console.log(`Applying ${version} ...`);
         await applyMigration(client, version);
         console.log(`Applied ${version}.`);
