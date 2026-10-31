@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createBiometricSession } from './biometric-session.mjs'
+import { canOfferBiometricLogin, createBiometricSession } from './biometric-session.mjs'
 
 const initial = { access_token: 'fixture-access', refresh_token: 'fixture-refresh', user: { id: 'fixture-user', email: 'fixture@example.com' } }
 
@@ -76,4 +76,45 @@ test('concurrent attempts share one verification and token rotation', async () =
     const [first, second] = await Promise.all([session.signIn(), session.signIn()])
     assert.equal(first.accessToken, second.accessToken)
     assert.equal(calls.filter(call => call === 'refresh').length, 1)
+})
+
+test('biometric sign-in stays hidden before first login and when the toggle is disabled', async () => {
+    const { session } = fixture()
+    const availability = overrides => canOfferBiometricLogin({
+        isNative: true, enabled: true, rememberedEmail: 'fixture@example.com',
+        checkBiometry: async () => ({ isAvailable: true }),
+        hasSavedSession: () => session.available(),
+        ...overrides,
+    })
+    assert.equal(await availability({}), false)
+    await session.remember(initial, true)
+    assert.equal(await availability({ rememberedEmail: null }), false)
+    assert.equal(await availability({ enabled: false }), false)
+    assert.equal(await availability({}), true)
+    await session.remember(initial, false)
+    assert.equal(await availability({}), false)
+})
+
+test('saved biometric enrollment remains available in the next app session', async () => {
+    const { session, saved } = fixture()
+    await session.remember(initial, true)
+    const nextSession = fixture({ storage: { keys: async () => [...saved.keys()] } }).session
+    assert.equal(await canOfferBiometricLogin({
+        isNative: true, enabled: true, rememberedEmail: 'fixture@example.com',
+        checkBiometry: async () => ({ deviceIsSecure: true }),
+        hasSavedSession: () => nextSession.available(),
+    }), true)
+})
+
+test('biometric sign-in is hidden in browsers and when device verification is unavailable', async () => {
+    const options = {
+        isNative: true, enabled: true, rememberedEmail: 'fixture@example.com',
+        checkBiometry: async () => ({ isAvailable: false, deviceIsSecure: false }),
+        hasSavedSession: async () => true,
+    }
+    assert.equal(await canOfferBiometricLogin(options), false)
+    assert.equal(await canOfferBiometricLogin({ ...options, isNative: false }), false)
+    assert.equal(await canOfferBiometricLogin({
+        ...options, checkBiometry: async () => { throw new Error('Unavailable') },
+    }), false)
 })

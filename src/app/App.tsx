@@ -6,7 +6,7 @@ import { Capacitor } from '@capacitor/core'
 import { PushNotifications } from '@capacitor/push-notifications'
 import { createMobilePushSession } from './mobile-push.mjs'
 import { SecureStorage, KeychainAccess } from '@aparajita/capacitor-secure-storage'
-import { createBiometricSession, mapSupabaseSession } from './biometric-session.mjs'
+import { canOfferBiometricLogin, createBiometricSession, mapSupabaseSession } from './biometric-session.mjs'
 import {
     AndroidBiometryStrength,
     BiometricAuth,
@@ -940,7 +940,7 @@ export default function App() {
                 darkModeEnabled: Boolean(pref.darkModeEnabled),
             })
             setIsDarkMode(Boolean(pref.darkModeEnabled))
-            setIsBiometricLoginAvailable(Boolean(pref.biometricLogin))
+            if (!pref.biometricLogin) setIsBiometricLoginAvailable(false)
             window.localStorage.setItem(
                 'wfh:biometricLoginEnabled',
                 String(Boolean(pref.biometricLogin))
@@ -1011,7 +1011,7 @@ export default function App() {
                 darkModeEnabled: nextDarkMode,
             })
             setIsDarkMode(nextDarkMode)
-            setIsBiometricLoginAvailable(nextBiometricLogin)
+            if (!nextBiometricLogin) setIsBiometricLoginAvailable(false)
             window.localStorage.setItem(
                 'wfh:biometricLoginEnabled',
                 String(nextBiometricLogin)
@@ -1756,41 +1756,24 @@ export default function App() {
     }
 
     useEffect(() => {
+        let cancelled = false
+        setIsBiometricLoginAvailable(false)
+        if (isLoggedIn) return
+
         const loadBiometricAvailability = async () => {
-            if (isSupabaseBaseUrl) {
-                setIsBiometricLoginAvailable(false)
-                if (!Capacitor.isNativePlatform()) return
-                try {
-                    const biometry = await BiometricAuth.checkBiometry()
-                    const enabled = window.localStorage.getItem('wfh:biometricLoginEnabled') === 'true'
-                    setIsBiometricLoginAvailable(enabled && (biometry.isAvailable || biometry.deviceIsSecure)
-                        && await biometricSession.available())
-                } catch {}
-                return
-            }
-
-            try {
-                const response = await fetch(
-                    `${apiBaseUrl}/auth/biometric-login/available`,
-                    {
-                        method: 'GET',
-                    }
-                )
-
-                if (!response.ok) {
-                    return
-                }
-
-                const payload = await response.json().catch(() => ({}))
-                const available = Boolean(payload?.available)
-                setIsBiometricLoginAvailable(prev => prev || available)
-            } catch {
-                // Keep the persisted local preference when availability endpoint is unreachable.
-            }
+            const available = await canOfferBiometricLogin({
+                isNative: Capacitor.isNativePlatform(),
+                enabled: window.localStorage.getItem('wfh:biometricLoginEnabled') === 'true',
+                rememberedEmail: window.localStorage.getItem('wfh:lastBiometricEmail'),
+                checkBiometry: () => BiometricAuth.checkBiometry(),
+                hasSavedSession: () => isSupabaseBaseUrl ? biometricSession.available() : true,
+            })
+            if (!cancelled) setIsBiometricLoginAvailable(available)
         }
 
         void loadBiometricAvailability()
-    }, [apiBaseUrl, isSupabaseBaseUrl, biometricSession])
+        return () => { cancelled = true }
+    }, [isLoggedIn, isSupabaseBaseUrl, biometricSession])
 
     const initializeMobileOffline = async (session: AuthSession) => {
         if (!Capacitor.isNativePlatform() || !isSupabaseBaseUrl) return
@@ -1843,6 +1826,11 @@ export default function App() {
         try { await initializeMobileOffline(nextSession) }
         catch { console.warn('Offline saving is unavailable; online attendance still works.') }
         setAuthSession(authSessionLive.current ?? nextSession)
+
+        // Clear the previous account's eligibility until this login's preferences load.
+        setIsBiometricLoginAvailable(false)
+        window.localStorage.setItem('wfh:biometricLoginEnabled', 'false')
+        window.localStorage.removeItem('wfh:lastBiometricEmail')
 
         if (payload.user?.email) {
             window.localStorage.setItem(
@@ -2055,7 +2043,7 @@ export default function App() {
                     description: 'You are now signed in.',
                 })
             } catch (error) {
-                setIsBiometricLoginAvailable(await biometricSession.available().catch(() => false))
+                setIsBiometricLoginAvailable(false)
                 toast.error('Biometric sign in failed', {
                     description: error instanceof Error ? error.message : 'Please sign in with email and password again.',
                 })

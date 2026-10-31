@@ -62,3 +62,15 @@ export function createBiometricSession({ authBaseUrl, publishableKey, isNative, 
 
     return { remember, available, forget, signIn }
 }
+
+// Visibility depends on enrollment on this device, never other accounts on the server.
+export async function canOfferBiometricLogin({ isNative, enabled, rememberedEmail, checkBiometry, hasSavedSession }) {
+    if (!isNative || !enabled || !rememberedEmail) return false
+    try {
+        const biometry = await checkBiometry()
+        if (!biometry.isAvailable && !biometry.deviceIsSecure) return false
+        return Boolean(await hasSavedSession())
+    } catch {
+        return false
+    }
+}
