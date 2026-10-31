@@ -57,11 +57,10 @@ Optional Slack attendance notifications (clock-in/clock-out):
 
 When `SLACK_WEBHOOK_URL` is unset, Slack notifications are automatically disabled.
 
-Optional Smart Leave Planner AI event context:
-
-- `GEMINI_API_KEY`: Server-side Gemini API key used by `POST /me/leave-planner/insights` to enrich recommended schedules with possible local/community events and festivals outside registered company holidays.
-
-When `GEMINI_API_KEY` is unset or credits are unavailable, the planner automatically falls back to built-in schedule guidance.
+The Smart Leave Planner now calculates schedules locally and opens Google
+Search links for the selected dates and country. It does not call
+`POST /me/leave-planner/insights` and requires no Gemini or search API key.
+The older Gemini endpoint remains for compatibility with older app builds.
 
 ## Start API
 
@@ -119,8 +118,8 @@ SELECT name FROM vault.secrets
 WHERE name IN ('gemini_api_key', 'slack_attendance_webhook');
 ```
 
-Until those entries are configured, AI returns 503 so the built-in planner
-fallback remains available, and the Slack trigger safely skips delivery. Slack
+The Gemini handler is retained for older app builds; the current planner does
+not call it. Without the Slack secret, the Slack trigger safely skips delivery. Slack
 events are queued post-commit with `pg_net`; asynchronous delivery results are
 not yet written back into the delivery-log table.
 

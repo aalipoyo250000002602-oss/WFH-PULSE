@@ -1341,8 +1341,6 @@ export function CalendarPage({
         <div className="space-y-6 pb-20">
             <div className="px-4 space-y-4">
                 <SmartLeavePlanner
-                    apiBaseUrl={apiBaseUrl}
-                    accessToken={accessToken}
                     leaveTypes={leaveTypes}
                     holidays={holidays}
                     requests={recentLeaveRequests}

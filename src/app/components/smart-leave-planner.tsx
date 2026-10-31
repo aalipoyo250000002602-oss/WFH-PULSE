@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { apiFetch as fetch } from '../api-fetch.mjs'
+import { useMemo, useState } from 'react'
 import {
     CalendarDays,
     CheckCircle2,
-    Info,
+    ExternalLink,
+    Search,
     Sparkles,
     WandSparkles,
 } from 'lucide-react'
 import { format, addMonths, startOfMonth } from 'date-fns'
 import { generateLeavePlans, filterLeavePlans } from '../leave-plans.mjs'
-import { toast } from 'sonner'
+import {
+    buildLeaveSearchLinks,
+    leaveSearchCountries,
+} from '../leave-search.mjs'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import {
@@ -27,7 +30,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from './ui/select'
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 
 interface PlannerHoliday {
     date: string
@@ -54,8 +56,6 @@ export interface LeavePlan {
 }
 
 interface SmartLeavePlannerProps {
-    apiBaseUrl: string
-    accessToken: string
     leaveTypes: PlannerLeaveType[]
     holidays: PlannerHoliday[]
     requests: PlannerLeaveRequest[]
@@ -71,50 +71,9 @@ interface SuggestedPlan {
     holidayNames: string[]
 }
 
-interface PlanAiInsight {
-    bullets: string[]
-    events: string[]
-    source: 'gemini' | 'fallback'
-}
-
 const dateKey = (date: Date) => format(date, 'yyyy-MM-dd')
 
-const FALLBACK_BULLET_LIMIT = 2
-const FALLBACK_EVENT_LIMIT = 4
-const fallbackRegionalEvents = [
-    'Philippines: Kadayawan-style local harvest fairs and barangay food markets.',
-    'Philippines: University week festivals, local intramurals, and city foundation events.',
-    'Australia: Spring wine-and-food festivals and weekend coastal community markets.',
-    'Australia: Arts-night programs and regional music events in major capitals.',
-    'United States: Fall county fairs, college football weekends, and farmers markets.',
-    'United States: Community parades, downtown cultural weekends, and food truck festivals.',
-]
-
-function buildPlanKey(startDate: Date, endDate: Date) {
-    return `${dateKey(startDate)}-${dateKey(endDate)}`
-}
-
-function buildFallbackAiInsight(plan: SuggestedPlan): PlanAiInsight {
-    const offset = plan.startDate.getMonth() % fallbackRegionalEvents.length
-    const events = Array.from({ length: FALLBACK_EVENT_LIMIT }, (_, index) => {
-        const eventIndex = (offset + index) % fallbackRegionalEvents.length
-        return fallbackRegionalEvents[eventIndex]
-    })
-
-    const bullets = [
-        `Includes ${plan.weekendDays} weekend day${plan.weekendDays === 1 ? '' : 's'} to stretch your time away.`,
-    ]
-
-    return {
-        bullets: bullets.slice(0, FALLBACK_BULLET_LIMIT),
-        events: events.slice(0, FALLBACK_EVENT_LIMIT),
-        source: 'fallback',
-    }
-}
-
 export function SmartLeavePlanner({
-    apiBaseUrl,
-    accessToken,
     leaveTypes,
     holidays,
     requests,
@@ -127,15 +86,9 @@ export function SmartLeavePlanner({
     const [sortBy, setSortBy] = useState('best')
     const [page, setPage] = useState(0)
     const [selectedPlanKey, setSelectedPlanKey] = useState('')
-    const [aiInsights, setAiInsights] = useState<Record<string, PlanAiInsight>>(
-        {}
-    )
-    const [isAiLoading, setIsAiLoading] = useState(false)
-    const [isUsingLiveAi, setIsUsingLiveAi] = useState(false)
-    const hasShownAiUnavailableToast = useRef(false)
+    const [searchCountry, setSearchCountry] = useState('PH')
 
     const selectedLeaveType = leaveTypes.find(type => type.id === leaveTypeId)
-    const canFetchLiveInsights = Boolean(apiBaseUrl && accessToken)
     const monthOptions = useMemo(() => {
         const firstMonth = startOfMonth(new Date())
         return Array.from({ length: 7 }, (_, index) => {
@@ -165,171 +118,11 @@ export function SmartLeavePlanner({
     )
     const pageCount = Math.ceil(matchingPlans.length / 3)
     const currentPage = Math.min(page, Math.max(0, pageCount - 1))
-    // Keep native/mobile pages short and live AI requests within the API's three-plan limit.
+    // Keep recommendation pages short on mobile.
     const plans = useMemo(
         () => matchingPlans.slice(currentPage * 3, currentPage * 3 + 3),
         [matchingPlans, currentPage]
     )
-
-    useEffect(() => {
-        if (!plans.length) {
-            setAiInsights({})
-            setIsAiLoading(false)
-            setIsUsingLiveAi(false)
-            return
-        }
-
-        const fallbackInsights = plans.reduce<Record<string, PlanAiInsight>>(
-            (accumulator, plan) => {
-                accumulator[buildPlanKey(plan.startDate, plan.endDate)] =
-                    buildFallbackAiInsight(plan)
-                return accumulator
-            },
-            {}
-        )
-
-        if (!canFetchLiveInsights) {
-            setAiInsights(fallbackInsights)
-            setIsAiLoading(false)
-            setIsUsingLiveAi(false)
-            return
-        }
-
-        const controller = new AbortController()
-        setAiInsights(fallbackInsights)
-        setIsUsingLiveAi(false)
-        setIsAiLoading(true)
-
-        const fetchAiContext = async () => {
-            try {
-                const plansForRequest = plans.map(plan => ({
-                    rangeStart: dateKey(plan.startDate),
-                    rangeEnd: dateKey(plan.endDate),
-                    weekendDays: plan.weekendDays,
-                    registeredHolidays: plan.holidayNames,
-                }))
-
-                const response = await fetch(
-                    `${apiBaseUrl}/me/leave-planner/insights`,
-                    {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            Authorization: `Bearer ${accessToken}`,
-                        },
-                        body: JSON.stringify({ plans: plansForRequest }),
-                        signal: controller.signal,
-                    }
-                )
-
-                if (!response.ok) {
-                    throw new Error(
-                        `Planner insights request failed with status ${response.status}`
-                    )
-                }
-
-                const data = (await response.json()) as unknown
-                const rawInsights = (data as { insights?: unknown[] } | null)
-                    ?.insights
-                if (!Array.isArray(rawInsights)) {
-                    throw new Error('Planner insights payload is invalid')
-                }
-
-                const generatedContext: Record<string, PlanAiInsight> = {}
-
-                for (const item of rawInsights) {
-                    if (!item || typeof item !== 'object') {
-                        continue
-                    }
-
-                    const rangeStart =
-                        typeof (item as { rangeStart?: unknown }).rangeStart ===
-                        'string'
-                            ? (item as { rangeStart: string }).rangeStart
-                            : ''
-                    const rangeEnd =
-                        typeof (item as { rangeEnd?: unknown }).rangeEnd ===
-                        'string'
-                            ? (item as { rangeEnd: string }).rangeEnd
-                            : ''
-                    const bullets = Array.isArray(
-                        (item as { bullets?: unknown[] }).bullets
-                    )
-                        ? (item as { bullets: unknown[] }).bullets
-                              .filter(
-                                  bullet =>
-                                      typeof bullet === 'string' &&
-                                      bullet.trim().length > 0
-                              )
-                              .map(bullet => bullet.trim())
-                              .slice(0, FALLBACK_BULLET_LIMIT)
-                        : []
-                    const events = Array.isArray(
-                        (item as { events?: unknown[] }).events
-                    )
-                        ? (item as { events: unknown[] }).events
-                              .filter(
-                                  event =>
-                                      typeof event === 'string' &&
-                                      event.trim().length > 0
-                              )
-                              .map(event => event.trim())
-                              .slice(0, FALLBACK_EVENT_LIMIT)
-                        : []
-
-                    if (!rangeStart || !rangeEnd || bullets.length === 0) {
-                        continue
-                    }
-
-                    generatedContext[`${rangeStart}-${rangeEnd}`] = {
-                        bullets,
-                        events,
-                        source: 'gemini',
-                    }
-                }
-
-                const mergedInsights = plans.reduce<
-                    Record<string, PlanAiInsight>
-                >((accumulator, plan) => {
-                    const key = buildPlanKey(plan.startDate, plan.endDate)
-                    accumulator[key] =
-                        generatedContext[key] ?? fallbackInsights[key]
-                    return accumulator
-                }, {})
-
-                setAiInsights(mergedInsights)
-                setIsUsingLiveAi(
-                    Object.values(mergedInsights).some(
-                        insight => insight.source === 'gemini'
-                    )
-                )
-                setIsAiLoading(false)
-            } catch (error) {
-                if (controller.signal.aborted) {
-                    return
-                }
-
-                console.error(
-                    'Smart Leave Planner: unable to fetch live AI insights',
-                    error
-                )
-                setAiInsights(fallbackInsights)
-                setIsUsingLiveAi(false)
-                setIsAiLoading(false)
-                if (!hasShownAiUnavailableToast.current) {
-                    toast.warning(
-                        'Live AI event context is unavailable. Showing built-in schedule guidance.'
-                    )
-                    hasShownAiUnavailableToast.current = true
-                }
-            }
-        }
-
-        fetchAiContext()
-        return () => {
-            controller.abort()
-        }
-    }, [accessToken, apiBaseUrl, canFetchLiveInsights, plans])
 
     const handleGenerate = () => {
         setPage(0)
@@ -342,7 +135,7 @@ export function SmartLeavePlanner({
             <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                     <Sparkles className="h-5 w-5 text-vibrant-purple" />
-                    Pulse AI Smart Leave Planner
+                    Pulse Smart Leave Planner
                 </CardTitle>
                 <CardDescription>
                     Find leave dates that maximize long weekends and avoid
@@ -506,15 +299,37 @@ export function SmartLeavePlanner({
                                 {matchingPlans.length} options
                             </Badge>
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                            {isAiLoading
-                                ? 'Loading live AI event context...'
-                                : isUsingLiveAi
-                                  ? 'Live AI event context is active.'
-                                  : canFetchLiveInsights
-                                    ? 'Built-in schedule guidance is shown while live AI context is unavailable.'
-                                    : 'Live AI context needs a signed-in session and API connection.'}
-                        </p>
+                        <div className="space-y-2">
+                            <Label htmlFor="planner-search-country">
+                                Explore country
+                            </Label>
+                            <Select
+                                value={searchCountry}
+                                onValueChange={setSearchCountry}
+                            >
+                                <SelectTrigger
+                                    id="planner-search-country"
+                                    className="w-full"
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {leaveSearchCountries.map(country => (
+                                        <SelectItem
+                                            key={country.code}
+                                            value={country.code}
+                                        >
+                                            {country.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">
+                                Open Google results for each schedule’s dates
+                                and selected country. Confirm event dates on the
+                                organizer’s website.
+                            </p>
+                        </div>
                         <p
                             className="text-xs text-muted-foreground"
                             aria-live="polite"
@@ -530,9 +345,11 @@ export function SmartLeavePlanner({
                             const planStart = dateKey(plan.startDate)
                             const planEnd = dateKey(plan.endDate)
                             const planKey = `${planStart}-${planEnd}`
-                            const planInsight =
-                                aiInsights[planKey] ??
-                                buildFallbackAiInsight(plan)
+                            const searchLinks = buildLeaveSearchLinks({
+                                startDate: plan.startDate,
+                                endDate: plan.endDate,
+                                countryCode: searchCountry,
+                            })
                             const isSelected = selectedPlanKey === planKey
                             return (
                                 <div
@@ -589,91 +406,55 @@ export function SmartLeavePlanner({
                                     <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-vibrant-blue/20 bg-gradient-to-b from-vibrant-blue/10 to-vibrant-blue/5 p-3">
                                         <div className="space-y-2.5">
                                             <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-vibrant-blue/90">
-                                                Trip intelligence
+                                                Explore your trip
                                             </p>
-                                            <div className="flex flex-wrap gap-2">
-                                                <Badge
-                                                    variant="secondary"
-                                                    className="border border-vibrant-blue/20 bg-background/70"
-                                                >
-                                                    {planInsight.source ===
-                                                    'gemini'
-                                                        ? 'Live AI'
-                                                        : 'Smart Guide'}
-                                                </Badge>
-                                                <Badge
-                                                    variant="outline"
-                                                    className="bg-background/70"
-                                                >
-                                                    {planInsight.events.length}{' '}
-                                                    event hint
-                                                    {planInsight.events
-                                                        .length === 1
-                                                        ? ''
-                                                        : 's'}
-                                                </Badge>
-                                            </div>
-                                            <Popover>
-                                                <PopoverTrigger asChild>
+                                            <p className="text-sm text-muted-foreground">
+                                                Use {plan.leaveCreditsUsed}{' '}
+                                                leave{' '}
+                                                {plan.leaveCreditsUsed === 1
+                                                    ? 'credit'
+                                                    : 'credits'}{' '}
+                                                for {plan.spanDays} days away,
+                                                including {plan.weekendDays}{' '}
+                                                weekend{' '}
+                                                {plan.weekendDays === 1
+                                                    ? 'day'
+                                                    : 'days'}
+                                                .
+                                            </p>
+                                            <div
+                                                className="grid gap-2"
+                                                aria-label="Google searches for this schedule"
+                                            >
+                                                {searchLinks.map(link => (
                                                     <Button
-                                                        type="button"
+                                                        key={link.label}
+                                                        asChild
                                                         variant="outline"
                                                         size="sm"
-                                                        className="h-8 w-full border-vibrant-blue/40 bg-background/80 text-vibrant-blue hover:bg-vibrant-blue/10"
+                                                        className="h-auto min-h-9 w-full justify-start whitespace-normal border-vibrant-blue/30 bg-background/80 text-vibrant-blue"
                                                     >
-                                                        <Info className="mr-2 h-3.5 w-3.5" />
-                                                        Explore travel pulse
+                                                        <a
+                                                            href={link.url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            referrerPolicy="no-referrer"
+                                                            aria-label={`${link.label} in ${link.country} on Google, ${format(plan.startDate, 'MMM d, yyyy')} to ${format(plan.endDate, 'MMM d, yyyy')} (opens in a new tab)`}
+                                                        >
+                                                            <Search className="h-3.5 w-3.5 shrink-0" />
+                                                            <span className="min-w-0 flex-1 text-left">
+                                                                {link.label}
+                                                            </span>
+                                                            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                                                        </a>
                                                     </Button>
-                                                </PopoverTrigger>
-                                                <PopoverContent
-                                                    align="start"
-                                                    className="w-[min(24rem,calc(100vw-2rem))] space-y-2 border-vibrant-blue/30 bg-background p-3 text-xs text-muted-foreground"
-                                                >
-                                                    <p className="font-medium uppercase tracking-[0.12em] text-vibrant-blue/80">
-                                                        AI schedule context
-                                                    </p>
-                                                    {planInsight.bullets.map(
-                                                        insight => (
-                                                            <p
-                                                                key={insight}
-                                                                className="leading-relaxed"
-                                                            >
-                                                                • {insight}
-                                                            </p>
-                                                        )
-                                                    )}
-                                                    {planInsight.events.length >
-                                                    0 ? (
-                                                        <div className="space-y-1 pt-1">
-                                                            <p className="font-medium text-vibrant-blue/80">
-                                                                PH • AU • US
-                                                                event hints
-                                                            </p>
-                                                            {planInsight.events.map(
-                                                                event => (
-                                                                    <p
-                                                                        key={
-                                                                            event
-                                                                        }
-                                                                        className="leading-relaxed"
-                                                                    >
-                                                                        •{' '}
-                                                                        {event}
-                                                                    </p>
-                                                                )
-                                                            )}
-                                                        </div>
-                                                    ) : (
-                                                        <p className="leading-relaxed">
-                                                            • No additional
-                                                            public event data
-                                                            found beyond your
-                                                            registered company
-                                                            holidays.
-                                                        </p>
-                                                    )}
-                                                </PopoverContent>
-                                            </Popover>
+                                                ))}
+                                            </div>
+                                            <p className="text-xs text-muted-foreground">
+                                                Searches open in a new tab.
+                                                Country selection applies to
+                                                searches only.
+                                            </p>
                                         </div>
                                         <Button
                                             variant="outline"

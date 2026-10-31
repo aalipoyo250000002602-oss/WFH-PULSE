@@ -223,20 +223,18 @@ Normal push/PR builds do not import Apple signing secrets or export an IPA.
 | `corepack pnpm run api:dev:local`         | Starts the API with local PostgreSQL explicitly selected                           |
 | `corepack pnpm run android:open`          | Open `android/` project in Android Studio                                          |
 
-## Optional AI Event Context (Smart Leave Planner)
+## Smart Leave Planner
 
-To enable live event/festival context in **Pulse AI Smart Leave Planner**, add this to your API environment file (for example `api/.env.local`):
+**Pulse Smart Leave Planner** calculates leave dates locally using available
+leave credits, registered company holidays, and existing requests. It opens
+Google Search for events and festivals, things to do, or public holidays for
+each suggested date range in the Philippines, Australia, or United States.
 
-```bash
-GEMINI_API_KEY=your_gemini_api_key_here
-```
-
-When this key is present and has available credits, the planner enriches each recommended leave schedule with:
-
-- Two concise AI planning insights
-- Possible local/community events and festivals outside registered company holidays
-
-If the key is missing or credits are unavailable, the planner automatically falls back to built-in schedule guidance.
+The planner makes no Gemini or search API requests and requires no AI credits
+or API key. Google is opened only when a user selects a search link. Search
+queries contain the date range and country, without account details, leave
+balances, or request messages. Confirm events on organizer websites; changing
+the search country does not change the company's holiday calendar.
 
 ## Project Map
 
