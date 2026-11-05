@@ -210,6 +210,7 @@ Normal push/PR builds do not import Apple signing secrets or export an IPA.
 | `corepack pnpm run local:all`             | Starts local PostgreSQL-backed API + web dev server                                |
 | `corepack pnpm run prod:all`              | Supabase-backed API + production-configured web dev server                         |
 | `corepack pnpm run build`                 | Production build                                                                   |
+| `corepack pnpm run typecheck`             | Check all TypeScript/React source and Vite configuration                            |
 | `corepack pnpm run preview`               | Preview production build on `4173`                                                 |
 | `corepack pnpm run android:sync`          | Build with `.env.prod` + sync web assets to Android                                |
 | `corepack pnpm run android:run:auto`      | Build with `.env.prod` + sync + deploy to first connected Android device/emulator  |

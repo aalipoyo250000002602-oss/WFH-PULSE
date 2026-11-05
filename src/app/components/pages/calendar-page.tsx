@@ -311,7 +311,7 @@ export function CalendarPage({
         const daysInMonth = lastDay.getDate()
         const startingDayOfWeek = firstDay.getDay()
 
-        const days = []
+        const days: (number | null)[] = []
 
         // Add empty cells for days before the first day of the month
         for (let i = 0; i < startingDayOfWeek; i++) {
@@ -848,6 +848,7 @@ export function CalendarPage({
             return
         }
 
+        const { startDate, endDate } = leaveRequestForm
         const submitLeaveRequest = async () => {
             try {
                 const response = await fetch(
@@ -860,12 +861,8 @@ export function CalendarPage({
                         },
                         body: JSON.stringify({
                             leaveTypeId: leaveRequestForm.leaveType,
-                            startDate: formatLocalDateKey(
-                                leaveRequestForm.startDate
-                            ),
-                            endDate: formatLocalDateKey(
-                                leaveRequestForm.endDate
-                            ),
+                            startDate: formatLocalDateKey(startDate),
+                            endDate: formatLocalDateKey(endDate),
                             message: leaveRequestForm.message.trim(),
                             attachments: leaveRequestForm.attachments,
                             sourcePage: 'calendar',

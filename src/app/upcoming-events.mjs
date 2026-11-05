@@ -6,6 +6,11 @@ import {
     startOfDay,
 } from 'date-fns'
 
+/**
+ * @template {{ date: string }} T
+ * @param {T[]} events
+ * @param {Date} [now]
+ */
 export function getUpcomingEvents(events, now = new Date()) {
     const today = startOfDay(now)
     const lastDay = addMonths(today, 6)

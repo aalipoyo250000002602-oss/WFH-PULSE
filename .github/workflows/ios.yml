@@ -68,6 +68,9 @@ jobs:
       - name: Test report downloads
         run: node --test src/app/report-download.test.mjs
 
+      - name: Typecheck
+        run: pnpm run typecheck
+
       - name: Build web assets
         env:
           VITE_BASE_PATH: ./

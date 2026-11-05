@@ -1,5 +1,4 @@
 {
-  "$schema": "https://json.schemastore.org/package.json",
   "name": "wfh-pulse",
   "private": true,
   "type": "module",
@@ -54,7 +53,8 @@
     "db:sync:all:dry": "node scripts/build-sync-dbs.mjs --dry-run",
     "db:sync:all:no-build": "node scripts/build-sync-dbs.mjs --skip-build",
     "db:sync:data": "node scripts/build-sync-dbs.mjs --data-only",
-    "db:sync:data:dry": "node scripts/build-sync-dbs.mjs --data-only --dry-run"
+    "db:sync:data:dry": "node scripts/build-sync-dbs.mjs --data-only --dry-run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@aparajita/capacitor-biometric-auth": "^10.0.0",
@@ -130,11 +130,15 @@
   "devDependencies": {
     "@capacitor/cli": "^8.5.3",
     "@tailwindcss/vite": "4.1.12",
+    "@types/node": "^22.20.5",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "4.7.0",
     "fake-indexeddb": "^6.2.6",
     "newman": "^6.2.1",
     "prettier": "^3.9.6",
     "tailwindcss": "4.1.12",
+    "typescript": "~5.9.3",
     "vite": "6.3.5"
   }
 }

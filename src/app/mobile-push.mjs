@@ -1,4 +1,10 @@
 // One controller per signed-in account. Never let late token callbacks rebind a logged-out account.
+/**
+ * @param {{ plugin: import("@capacitor/push-notifications").PushNotificationsPlugin, platform: string, installationId: string, apnsEnvironment?: string,
+ * apiBaseUrl: string, accessToken: string, fetchImplementation?: typeof fetch,
+ * onReceive?: (notification: import("@capacitor/push-notifications").PushNotificationSchema) => void, onOpen?: (data: { page: string }) => void,
+ * onError?: (error: Error) => void }} options
+ */
 export function createMobilePushSession({ plugin, platform, installationId, apnsEnvironment = 'production',
     apiBaseUrl, accessToken, fetchImplementation = fetch, onReceive = () => {}, onOpen = () => {}, onError = () => {} }) {
     let stopped = false

@@ -40,7 +40,7 @@ export function MiniCalendar({
         const mondayBasedStart =
             startingDayOfWeek === 0 ? 6 : startingDayOfWeek - 1
 
-        const days = []
+        const days: (number | null)[] = []
 
         // Add empty cells for days before the first day of the month
         for (let i = 0; i < mondayBasedStart; i++) {

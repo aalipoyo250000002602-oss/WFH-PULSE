@@ -2,6 +2,10 @@ import { addDays, addMonths, format, isWeekend, startOfDay } from 'date-fns'
 
 const dateKey = date => format(date, 'yyyy-MM-dd')
 
+/**
+ * @param {{ credits: number, holidays?: { date: string, name: string }[],
+ * requests?: { startDateKey: string, endDateKey: string, status: string }[], now?: Date }} options
+ */
 export function generateLeavePlans({
     credits,
     holidays = [],
